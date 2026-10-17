@@ -278,12 +278,16 @@
 }
 
 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   height: 73px;
   border-bottom: 1px solid var(--line);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 44px;
+  gap: 16px;
 }
 
 .breadcrumb {

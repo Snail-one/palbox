@@ -205,8 +205,23 @@
   }
 
   .topbar {
-    height: 60px;
-    padding: 0 20px;
+    height: auto;
+    min-height: 60px;
+    padding: 12px 20px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .topbar .page-actions {
+    order: 3;
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin: 0;
+  }
+
+  .topbar .local-status {
+    margin-left: auto;
   }
 
   .breadcrumb {
@@ -373,11 +388,6 @@
 
   .bottom-note>span:last-child {
     text-align: right;
-  }
-
-  .editor-footer {
-    padding: 16px 18px;
-    padding-bottom: calc(16px + env(safe-area-inset-bottom));
   }
 
   .parameter-table td,
@@ -640,36 +650,6 @@
     font-size: 9px;
   }
 
-  .editor-footer {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 13px;
-    padding: 15px 16px;
-    padding-bottom: calc(15px + env(safe-area-inset-bottom));
-  }
-
-  .toast {
-    bottom: calc(120px + env(safe-area-inset-bottom));
-  }
-
-  .editor-footer>span {
-    font-size: 10px;
-  }
-
-  .editor-footer>div {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 9px;
-  }
-
-  .editor-footer .button {
-    font-size: 11px;
-    padding: 10px;
-  }
-
-  .editor-footer .button-arrow {
-    margin-left: 5px;
-  }
 
   .bottom-note {
     font-size: 8px;

@@ -83,8 +83,8 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
     workspace.add(name, source);
     changedProfile('导入成功，所有原始参数均已保留');
   } });
-  for (const id of ['save-button', 'header-save-button']) dom.$(id).addEventListener('click', save);
-  for (const id of ['copy-button', 'header-copy-button']) dom.$(id).addEventListener('click', copy);
+  dom.$('header-save-button').addEventListener('click', save);
+  dom.$('header-copy-button').addEventListener('click', copy);
   function render() { profiles.render(); panel.render(); summary.render(); }
   render();
   notifications.storage(workspace.message);

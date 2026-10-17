@@ -2,7 +2,7 @@ import { decodeString } from '../../domain/config.js';
 import { savedTime } from '../dom.js';
 
 export function createSummary({ dom, editor, workspace, catalog, isDirty }) {
-  const { $, icon, document } = dom;
+  const { $, document } = dom;
   return {
     render() {
       const profile = workspace.active;
@@ -19,8 +19,6 @@ export function createSummary({ dom, editor, workspace, catalog, isDirty }) {
       if (editor.errorCount) message = `${editor.errorCount} 项输入需要修正`;
       if (!workspace.persisted) message = '更改尚未存入浏览器';
       $('change-caption').textContent = message;
-      $('save-state').replaceChildren(icon(isDirty() ? 'edit' : 'check'), document.createTextNode(message));
-      $('save-state').classList.toggle('unsaved', isDirty());
       $('profile-title').textContent = profile.name;
       $('profile-server').textContent = decodeString(editor.raw('ServerName') || 'PalWorldSettings.ini');
       $('profile-updated').textContent = savedTime(profile.updatedAt);

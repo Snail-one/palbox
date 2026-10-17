@@ -367,36 +367,6 @@
   margin-top: 2px;
 }
 
-.editor-footer {
-  position: sticky;
-  bottom: 0;
-  z-index: 20;
-  box-shadow: 0 -4px 16px #00000008;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-top: 1px solid var(--line);
-  padding: 17px 24px calc(17px + env(safe-area-inset-bottom));
-}
-
-.editor-footer>span {
-  font-size: 10px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.editor-footer>span .icon {
-  width: 14px;
-  height: 14px;
-}
-
-.editor-footer>div {
-  display: flex;
-  gap: 10px;
-}
-
 .bottom-note {
   display: flex;
   justify-content: space-between;
