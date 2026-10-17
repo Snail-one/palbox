@@ -1,0 +1,254 @@
+// Optional end-to-end checks. Install Playwright outside the app if needed.
+'use strict';
+const { chromium } = require('playwright');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const Config = require('../js/config.js');
+const template = require('../js/template.js');
+const url = process.env.PALBOX_BASE_URL || 'http://127.0.0.1:8080';
+const output = process.env.PALBOX_QA_OUTPUT || '/tmp/palbox-qa-results';
+
+(async () => {
+  await fs.mkdir(output, { recursive: true });
+  const browser = await chromium.launch({ headless: true });
+  const errors = [];
+  let count = 0;
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1050 }, permissions: ['clipboard-read', 'clipboard-write'] });
+  const page = await context.newPage();
+  page.on('pageerror', error => errors.push(error.message));
+  const ok = label => { count++; console.log(`PASS ${label}`); };
+  const text = selector => page.locator(selector).textContent();
+  const current = () => page.evaluate(() => {
+    const w = JSON.parse(localStorage.getItem('palbox.workspace.v1'));
+    return w.profiles.find(p => p.id === w.activeId);
+  });
+  const raw = (source, key) => Config.parse(source).entries.find(e => e.key === key)?.raw;
+  const confirm = async name => {
+    if (name !== undefined) await page.locator('#dialog-name').fill(name);
+    await page.locator('#dialog-confirm').click();
+  };
+  const save = () => page.locator('#header-save-button').click();
+  const category = name => page.locator('#category-nav').getByRole('button', { name, exact: true }).click();
+  try {
+    await page.goto(url);
+    await page.locator('#field-ServerName').waitFor();
+    assert.equal(await text('#parameter-count'), '122');
+    assert.equal(await page.locator('#field-AdminPassword').getAttribute('type'), 'password');
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.screenshot({ path: path.join(output, 'desktop.png'), fullPage: false });
+    ok('桌面启动、完整模板、密码默认遮挡、无横向溢出');
+
+    await page.locator('#field-ServerName').fill('朋友们的世界, "一号"');
+    await page.locator('#field-ServerPlayerMaxNum').fill('16');
+    await page.locator('#field-AdminPassword').fill('test-only-password');
+    await page.getByRole('button', { name: '显示管理员密码', exact: true }).click();
+    assert.equal(await page.locator('#field-AdminPassword').getAttribute('type'), 'text');
+    await page.getByRole('button', { name: '隐藏管理员密码', exact: true }).click();
+    assert.equal(await text('#change-count'), '3');
+    await save();
+    await page.reload();
+    assert.equal(await page.locator('#field-ServerName').inputValue(), '朋友们的世界, "一号"');
+    assert.equal(await page.locator('#field-ServerPlayerMaxNum').inputValue(), '16');
+    assert.equal(raw((await current()).source, 'ServerPlayerMaxNum'), '16');
+    ok('中文与转义文本、密码显示、保存和刷新恢复');
+
+    await page.locator('#field-ServerPlayerMaxNum').fill('1.5');
+    assert.equal(await page.locator('#field-ServerPlayerMaxNum').getAttribute('aria-invalid'), 'true');
+    await save();
+    assert.equal(raw((await current()).source, 'ServerPlayerMaxNum'), '16');
+    await page.locator('#field-ServerPlayerMaxNum').fill('16');
+    await page.locator('#field-bAllowClientMod').click();
+    await page.locator('.platform-choice').filter({ hasText: 'Xbox' }).locator('input').uncheck();
+    await save();
+    assert.equal(raw((await current()).source, 'bAllowClientMod'), 'False');
+    assert.equal(raw((await current()).source, 'CrossplayPlatforms'), '(Steam,PS5,Mac)');
+    ok('非法数值阻止保存，布尔与平台列表正确写入');
+
+    await page.locator('#search').fill('ExpRate');
+    await page.locator('#field-ExpRate').fill('2.5');
+    assert.equal(await text('#group-title'), '搜索结果');
+    await page.locator('#search').fill('不存在的参数');
+    assert.equal(await page.locator('#empty-state').isVisible(), true);
+    await page.locator('#search').fill('');
+    await save();
+    await category('玩家');
+    assert.equal(await page.locator('#field-ExpRate').inputValue(), '2.5');
+    ok('跨分类搜索、空状态和表单同步');
+
+    await page.locator('#tab-advanced').click();
+    await page.locator('#search').fill('DenyTechnologyList');
+    await page.getByRole('textbox', { name: 'DenyTechnologyList 的原始值', exact: true }).fill('("PALBOX","RepairBench")');
+    await save();
+    assert.equal(raw((await current()).source, 'DenyTechnologyList'), '("PALBOX","RepairBench")');
+    await page.locator('#search').fill('');
+    await page.locator('#mode-source').click();
+    const sourceBefore = await page.locator('#source-editor').inputValue();
+    const sourceNext = sourceBefore.replace('ExpRate=2.5', 'ExpRate=3.000000').replace(/\)\s*$/, ',FutureSetting=(A=(X=1,Y=2),B="中文,值"))\n');
+    await page.locator('#source-editor').fill(sourceNext);
+    await page.locator('#apply-source').click();
+    await page.locator('#tab-form').click();
+    await category('玩家');
+    assert.equal(await page.locator('#field-ExpRate').inputValue(), '3.000000');
+    assert.equal(await text('#parameter-count'), '123');
+    await save();
+    ok('高级参数编辑、嵌套未知字段和源码到表单同步');
+
+    await page.locator('#tab-advanced').click();
+    await page.locator('#mode-source').click();
+    const valid = await page.locator('#source-editor').inputValue();
+    await page.locator('#source-editor').fill('OptionSettings=(ServerName="broken)');
+    await page.locator('#apply-source').click();
+    assert.equal(await page.locator('#source-error').isVisible(), true);
+    assert.equal(await text('#parameter-count'), '123');
+    await save();
+    assert.equal((await current()).source, valid);
+    await page.locator('#restore-source').click();
+    await confirm();
+    assert.equal(await page.locator('#source-editor').inputValue(), valid);
+    ok('错误源码隔离、阻止保存与还原源码');
+
+    await page.locator('#header-copy-button').click();
+    await page.waitForFunction(() => document.getElementById('toast').textContent.includes('已复制'));
+    const copied = await page.evaluate(() => navigator.clipboard.readText());
+    assert.deepEqual(Config.parse(copied).entries.map(e => [e.key, e.raw]), Config.parse(valid).entries.map(e => [e.key, e.raw]));
+    const importPath = path.join(output, 'copied.ini');
+    await fs.writeFile(importPath, copied);
+    ok('剪贴板中的完整配置与当前编辑结果一致');
+
+    await page.locator('#import-button').click();
+    await page.locator('#import-text').fill('OptionSettings=(A=1,A=2)');
+    await page.locator('#import-confirm').click();
+    assert.equal(await page.locator('#import-error').isVisible(), true);
+    assert.equal(await text('#profile-count'), '1');
+    await page.locator('#file-input').setInputFiles(importPath);
+    await page.waitForFunction(() => document.getElementById('import-text').value.includes('FutureSetting'));
+    await page.locator('#import-name').fill('导入的副本');
+    await page.locator('#import-confirm').click();
+    assert.equal(await text('#profile-count'), '2');
+    assert.equal(await text('#profile-title'), '导入的副本');
+    ok('错误导入不破坏现有配置，文件导入创建独立配置');
+
+    await page.locator('#rename-profile').click();
+    await confirm('二号世界');
+    await page.locator('#copy-profile').click();
+    await confirm('三号世界');
+    assert.equal(await text('#profile-count'), '3');
+    await page.locator('#tab-form').click();
+    await category('服务器');
+    await page.locator('#field-ServerName').fill('副本独立修改');
+    await save();
+    await page.locator('#profile-list').getByRole('button', { name: /二号世界/ }).click();
+    assert.equal(await page.locator('#field-ServerName').inputValue(), '朋友们的世界, "一号"');
+    ok('配置重命名、复制与修改隔离');
+
+    await page.locator('#field-ServerName').fill('未保存修改');
+    await page.locator('#profile-list').getByRole('button', { name: /三号世界/ }).click();
+    await page.locator('#dialog-cancel').click();
+    assert.equal(await text('#profile-title'), '二号世界');
+    assert.equal(await page.locator('#field-ServerName').inputValue(), '未保存修改');
+    await page.locator('#profile-list').getByRole('button', { name: /三号世界/ }).click();
+    await confirm();
+    assert.equal(await text('#profile-title'), '三号世界');
+    ok('切换配置时可取消或放弃未保存修改');
+
+    await page.locator('#delete-profile').click();
+    await page.locator('#dialog-cancel').click();
+    assert.equal(await text('#profile-count'), '3');
+    await page.locator('#delete-profile').click();
+    await confirm();
+    assert.equal(await text('#profile-count'), '2');
+    await page.locator('#new-profile').click();
+    await confirm('全新世界');
+    assert.equal(await text('#parameter-count'), '122');
+    assert.equal(await page.locator('#field-ServerName').inputValue(), 'Default Palworld Server');
+    ok('删除确认、新配置使用完整默认模板');
+
+    await page.locator('#field-ServerName').fill('触发关闭提醒');
+    const unloadEvent = page.waitForEvent('dialog');
+    const reload = page.reload();
+    const unloadDialog = await unloadEvent;
+    assert.equal(unloadDialog.type(), 'beforeunload');
+    await unloadDialog.accept(); await reload;
+    ok('离开页面触发浏览器未保存提醒');
+
+    await page.goto(url + '/tests/index.html');
+    assert.equal(await text('#test-summary'), '30 / 30 项测试通过');
+    ok('浏览器中运行同一套核心测试全部通过');
+
+    const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, deviceScaleFactor: 1 });
+    const mobile = await mobileContext.newPage();
+    mobile.on('pageerror', error => errors.push(error.message));
+    await mobile.goto(url);
+    await mobile.locator('#field-ServerName').waitFor();
+    assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await mobile.screenshot({ path: path.join(output, 'mobile.png'), fullPage: false });
+    await mobile.locator('#mobile-menu').click();
+    assert.equal(await mobile.locator('#mobile-menu').getAttribute('aria-expanded'), 'true');
+    await mobile.locator('#new-profile').click();
+    await mobile.locator('#dialog-name').fill('手机配置');
+    await mobile.locator('#dialog-confirm').click();
+    assert.equal(await mobile.locator('#profile-title').textContent(), '手机配置');
+    assert.equal(await mobile.locator('#mobile-menu').getAttribute('aria-expanded'), 'false');
+    await mobile.locator('#tab-advanced').click();
+    assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await mobileContext.close();
+    ok('手机布局、侧栏管理和高级表格无页面横向溢出');
+
+    const importContext = await browser.newContext();
+    const imported = await importContext.newPage();
+    imported.on('pageerror', error => errors.push(error.message));
+    await imported.goto(url);
+    await imported.locator('#import-button').click();
+    await imported.locator('#drop-zone').evaluate((zone, source) => {
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([source], '拖放世界.ini', { type: 'text/plain' }));
+      zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+    }, 'OptionSettings=(ServerName="拖放世界",ExpRate=2,Unknown=(X,Y))');
+    await imported.waitForFunction(() => document.getElementById('import-text').value.includes('Unknown='));
+    await imported.locator('#import-confirm').click();
+    assert.equal(await imported.locator('#parameter-count').textContent(), '3');
+    await imported.locator('#import-button').click();
+    await imported.locator('#import-text').fill('OptionSettings=(ServerName="粘贴世界",ExpRate=4)');
+    await imported.locator('#import-confirm').click();
+    assert.equal(await imported.locator('#parameter-count').textContent(), '2');
+    assert.equal(await imported.locator('#field-ServerName').inputValue(), '粘贴世界');
+    assert.equal(await imported.locator('#profile-count').textContent(), '3');
+    await importContext.close();
+    ok('拖放文件和单独 OptionSettings 粘贴导入，不补入缺失参数');
+
+    const failedContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] });
+    await failedContext.addInitScript(() => {
+      Storage.prototype.setItem = function () { throw new DOMException('Quota exceeded', 'QuotaExceededError'); };
+    });
+    const failed = await failedContext.newPage();
+    failed.on('pageerror', error => errors.push(error.message));
+    await failed.goto(url);
+    await failed.locator('#field-ServerName').waitFor();
+    assert.equal(await failed.locator('#storage-error').isVisible(), true);
+    await failed.locator('#field-ServerName').fill('存储失败仍可复制');
+    await failed.locator('#save-button').click();
+    assert.equal(await failed.locator('#field-ServerName').inputValue(), '存储失败仍可复制');
+    await failed.locator('#copy-button').click();
+    await failed.waitForFunction(() => document.getElementById('toast').textContent.includes('已复制'));
+    assert.equal(raw(await failed.evaluate(() => navigator.clipboard.readText()), 'ServerName'), '"存储失败仍可复制"');
+    await failedContext.close();
+    ok('真实存储失败时提示明确、编辑保留、仍可复制');
+
+    const corruptContext = await browser.newContext();
+    await corruptContext.addInitScript(() => localStorage.setItem('palbox.workspace.v1', '{broken'));
+    const corrupt = await corruptContext.newPage();
+    corrupt.on('pageerror', error => errors.push(error.message));
+    await corrupt.goto(url);
+    await corrupt.locator('#field-ServerName').waitFor();
+    await corrupt.locator('#save-button').click();
+    assert.equal(await corrupt.evaluate(() => localStorage.getItem('palbox.workspace.v1')), '{broken');
+    assert.equal(await corrupt.locator('#storage-error').isVisible(), true);
+    await corruptContext.close();
+    ok('损坏的存储保持原值，阻止静默覆盖');
+
+    assert.deepEqual(errors, []);
+    ok('所有场景无未捕获浏览器异常');
+    console.log(`\n${count} browser scenarios passed. Artifacts: ${output}`);
+  } finally { await browser.close(); }
+})().catch(error => { console.error(error); process.exitCode = 1; });

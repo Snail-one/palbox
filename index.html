@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f7f7">
+  <meta name="description" content="帕鲁配置工作台：在浏览器中管理、编辑和复制 PalWorldSettings.ini。">
+  <title>Palbox · 帕鲁配置工作台</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script src="js/config.js" defer></script>
+  <script src="js/template.js" defer></script>
+  <script src="js/schema.js" defer></script>
+  <script src="js/storage.js" defer></script>
+  <script src="js/app.js" defer></script>
+</head>
+<body>
+  <svg class="icon-defs" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 15v5h16v-5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H5v20h14V7zM14 2v6h5M8 12h8M8 16h6"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01M11 6.5h6M11 17.5h6"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M4 21v-3a8 8 0 0 1 16 0v3"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5zM20 2v4m-2-2h4"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 3 9 4v5c0 5-9 10-9 10S3 17 3 12V7z"/><path d="m8 12 3 3 5-6"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="m7 6-6 6 6 6m10-12 6 6-6 6M14 3l-4 18"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V3H3v13h5"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="m16 3 5 5L8 21H3v-5zM13 6l5 5"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10h.01"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M4 3h13l4 4v14H3V3zM7 3v6h9V3M7 21v-8h10v8"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V4h7l2 3h9v13H3z"/></symbol>
+  </svg>
+  <a href="#main" class="skip-link">跳到配置编辑器</a>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar" aria-label="配置管理">
+      <a class="brand" href="./" aria-label="Palbox 首页"><span class="brand-symbol"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M7 22 5 8l8 4 3-7 3 7 8-4-2 14-9 5z"/><path d="M11 18h1m8 0h1m-7 4h4"/></svg></span><span>palbox<span class="brand-dot">.</span></span><span class="version">v1.0</span></a>
+      <div class="workspace-label">你的工作空间</div>
+      <div class="sidebar-active"><svg class="icon"><use href="#i-grid"/></svg> 配置工作台<span class="tiny-dot"></span></div>
+      <div class="list-heading"><span>我的配置 <span id="profile-count">0</span></span><button class="icon-button" id="new-profile" aria-label="新建配置" title="新建配置"><svg class="icon"><use href="#i-plus"/></svg></button></div>
+      <div id="profile-list" class="profile-list"></div>
+      <button id="sidebar-import" class="sidebar-import"><svg class="icon"><use href="#i-upload"/></svg>导入配置文件</button>
+      <div class="sidebar-bottom">
+        <div class="local-card"><span class="local-card-icon"><svg class="icon"><use href="#i-shield"/></svg></span><strong>只在你的浏览器里</strong><p>配置本地保存，随时复制备份。<br>你的世界，由你掌控。</p></div>
+        <a class="docs-link" href="https://docs.palworldgame.com/settings-and-operation/configuration/" target="_blank" rel="noreferrer"><svg class="icon"><use href="#i-file"/></svg>帕鲁官方配置文档<span>↗</span></a>
+        <div class="sidebar-foot">为每一个帕鲁世界而造 <span aria-hidden="true"><svg class="icon"><use href="#i-sparkles"/></svg></span></div>
+      </div>
+    </aside>
+    <button class="sidebar-scrim" id="sidebar-scrim" aria-label="关闭配置列表" hidden></button>
+    <div class="main-shell">
+      <header class="topbar">
+        <div class="breadcrumb"><button id="mobile-menu" class="icon-button mobile-only" aria-label="打开配置列表" aria-expanded="false" aria-controls="sidebar"><svg class="icon"><use href="#i-menu"/></svg></button><span>工作空间</span><svg class="icon"><use href="#i-arrow"/></svg><strong>配置工作台</strong></div>
+        <div class="local-status"><span class="tiny-dot"></span>本地模式<span class="topbar-divider"></span><span class="avatar">P</span></div>
+      </header>
+      <main id="main">
+        <div class="page-heading"><div><div class="eyebrow">PALWORLD CONFIGURATION</div><h1>配置你的帕鲁世界<span class="heading-sparkle" aria-hidden="true"><svg class="icon"><use href="#i-sparkles"/></svg></span></h1><p>从一点微调，到一个全新的冒险。</p></div><div class="page-actions"><button class="button secondary" id="import-button"><svg class="icon"><use href="#i-upload"/></svg>导入配置</button><button class="button secondary" id="header-save-button"><svg class="icon"><use href="#i-save"/></svg>保存配置</button><button class="button primary" id="header-copy-button"><svg class="icon"><use href="#i-copy"/></svg>复制配置</button></div></div>
+        <div id="storage-error" class="alert error" role="alert" hidden></div>
+        <section class="profile-overview" aria-labelledby="profile-title"><div class="profile-emblem"><svg class="icon"><use href="#i-server"/></svg></div><div class="profile-info"><div class="profile-title-row"><h2 id="profile-title"></h2><span class="tag">INI 配置</span></div><div class="profile-details"><span id="profile-server"></span><span class="detail-separator">·</span><span id="profile-updated"></span></div></div><div class="profile-tools"><button id="rename-profile" class="icon-button" aria-label="重命名配置" title="重命名"><svg class="icon"><use href="#i-edit"/></svg></button><button id="copy-profile" class="icon-button" aria-label="创建当前配置的副本" title="创建副本"><svg class="icon"><use href="#i-copy"/></svg></button><button id="delete-profile" class="icon-button danger-hover" aria-label="删除当前配置" title="删除"><svg class="icon"><use href="#i-trash"/></svg></button></div></section>
+        <div class="summary-grid"><div class="summary-card"><span class="summary-icon summary-neutral"><svg class="icon"><use href="#i-file"/></svg></span><div><span class="summary-label">配置参数</span><div><strong id="parameter-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption">完整保留原始参数</span></div><div class="summary-card"><span class="summary-icon summary-muted"><svg class="icon"><use href="#i-user"/></svg></span><div><span class="summary-label">最大在线人数</span><div><strong id="player-count">—</strong><span class="summary-unit">人</span></div></div><span class="summary-caption">一起探索这个世界</span></div><div class="summary-card"><span class="summary-icon summary-accent"><svg class="icon"><use href="#i-edit"/></svg></span><div><span class="summary-label">本次修改</span><div><strong id="change-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption" id="change-caption">所有更改已保存</span></div><button type="button" class="summary-card summary-link" id="unknown-summary" aria-label="查看和编辑未识别参数"><span class="summary-icon summary-neutral"><svg class="icon"><use href="#i-code"/></svg></span><div><span class="summary-label">未识别参数</span><div><strong id="unknown-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption">点击集中查看和编辑 →</span></button></div>
+        <section class="editor-panel" aria-label="配置编辑器">
+          <div class="editor-toolbar"><div class="view-tabs" role="tablist" aria-label="编辑方式"><button class="view-tab active" id="tab-form" role="tab" aria-selected="true" aria-controls="view-form" data-view="form"><svg class="icon"><use href="#i-grid"/></svg>可视化编辑</button><button class="view-tab" id="tab-advanced" role="tab" aria-selected="false" aria-controls="view-advanced" data-view="advanced"><svg class="icon"><use href="#i-code"/></svg>高级编辑</button></div><label class="search-box"><svg class="icon"><use href="#i-search"/></svg><input id="search" type="search" placeholder="搜索名称或参数…" aria-label="搜索配置参数"><kbd>/</kbd></label></div>
+          <div id="view-form" role="tabpanel" aria-labelledby="tab-form"><nav class="category-nav" id="category-nav" aria-label="参数分类"></nav><div class="section-heading"><div class="section-heading-icon" id="group-icon"></div><div><h3 id="group-title"></h3><p id="group-description"></p></div><span id="group-count" class="subtle-tag"></span></div><div class="fields-grid" id="fields-grid"></div><div class="empty-state" id="empty-state" hidden><svg class="icon"><use href="#i-search"/></svg><h3>没有找到匹配参数</h3><p>试试其他中文名称或原始参数名，也可以前往高级编辑。</p></div><div class="form-note"><svg class="icon"><use href="#i-info"/></svg><span>仅显示当前文件中存在的参数。其他参数可在「高级编辑」中查看和修改。</span></div></div>
+          <div id="view-advanced" role="tabpanel" aria-labelledby="tab-advanced" hidden><div class="advanced-heading"><div><h3>完整配置编辑</h3><p>所有参数都在这里，包含未提供中文控件的参数。</p></div><div class="segmented" role="group" aria-label="高级编辑方式"><button id="mode-table" class="selected" aria-pressed="true">参数列表</button><button id="mode-source" aria-pressed="false">INI 源码</button></div></div><div id="table-container"><div class="parameter-filter"><label class="unknown-filter"><input type="checkbox" id="unknown-only">仅显示未识别参数</label><span id="table-count" role="status"></span><p>未识别指默认模板和参数说明中均未收录的字段，仍会完整保留并参与复制。</p></div><div class="table-scroll"><table class="parameter-table"><thead><tr><th scope="col">参数名</th><th scope="col">原始值</th></tr></thead><tbody id="parameter-rows"></tbody></table></div><p id="table-empty" class="table-empty" hidden>没有匹配的参数。</p></div><div id="source-container" hidden><div class="source-caption"><span>PalWorldSettings.ini</span><span>UTF-8</span></div><label class="sr-only" for="source-editor">完整 INI 源码</label><textarea id="source-editor" class="source-editor" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="soft"></textarea><div id="source-error" class="alert error" role="alert" hidden></div><div class="source-actions"><p>源码修改需先应用，才会同步到表单。</p><button id="apply-source" class="button secondary"><svg class="icon"><use href="#i-check"/></svg>应用源码</button></div></div></div>
+          <footer class="editor-footer"><span id="save-state" role="status"><svg class="icon"><use href="#i-check"/></svg>所有更改已保存</span><div><button class="button secondary" id="save-button"><svg class="icon"><use href="#i-save"/></svg>保存配置</button><button class="button primary" id="copy-button"><svg class="icon"><use href="#i-copy"/></svg>复制配置</button></div></footer>
+        </section>
+        <div class="bottom-note"><span><span class="tiny-dot"></span>准备好下一场冒险</span><span>PalWorldSettings.ini<span class="detail-separator">·</span>复制后替换服务器配置并重启</span></div>
+      </main>
+    </div>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <dialog id="action-dialog" class="action-dialog"><form id="action-form"><div class="dialog-heading"><span class="dialog-icon" id="dialog-icon"></span><button type="button" class="icon-button" id="dialog-close" aria-label="关闭对话框"><svg class="icon"><use href="#i-close"/></svg></button></div><h2 id="dialog-title"></h2><p id="dialog-description"></p><label id="dialog-name-label" class="dialog-name-label">配置名称<input id="dialog-name" maxlength="60" autocomplete="off" placeholder="例如：和朋友的冒险"></label><div id="dialog-error" class="alert error" role="alert" hidden></div><div class="dialog-actions"><button type="button" id="dialog-cancel" class="button secondary">取消</button><button type="submit" id="dialog-confirm" class="button primary">确认</button></div></form></dialog>
+  <dialog id="import-dialog" class="import-dialog"><div class="dialog-heading"><span class="dialog-icon"><svg class="icon"><use href="#i-upload"/></svg></span><button id="import-close" class="icon-button" aria-label="关闭导入对话框"><svg class="icon"><use href="#i-close"/></svg></button></div><h2>导入一个帕鲁世界</h2><p>选择 INI 文件，或直接粘贴配置。导入后将创建独立配置。</p><label class="drop-zone" id="drop-zone" tabindex="0" role="button"><input id="file-input" type="file" accept=".ini,.txt,text/plain" class="sr-only"><svg class="icon"><use href="#i-upload"/></svg><strong>点击选择，或将文件拖到这里</strong><span>PalWorldSettings.ini · UTF-8 · 最大 2 MB</span></label><div class="or-divider"><span>或粘贴配置</span></div><label class="sr-only" for="import-text">要导入的 INI 配置内容</label><textarea id="import-text" placeholder="OptionSettings=(ServerName=…&#10;也支持带段落头的完整 INI 文件" spellcheck="false"></textarea><label class="dialog-name-label">配置名称<input id="import-name" maxlength="60" placeholder="导入的配置"></label><div id="import-error" class="alert error" role="alert" hidden></div><div class="dialog-actions"><button id="import-cancel" class="button secondary">取消</button><button id="import-confirm" class="button primary"><svg class="icon"><use href="#i-plus"/></svg>导入为新配置</button></div></dialog>
+  <noscript><div class="noscript">请启用 JavaScript 以使用配置编辑器。配置仅在浏览器中处理。</div></noscript>
+</body>
+</html>

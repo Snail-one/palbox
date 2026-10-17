@@ -1,0 +1,13 @@
+{
+  "name": "palbox",
+  "version": "1.0.0",
+  "private": true,
+  "description": "帕鲁配置文件管理工作台",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node server.cjs",
+    "dev": "node --watch server.cjs",
+    "test": "node tests/suite.js && node --test tests/server.test.cjs",
+    "test:browser": "node tests/browser.cjs"
+  }
+}
