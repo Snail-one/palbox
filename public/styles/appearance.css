@@ -148,16 +148,6 @@ select:focus {
   color: var(--accent);
 }
 
-.sidebar-import {
-  border-color: #ddcaba;
-  background: var(--input-bg);
-}
-
-.sidebar-import:hover {
-  background: #e5e7eb;
-  border-color: #e5a071;
-}
-
 .local-card {
   box-shadow: 0 6px 16px #24232112;
 }
@@ -412,7 +402,13 @@ h1 {
   padding: 0 24px 20px;
 }
 
-.unknown-filter {
+.parameter-filter-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+}
+
+.parameter-status-filter {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -421,15 +417,15 @@ h1 {
   cursor: pointer;
 }
 
-.unknown-filter input:checked + .toggle {
+.parameter-status-filter input:checked + .toggle {
   background: var(--accent);
 }
 
-.unknown-filter input:checked + .toggle:after {
+.parameter-status-filter input:checked + .toggle:after {
   transform: translateX(14px);
 }
 
-.unknown-filter input:focus-visible + .toggle {
+.parameter-status-filter input:focus-visible + .toggle {
   outline: 3px solid #e68b50;
   outline-offset: 3px;
 }
@@ -500,8 +496,6 @@ legend,
 .profile-item,
 .profile-item.selected,
 .profile-item small,
-.sidebar-import,
-.sidebar-import:hover,
 .local-card strong,
 .local-card p,
 .docs-link,

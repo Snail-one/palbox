@@ -198,22 +198,6 @@
   width: 12px;
 }
 
-.sidebar-import {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 1px dashed #dedede;
-  border-radius: 7px;
-  margin: 14px 6px 24px;
-  font-size: 11px;
-  padding: 9px;
-}
-
-.sidebar-import>.icon {
-  width: 14px;
-}
-
 .sidebar-bottom {
   margin-top: auto;
   padding: 14px 5px 0;

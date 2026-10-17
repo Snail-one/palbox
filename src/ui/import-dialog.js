@@ -29,7 +29,6 @@ export function createImportDialog({ dom, readFile, validate, beforeOpen, onOpen
     }
   }
   $('import-button').addEventListener('click', open);
-  $('sidebar-import').addEventListener('click', open);
   $('import-close').addEventListener('click', close);
   $('import-cancel').addEventListener('click', close);
   $('import-dialog').addEventListener('cancel', () => { readVersion++; });

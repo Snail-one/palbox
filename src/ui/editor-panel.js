@@ -5,7 +5,7 @@ import { createSourceEditor } from './components/source-editor.js';
 export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged, ready }) {
   const { $, document } = dom;
   // Navigation/filter state is local to the UI; it never enters saved profiles.
-  const view = { group: 'server', mode: 'form', advanced: 'table', search: '', unknownOnly: false };
+  const view = { group: 'server', mode: 'form', advanced: 'table', search: '', unknownOnly: false, unverifiedOnly: false };
   const form = createFormView({ dom, editor, catalog, view, onChanged, onCategory(group) {
     view.group = group;
     view.search = '';
@@ -64,15 +64,19 @@ export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged
     view.mode = 'advanced';
     view.advanced = 'table';
     view.unknownOnly = true;
+    view.unverifiedOnly = false;
     view.search = '';
     $('search').value = '';
     render();
     $('tab-advanced').focus({ preventScroll: true });
     $('view-advanced').scrollIntoView({ block: 'start' });
   });
-  $('unknown-only').addEventListener('change', () => {
-    view.unknownOnly = $('unknown-only').checked;
-    parameters.render();
-  });
+  for (const [id, key, other] of [['unknown-only', 'unknownOnly', 'unverifiedOnly'], ['unverified-only', 'unverifiedOnly', 'unknownOnly']]) {
+    $(id).addEventListener('change', () => {
+      view[key] = $(id).checked;
+      if (view[key]) view[other] = false;
+      parameters.render();
+    });
+  }
   return { render };
 }

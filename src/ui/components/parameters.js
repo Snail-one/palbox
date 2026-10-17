@@ -12,12 +12,15 @@ export function createParameterView({ dom, editor, catalog, view, onChanged }) {
     empty($('parameter-rows'));
     const unknownCount = editor.entries.filter(isUnknown).length;
     const counts = catalog.summarize(editor.entries);
-    const entries = editor.entries.filter(e => matches(e) && (!view.unknownOnly || isUnknown(e)));
+    const entries = editor.entries.filter(e => matches(e) && (!view.unknownOnly || isUnknown(e)) && (!view.unverifiedOnly || catalog.isCommunity(e)));
     $('unknown-only').checked = view.unknownOnly;
+    $('unverified-only').checked = view.unverifiedOnly;
     $('table-count').textContent = `${counts.official} 项官方说明 · ${counts.community} 项行为未完全验证 · ${unknownCount} 项未识别 · 当前显示 ${entries.length} 项`;
     $('table-empty').hidden = entries.length > 0;
     $('table-empty').textContent = view.unknownOnly
       ? (unknownCount === 0 ? '当前配置没有未识别参数。' : '没有匹配的未识别参数，试试其他关键词。')
+      : view.unverifiedOnly
+      ? (counts.community === 0 ? '当前配置没有未验证参数。' : '没有匹配的未验证参数，试试其他关键词。')
       : '没有匹配的参数。';
     for (const entry of entries) {
       const row = el('tr', isModified(entry.key) ? 'modified' : '');
