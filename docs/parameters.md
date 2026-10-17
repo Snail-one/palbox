@@ -34,6 +34,17 @@
 - BanListURL 中文名称为封禁名单来源地址；官方地址是样本默认值，不将此参数限制为只能使用官方来源。
 - 此处说明来自文档、社区解释及用户补充，未通过实际游戏服务器逐项验证。
 
+本次官方清单核对：用户贴出的配置说明共 96 项，包含当前默认模板中的 95 项，以及本版本不可用的旧参数 AllowConnectPlatform。默认模板中另有 4 项由官方 PvP 文档明确说明：bEnablePlayerToPlayerDamage、bEnableAimAssistPad、bEnableDefenseOtherGuildPlayer、bCanPickupOtherGuildDeathPenaltyDrop。因此当前 122 项模板的统计仍为 99 项官方说明、23 项社区解释。
+
+AllowConnectPlatform 的元数据已收录为官方说明，提示当前版本不可用并建议使用 CrossplayPlatforms；导入旧文件时可以识别，不会自动加入新配置或重写为新参数。
+
+备份说明已补充 backup 目录及官方列出的四个备份档位；每公会据点数和每据点帕鲁数补充了上限与增加处理负载的说明。
+
+官方片段 DenyTechnologyList=("PALBOX", "RepairBench")) 单独作为字段示例时末尾多一个右括号；编辑器中的字段原始值应为 ("PALBOX","RepairBench")。放入完整 OptionSettings=(...) 时再由外层提供闭合括号。
+
+官方总注释提到存在预留、废弃参数，不代表所有没有用途说明的字段都已废弃；仅对 AllowConnectPlatform 采用其明确的“当前版本不可用”说明。AutoResetGuildTimeNoOnlinePlayers 和语音距离单位继续待核实；bInvisibleOtherGuildBaseCampAreaFX 的 True/False 方向根据官方 PvP 页面补充。
+
+核对清单保存于 tests/fixtures/official-parameters.json，独立于运行时元数据，供完整覆盖检查使用。
 以下按原配置顺序列出。
 
 | 参数 | 状态 | 中文名称与用途 | 来源 |
@@ -77,12 +88,12 @@
 | `PhysicsActiveDropItemMaxNum` | 官方明确说明 | 启用物理模拟的掉落物数量上限：限制可参与物理模拟的掉落物数量。默认特殊值 -1 的含义及其与 DropItemMaxNum 的关系尚未核实。 | [官方配置](https://docs.palworldgame.com/settings-and-operation/configuration/) |
 | `DropItemMaxNum_UNKO` | 行为未完全验证 | 排泄物掉落数量上限：社区解释为 UNKO 机制的掉落物上限，样本默认 100；与普通掉落物上限分开，实际作用及机制是否启用尚未验证。 | [社区参考](https://github.com/jammsen/docker-palworld-dedicated-server/blob/develop/docs/ENV_VARS.md) |
 | `BaseCampMaxNum` | 官方明确说明 | 全服据点上限：整个服务器允许存在的据点数量。 | [官方配置](https://docs.palworldgame.com/settings-and-operation/configuration/) |
-| `BaseCampWorkerMaxNum` | 官方明确说明 | 每据点工作帕鲁：每个据点允许的工作帕鲁数量。 | [官方配置](https://docs.palworldgame.com/settings-and-operation/configuration/) |
+| `BaseCampWorkerMaxNum` | 官方明确说明 | 每据点工作帕鲁：每个据点允许的工作帕鲁数量，官方上限为 50；提高数量会增加服务器处理负载。 | [官方配置](https://docs.palworldgame.com/settings-and-operation/configuration/) |
 | `DropItemAliveMaxHours` | 行为未完全验证 | 掉落物保留时间：社区按小时解释掉落物保留时长；1 通常理解为约一小时，其他清理规则可能使掉落物提前消失。 | [社区参考](https://github.com/jammsen/docker-palworld-dedicated-server/blob/develop/docs/ENV_VARS.md) |
 | `bAutoResetGuildNoOnlinePlayers` | 官方明确说明 | 无人登录时自动清理公会基地：公会所有成员均未登录达到设定阈值后，自动删除公会建筑和据点帕鲁；阈值由 AutoResetGuildTimeNoOnlinePlayers 设置。 | [官方配置](https://docs.palworldgame.com/settings-and-operation/configuration/) |
 | `AutoResetGuildTimeNoOnlinePlayers` | 官方明确说明 | 公会无人登录清理阈值：公会所有成员均未登录达到此时长后才触发清理；仅开启 bAutoResetGuildNoOnlinePlayers 时生效。官方未注明时间单位，单位尚未核实。 | [官方配置](https://docs.palworldgame.com/settings-and-operation/configuration/) |
 | `GuildPlayerMaxNum` | 官方明确说明 | 公会人数上限：每个公会允许的玩家数量。 | [官方配置](https://docs.palworldgame.com/settings-and-operation/configuration/) |
-| `BaseCampMaxNumInGuild` | 官方明确说明 | 每公会据点上限：提高数量会增加服务器负载。 | [官方配置](https://docs.palworldgame.com/settings-and-operation/configuration/) |
+| `BaseCampMaxNumInGuild` | 官方明确说明 | 每公会据点上限：每个公会允许拥有的据点数量，官方默认 4、最多 10；提高数量会增加服务器处理负载。 | [官方配置](https://docs.palworldgame.com/settings-and-operation/configuration/) |
 | `PalEggDefaultHatchingTime` | 官方明确说明 | 巨大蛋孵化时间：巨大蛋的基准孵化时间；其他蛋也受影响。 | [官方配置](https://docs.palworldgame.com/settings-and-operation/configuration/) |
 | `WorkSpeedRate` | 行为未完全验证 | 工作速度倍率：社区解释为工作速度的倍率，1 为标准、5 为五倍；具体影响的工作类型及当前版本效果尚未验证。 | [社区参考](https://github.com/jammsen/docker-palworld-dedicated-server/blob/develop/docs/ENV_VARS.md) |
 | `AutoSaveSpan` | 行为未完全验证 | 自动保存间隔：社区工具以秒表示存档间隔，样本默认 30 通常理解为每 30 秒保存；专用服务器当前版本的读取与计时行为尚未完全验证。 | [社区参考](https://github.com/CubeCoders/AMPTemplates/blob/main/palworldconfig.json) |
@@ -120,7 +131,7 @@
 | `bShowPlayerList` | 官方明确说明 | 显示玩家列表：在游戏 ESC 菜单中显示玩家列表。 | [官方配置](https://docs.palworldgame.com/settings-and-operation/configuration/) |
 | `ChatPostLimitPerMinute` | 官方明确说明 | 聊天频率上限：每分钟允许发送的最大消息数量。 | [官方配置](https://docs.palworldgame.com/settings-and-operation/configuration/) |
 | `CrossplayPlatforms` | 官方明确说明 | 允许连接的平台：选择允许加入服务器的平台。 | [官方配置](https://docs.palworldgame.com/settings-and-operation/configuration/) |
-| `bIsUseBackupSaveData` | 官方明确说明 | 自动备份世界：开启世界备份，会增加磁盘读写。 | [官方配置](https://docs.palworldgame.com/settings-and-operation/configuration/) |
+| `bIsUseBackupSaveData` | 官方明确说明 | 自动备份世界：开启后在存档目录创建 backup 目录，会增加磁盘负载。官方列出的备份档位：每 30 秒 5 份、每 10 分钟 6 份、每 1 小时 12 份、每 1 天 7 份。 | [官方配置](https://docs.palworldgame.com/settings-and-operation/configuration/) |
 | `LogFormatType` | 官方明确说明 | 日志格式：服务器日志的输出格式。 | [官方配置](https://docs.palworldgame.com/settings-and-operation/configuration/) |
 | `bIsShowJoinLeftMessage` | 官方明确说明 | 显示进出消息：玩家加入或离开时显示游戏内消息。 | [官方配置](https://docs.palworldgame.com/settings-and-operation/configuration/) |
 | `SupplyDropSpan` | 官方明确说明 | 陨石与补给间隔：陨石与补给事件的发生间隔。 | [官方配置](https://docs.palworldgame.com/settings-and-operation/configuration/) |
@@ -162,3 +173,9 @@
 | `bAllowEnemyCampSpawnNearBaseCamp` | 官方明确说明 | 允许据点附近敌营：允许在据点附近生成敌方营地。 | [官方配置](https://docs.palworldgame.com/settings-and-operation/configuration/) |
 
 [38 项建议核对记录](parameter-review.md)保留其核对依据，状态已按当前规则同步。
+
+旧配置额外识别：
+
+| 参数 | 状态 | 说明 |
+| --- | --- | --- |
+| `AllowConnectPlatform` | 官方说明 · 当前版本不可用 | 官方注明当前版本不可用，请使用 CrossplayPlatforms 设置允许连接的平台。旧配置中的原值会保留，不自动转换。 |

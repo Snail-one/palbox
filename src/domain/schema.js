@@ -31,8 +31,9 @@ text('server', 'ServerPassword', '加入密码', '玩家连接服务器时使用
 text('server', 'AdminPassword', '管理员密码', '获取服务器管理权限时使用的密码。', { secret: true });
 text('server', 'PublicIP', '公开 IP', '社区服务器对外公布的 IP，可留空。');
 add('server', 'CrossplayPlatforms', '允许连接的平台', 'platforms', '选择允许加入服务器的平台。', { wide: true });
+add('server', 'AllowConnectPlatform', '旧版连接平台限制', 'raw', '官方注明当前版本不可用，请使用 CrossplayPlatforms 设置允许连接的平台。旧配置中的原值会保留，不自动转换。', { deprecated: true });
 bool('server', 'bAllowClientMod', '允许客户端 Mod', '允许启用 Mod 的玩家加入。');
-bool('server', 'bIsUseBackupSaveData', '自动备份世界', '开启世界备份，会增加磁盘读写。');
+bool('server', 'bIsUseBackupSaveData', '自动备份世界', '开启后在存档目录创建 backup 目录，会增加磁盘负载。官方列出的备份档位：每 30 秒 5 份、每 10 分钟 6 份、每 1 小时 12 份、每 1 天 7 份。');
 bool('server', 'bShowPlayerList', '显示玩家列表', '在游戏 ESC 菜单中显示玩家列表。');
 bool('server', 'bIsShowJoinLeftMessage', '显示进出消息', '玩家加入或离开时显示游戏内消息。');
 bool('server', 'RCONEnabled', '启用 RCON', '允许通过 RCON 管理服务器。');
@@ -85,8 +86,8 @@ bool('world', 'bEnableFastTravel', '允许快速旅行', '启用世界中的快�
 bool('world', 'bEnableFastTravelOnlyBaseCamp', '仅据点间快速旅行', '将快速旅行限制为据点之间。');
 bool('world', 'bEnableInvaderEnemy', '启用据点袭击', '允许袭击敌人出现。');
 num('base', 'BaseCampMaxNum', '全服据点上限', '整个服务器允许存在的据点数量。', { integer: true, min: 0 });
-num('base', 'BaseCampMaxNumInGuild', '每公会据点上限', '提高数量会增加服务器负载。', { integer: true, min: 1, max: 10 });
-num('base', 'BaseCampWorkerMaxNum', '每据点工作帕鲁', '每个据点允许的工作帕鲁数量。', { integer: true, min: 1, max: 50 });
+num('base', 'BaseCampMaxNumInGuild', '每公会据点上限', '每个公会允许拥有的据点数量，官方默认 4、最多 10；提高数量会增加服务器处理负载。', { integer: true, min: 1, max: 10 });
+num('base', 'BaseCampWorkerMaxNum', '每据点工作帕鲁', '每个据点允许的工作帕鲁数量，官方上限为 50；提高数量会增加服务器处理负载。', { integer: true, min: 1, max: 50 });
 num('base', 'GuildPlayerMaxNum', '公会人数上限', '每个公会允许的玩家数量。', { integer: true, min: 1, unit: '人' });
 num('base', 'MaxBuildingLimitNum', '建筑数量上限', '官方文档定义为每位玩家的建筑数量上限，0 表示不限制；与 MaxBuildingLimitNumPerPlayer 的关系尚未核实。', { integer: true, min: 0 });
 bool('base', 'bAutoResetGuildNoOnlinePlayers', '无人登录时自动清理公会基地', '公会所有成员均未登录达到设定阈值后，自动删除公会建筑和据点帕鲁；阈值由 AutoResetGuildTimeNoOnlinePlayers 设置。');
