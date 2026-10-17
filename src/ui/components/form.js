@@ -1,5 +1,6 @@
 import * as config from '../../domain/config.js';
 import { createFieldFeedback } from './field-feedback.js';
+import { createParameterEvidence } from './parameter-evidence.js';
 
 export function createFormView({ dom, editor, catalog, view, onCategory, onChanged }) {
   const { $, el, icon, empty, document } = dom;
@@ -32,7 +33,7 @@ export function createFormView({ dom, editor, catalog, view, onCategory, onChang
     empty($('fields-grid'));
     const group = catalog.groups.find(g => g.id === view.group);
     $('group-icon').replaceChildren(icon(view.search ? 'search' : group.icon));
-    $('group-title').textContent = view.search ? '搜索结果' : `${group.name}设置`;
+    $('group-title').textContent = view.search ? '搜索结果' : group.title || `${group.name}设置`;
     $('group-description').textContent = view.search ? `匹配「${view.search}」的可视化参数` : group.subtitle;
     const entries = Object.keys(catalog.fields).map(key => editor.entries.find(e => e.key === key)).filter(Boolean)
       .filter(e => matches(e) && (view.search || catalog.fields[e.key].group === view.group));
@@ -44,15 +45,16 @@ export function createFormView({ dom, editor, catalog, view, onCategory, onChang
       const box = el('div', `field${f.wide ? ' wide' : ''}${f.type === 'boolean' ? ' boolean-field' : ''}`);
       const label = labelWithDot(f);
       const keyLabel = el('div', 'field-key', entry.key);
-      const description = el('p', 'field-description', f.description);
-      description.id = `desc-${entry.key}`;
+      const descriptionId = `desc-${entry.key}`;
+      const heading = el('div', 'parameter-heading');
+      heading.append(label, createParameterEvidence(dom, f, descriptionId));
       const errorNode = el('p', 'field-error', editor.error(entry.key));
       errorNode.id = `error-${entry.key}`;
       errorNode.setAttribute('aria-live', 'polite');
       let control;
       if (f.type === 'boolean') {
         const info = el('div', 'boolean-info');
-        info.append(label, keyLabel, description, errorNode);
+        info.append(keyLabel, heading, errorNode);
         control = el('button', 'toggle');
         control.setAttribute('role', 'switch');
         control.setAttribute('aria-checked', String(value === 'True'));
@@ -64,9 +66,7 @@ export function createFormView({ dom, editor, catalog, view, onCategory, onChang
         });
         box.append(info, control);
       } else {
-        box.append(el('div', 'field-top'));
-        box.firstChild.append(label);
-        box.append(keyLabel);
+        box.append(keyLabel, heading);
         const wrap = el('div', 'input-wrap');
         if (f.type === 'select') {
           control = el('select', 'field-input field-select');
@@ -121,10 +121,10 @@ export function createFormView({ dom, editor, catalog, view, onCategory, onChang
             wrap.append(reveal);
           }
         }
-        box.append(wrap, description, errorNode);
+        box.append(wrap, errorNode);
       }
       control.id = `field-${entry.key}`;
-      control.setAttribute('aria-describedby', `${description.id} ${errorNode.id}`);
+      control.setAttribute('aria-describedby', `${descriptionId} ${errorNode.id}`);
       control.setAttribute('aria-invalid', String(Boolean(editor.error(entry.key))));
       $('fields-grid').append(box);
     }

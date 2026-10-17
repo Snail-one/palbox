@@ -1,4 +1,5 @@
 import { createFieldFeedback } from './field-feedback.js';
+import { createParameterEvidence } from './parameter-evidence.js';
 
 export function createParameterView({ dom, editor, catalog, view, onChanged }) {
   const { $, el, icon, empty } = dom;
@@ -10,9 +11,10 @@ export function createParameterView({ dom, editor, catalog, view, onChanged }) {
   function renderTable() {
     empty($('parameter-rows'));
     const unknownCount = editor.entries.filter(isUnknown).length;
+    const counts = catalog.summarize(editor.entries);
     const entries = editor.entries.filter(e => matches(e) && (!view.unknownOnly || isUnknown(e)));
     $('unknown-only').checked = view.unknownOnly;
-    $('table-count').textContent = `共 ${unknownCount} 项未识别参数 · 当前显示 ${entries.length} 项`;
+    $('table-count').textContent = `${counts.official} 项官方说明 · ${counts.community} 项行为未完全验证 · ${unknownCount} 项未识别 · 当前显示 ${entries.length} 项`;
     $('table-empty').hidden = entries.length > 0;
     $('table-empty').textContent = view.unknownOnly
       ? (unknownCount === 0 ? '当前配置没有未识别参数。' : '没有匹配的未识别参数，试试其他关键词。')
@@ -20,9 +22,12 @@ export function createParameterView({ dom, editor, catalog, view, onChanged }) {
     for (const entry of entries) {
       const row = el('tr', isModified(entry.key) ? 'modified' : '');
       const name = el('td', '', entry.key);
-      if (catalog.fields[entry.key]) name.append(el('small', '', catalog.fields[entry.key].label));
-      else if (isUnknown(entry)) name.append(el('small', 'unknown-tag', '未识别参数'));
-      else name.append(el('small', '', '模板参数 · 暂无中文控件'));
+      const field = catalog.fields[entry.key];
+      if (field) {
+        const heading = el('div', 'parameter-heading');
+        heading.append(el('span', 'parameter-label', field.label), createParameterEvidence(dom, field, `raw-desc-${entry.key}`));
+        name.append(heading);
+      } else name.append(el('small', 'unknown-tag', '未识别参数 · 用途尚未核实'));
       const cell = el('td');
       const wrap = el('div', 'input-wrap');
       const secret = catalog.fields[entry.key]?.secret;

@@ -7,7 +7,9 @@ export function createSummary({ dom, editor, workspace, catalog, isDirty }) {
     render() {
       const profile = workspace.active;
       const unknownCount = editor.entries.filter(catalog.isUnknown).length;
+      const counts = catalog.summarize(editor.entries);
       $('parameter-count').textContent = editor.entries.length;
+      $('recognition-summary').textContent = `${counts.official} 项官方 · ${counts.community} 项待验证`;
       $('unknown-count').textContent = unknownCount;
       $('unknown-summary').setAttribute('aria-label', `查看和编辑 ${unknownCount} 项未识别参数`);
       $('player-count').textContent = editor.raw('ServerPlayerMaxNum') ?? '—';

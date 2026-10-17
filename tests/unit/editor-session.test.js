@@ -8,10 +8,80 @@ import template from '../../src/domain/template.js';
 const catalog = createCatalog();
 const session = (source = template) => new EditorSession(source, { validate: catalog.validate });
 
-test('模板字段与暂无控件字段均已识别，陌生字段才计为未知', () => {
-  assert.equal(parse(template).entries.filter(catalog.isUnknown).length, 0);
-  for (const key of ['Difficulty', 'DenyTechnologyList', 'ServerName']) assert.equal(catalog.isUnknown({ key }), false);
+test('官方说明、社区解释与完全未识别分开统计，社区说明不冒充官方', () => {
+  const community = [
+    'Difficulty', 'BuildObjectHpRate', 'bEnableFriendlyFire', 'bActiveUNKO', 'bEnableAimAssistKeyboard',
+    'DropItemMaxNum', 'DropItemMaxNum_UNKO', 'DropItemAliveMaxHours', 'WorkSpeedRate', 'AutoSaveSpan',
+    'bIsMultiplay', 'bEnableNonLoginPenalty', 'CoopPlayerMaxNum', 'Region', 'bUseAuth', 'BanListURL',
+    'EnablePredatorBossPal', 'MaxBuildingLimitNumPerPlayer', 'PlayerDataPalStorageUpdateCheckTickInterval',
+    'AutoTransferMasterCheckIntervalSeconds', 'AutoTransferMasterThresholdDays', 'MaxGuildsPerFrame', 'BuildingNameDisplayCacheTTLSeconds'
+  ];
+  assert.deepEqual(parse(template).entries.filter(catalog.isCommunity).map(e => e.key), community);
+  assert.deepEqual(catalog.summarize(parse(template).entries), { official: 99, community: 23, unknown: 0 });
+  for (const key of ['DenyTechnologyList', 'ServerName', 'bEnableAimAssistPad', 'RespawnPenaltyTimeScale']) assert.equal(catalog.isUnknown({ key }), false);
   for (const key of ['FutureField', '__proto__', 'constructor']) assert.equal(catalog.isUnknown({ key }), true);
+  for (const field of Object.values(catalog.fields)) {
+    assert.ok(field.label && field.description);
+    if (field.verification.status === 'verified') assert.match(field.verification.source, /^https:\/\/docs\.palworldgame\.com\//);
+    else {
+      assert.equal(field.verification.status, 'community');
+      assert.ok(field.verification.source === 'user-provided' || field.verification.source.startsWith('https://github.com/'));
+    }
+    assert.equal(field.verification.checkedAt, '2026-10-17');
+  }
+});
+
+test('社区解释必须同时有模板字段、中文用途和来源，不能由模板名称自动识别', () => {
+  const field = catalog.fields.AutoSaveSpan;
+  const custom = createCatalog({ source: 'OptionSettings=(AutoSaveSpan=30,TemplateOnly=1)', metadata: {
+    AutoSaveSpan: field,
+    NotInTemplate: { ...field, key: 'NotInTemplate' },
+    TemplateOnly: { ...field, description: '' }
+  }});
+  assert.equal(custom.isCommunity({ key: 'AutoSaveSpan' }), true);
+  assert.equal(custom.isUnknown({ key: 'AutoSaveSpan' }), false);
+  assert.equal(custom.isUnknown({ key: 'NotInTemplate' }), true);
+  assert.equal(custom.isUnknown({ key: 'TemplateOnly' }), true);
+  assert.equal(Object.values(catalog.fields).filter(f => f.group === 'advanced').length, 11);
+  assert.equal(catalog.fields.PlayerDataPalStorageUpdateCheckTickInterval.unit, '秒*');
+});
+
+test('仅列入模板、只有标签或没有核实依据的元数据均不能变为已识别', () => {
+  const verified = catalog.fields.ServerName;
+  const custom = createCatalog({
+    source: 'OptionSettings=(TemplateOnly=1,LabelOnly=2,NoSource=3,NoMeaning=4,Verified="ok")',
+    metadata: {
+      LabelOnly: { label: '仅有名称' },
+      NoSource: { ...verified, verification: { status: 'verified' } },
+      NoMeaning: { ...verified, description: '' },
+      Verified: verified
+    },
+    validateField: () => 'verified validation'
+  });
+  for (const key of ['TemplateOnly', 'LabelOnly', 'NoSource', 'NoMeaning']) {
+    assert.equal(custom.isUnknown({ key }), true);
+    assert.equal(custom.fields[key], undefined);
+    assert.equal(custom.validate(key, 'any raw value'), null);
+  }
+  assert.equal(custom.isUnknown({ key: 'Verified' }), false);
+  assert.equal(custom.validate('Verified', '"ok"'), 'verified validation');
+});
+
+test('社区解释不改变原值、注释或顺序，编辑复制也不会补入默认值', () => {
+  const source = '; keep\r\n[/Script/Pal.PalGameWorldSettings]\r\nOptionSettings=(Difficulty=None,ServerName="世界",AutoSaveSpan=30.000000,bIsMultiplay=False)\r\n';
+  const editor = session(source);
+  assert.equal(editor.entries.filter(catalog.isCommunity).length, 3);
+  assert.equal(editor.entries.filter(catalog.isUnknown).length, 0);
+  assert.equal(editor.toIni(), source);
+  editor.update('AutoSaveSpan', '45.000000');
+  assert.equal(editor.toIni(), source.replace('AutoSaveSpan=30.000000', 'AutoSaveSpan=45.000000'));
+});
+
+test('已核实字段可按中文用途搜索，并使用正确的建筑限制说明', () => {
+  assert.equal(catalog.matches({ key: 'MaxBuildingLimitNum' }, '每位玩家'), true);
+  assert.match(catalog.fields.MaxBuildingLimitNum.description, /每位玩家/);
+  assert.equal(catalog.fields.AutoResetGuildTimeNoOnlinePlayers.unit, undefined);
+  assert.equal(catalog.isCommunity({ key: 'MaxBuildingLimitNumPerPlayer' }), true);
 });
 
 test('编辑状态可脱离 DOM 工作，并保留注释、顺序和其他参数', () => {
