@@ -212,7 +212,7 @@ h1 {
 }
 
 .profile-overview {
-  background: linear-gradient(105deg,#fff 65%,#fff7ed);
+  background: #fff;
   border-color: #e9ded2;
   box-shadow: 0 3px 14px #68401204;
 }
@@ -295,7 +295,7 @@ h1 {
 }
 
 .category-nav {
-  background: #fffbf6;
+  background: #f6f6f6;
   border-bottom-color: #f0e4d5;
 }
 
@@ -338,12 +338,12 @@ h1 {
 }
 
 .editor-footer {
-  background: #fffcf7;
+  background: #fafafa;
   border-top-color: #eee1d3;
 }
 
 .parameter-table thead {
-  background: #fbf5ec;
+  background: #f5f5f5;
 }
 
 .parameter-table td {
@@ -351,7 +351,7 @@ h1 {
 }
 
 .parameter-table tr:hover {
-  background: #fffcf7;
+  background: #fafafa;
 }
 
 .toast {
@@ -434,11 +434,17 @@ h1 {
   cursor: pointer;
 }
 
-.unknown-filter input {
-  width: 14px;
-  height: 14px;
-  accent-color: var(--accent);
-  margin: 0;
+.unknown-filter input:checked + .toggle {
+  background: var(--accent);
+}
+
+.unknown-filter input:checked + .toggle:after {
+  transform: translateX(14px);
+}
+
+.unknown-filter input:focus-visible + .toggle {
+  outline: 3px solid #e68b50;
+  outline-offset: 3px;
 }
 
 #table-count {
