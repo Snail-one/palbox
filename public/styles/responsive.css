@@ -377,6 +377,7 @@
 
   .editor-footer {
     padding: 16px 18px;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
   }
 
   .parameter-table td,
@@ -644,6 +645,11 @@
     align-items: stretch;
     gap: 13px;
     padding: 15px 16px;
+    padding-bottom: calc(15px + env(safe-area-inset-bottom));
+  }
+
+  .toast {
+    bottom: calc(120px + env(safe-area-inset-bottom));
   }
 
   .editor-footer>span {

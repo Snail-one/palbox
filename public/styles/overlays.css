@@ -19,7 +19,7 @@
 .toast {
   position: fixed;
   z-index: 100;
-  bottom: 28px;
+  bottom: calc(86px + env(safe-area-inset-bottom));
   left: calc(50% + 123px);
   transform: translateX(-50%);
   max-width: min(600px,85vw);

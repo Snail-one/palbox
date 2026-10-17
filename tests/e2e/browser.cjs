@@ -40,6 +40,19 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
   };
   const save = () => page.locator('#header-save-button').click();
   const category = name => page.locator('#category-nav').getByRole('button', { name, exact: true }).click();
+  const scrollToFraction = (target, fraction) => target.evaluate(value => window.scrollTo(0, (document.documentElement.scrollHeight - innerHeight) * value), fraction);
+  const checkPinnedActions = async target => {
+    for (const fraction of [0, 0.5, 1]) {
+      await scrollToFraction(target, fraction);
+      assert.equal(await target.evaluate(() => ['save-button', 'copy-button'].every(id => {
+        const button = document.getElementById(id);
+        const box = button.getBoundingClientRect();
+        const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+        return box.top >= 0 && box.bottom <= innerHeight && box.left >= 0 && box.right <= innerWidth && button.contains(hit);
+      })), true);
+    }
+    await scrollToFraction(target, 0.5);
+  };
   try {
     await page.goto(url);
     await page.locator('#field-ServerName').waitFor();
@@ -49,6 +62,9 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
     assert.equal(await page.locator('#field-AdminPassword').getAttribute('type'), 'password');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({ path: path.join(output, 'desktop.png'), fullPage: false });
+    await checkPinnedActions(page);
+    await page.screenshot({ path: path.join(output, 'desktop-scrolled.png'), fullPage: false });
+    await scrollToFraction(page, 0);
     ok('桌面启动、完整模板、密码默认遮挡、无横向溢出');
 
     await page.locator('#field-ServerName').fill('朋友们的世界, "一号"');
@@ -58,7 +74,8 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
     assert.equal(await page.locator('#field-AdminPassword').getAttribute('type'), 'text');
     await page.getByRole('button', { name: '隐藏管理员密码', exact: true }).click();
     assert.equal(await text('#change-count'), '3');
-    await save();
+    await scrollToFraction(page, 0.5);
+    await page.locator('#save-button').click();
     await page.reload();
     assert.equal(await page.locator('#field-ServerName').inputValue(), '朋友们的世界, "一号"');
     assert.equal(await page.locator('#field-ServerPlayerMaxNum').inputValue(), '16');
@@ -100,11 +117,12 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
       assert.equal(await page.locator(`#field-${key}`).count(), 1);
       const field = page.locator('.field').filter({ has: page.locator(`#field-${key}`) });
       assert.equal(await field.locator('.verification-badge').textContent(), '未验证');
-      assert.equal(await field.locator('.parameter-evidence').getAttribute('open'), null);
       assert.equal(await field.locator('.parameter-details-panel').isVisible(), false);
-      await field.locator('.verification-badge').click();
+      await field.locator('.verification-badge').hover();
       assert.equal(await field.locator('.parameter-details-panel').isVisible(), true);
       await field.locator('.verification-badge').click();
+      await page.mouse.move(0, 0);
+      assert.equal(await field.locator('.parameter-details-panel').isVisible(), false);
       assert.equal(await field.locator('a').count(), 0);
       assert.deepEqual(await field.locator('.field-key, .field-label').allTextContents(), [key, await field.locator('.field-label').textContent()]);
     }
@@ -125,7 +143,7 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
     await page.locator('#search').fill('每位玩家');
     assert.equal(await page.locator('#field-MaxBuildingLimitNum').count(), 1);
     await page.locator('#search').fill('');
-    ok('社区参数使用两行名称与未验证铭牌，点击查看说明，11 项高级设置可编辑保存');
+    ok('社区参数使用两行名称与未验证铭牌，悬浮显示说明，11 项高级设置可编辑保存');
 
     await page.locator('#tab-advanced').click();
     assert.equal(await page.locator('#parameter-rows .official-badge').count(), 99);
@@ -138,10 +156,11 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
     assert.match(await building.textContent(), /每位玩家/);
     assert.equal(await building.locator('.verification-badge').textContent(), '官方说明');
     assert.equal(await building.locator('.parameter-details-panel').isVisible(), false);
-    await building.locator('.verification-badge').click();
+    await building.locator('.verification-badge').hover();
     assert.equal(await building.locator('.parameter-details-panel').isVisible(), true);
     assert.match(await building.locator('.parameter-details-panel').textContent(), /每位玩家/);
-    await building.locator('.verification-badge').click();
+    await page.mouse.move(0, 0);
+    assert.equal(await building.locator('.parameter-details-panel').isVisible(), false);
     await page.locator('#search').fill('DenyTechnologyList');
     await page.getByRole('textbox', { name: 'DenyTechnologyList 的原始值', exact: true }).fill('("PALBOX","RepairBench")');
     await save();
@@ -266,6 +285,10 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
     await mobile.locator('#field-ServerName').waitFor();
     assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await mobile.screenshot({ path: path.join(output, 'mobile.png'), fullPage: false });
+    await checkPinnedActions(mobile);
+    await mobile.screenshot({ path: path.join(output, 'mobile-scrolled.png'), fullPage: false });
+    await mobile.locator('#save-button').click();
+    await scrollToFraction(mobile, 0);
     await mobile.locator('#mobile-menu').click();
     assert.equal(await mobile.locator('#mobile-menu').getAttribute('aria-expanded'), 'true');
     await mobile.locator('#new-profile').click();
