@@ -1,9 +1,12 @@
-'use strict';
-const results = runPalboxTests(PalConfig, PalTemplate, PalSchema, PalStorage);
+import { coreCases } from '../shared/core-cases.js';
+
+const results = coreCases().map(({ name, run }) => {
+  try { run(); return { name, ok: true }; }
+  catch (error) { return { name, ok: false, error: error.message }; }
+});
 for (const result of results) {
   const item = document.createElement('li');
   item.textContent = `${result.ok ? '✓' : '✗'} ${result.name}${result.ok ? '' : '：' + result.error}`;
-  item.style.color = result.ok ? '#525252' : '#bb4e47';
   item.style.marginBlock = '10px';
   document.getElementById('test-results').append(item);
 }

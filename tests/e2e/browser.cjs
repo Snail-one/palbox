@@ -4,12 +4,22 @@ const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const Config = require('../js/config.js');
-const template = require('../js/template.js');
-const url = process.env.PALBOX_BASE_URL || 'http://127.0.0.1:8080';
-const output = process.env.PALBOX_QA_OUTPUT || '/tmp/palbox-qa-results';
+const { once } = require('node:events');
+
+
+let url = process.env.PALBOX_BASE_URL;
+let server;
+const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
 
 (async () => {
+  const Config = await import('../../src/domain/config.js');
+  if (!url) {
+    const { createServer } = await import('../../server/http-server.js');
+    server = createServer();
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    url = `http://127.0.0.1:${server.address().port}`;
+  }
   await fs.mkdir(output, { recursive: true });
   const browser = await chromium.launch({ headless: true });
   const errors = [];
@@ -34,6 +44,7 @@ const output = process.env.PALBOX_QA_OUTPUT || '/tmp/palbox-qa-results';
     await page.goto(url);
     await page.locator('#field-ServerName').waitFor();
     assert.equal(await text('#parameter-count'), '122');
+    assert.equal(await text('#unknown-count'), '0');
     assert.equal(await page.locator('#field-AdminPassword').getAttribute('type'), 'password');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({ path: path.join(output, 'desktop.png'), fullPage: false });
@@ -91,8 +102,17 @@ const output = process.env.PALBOX_QA_OUTPUT || '/tmp/palbox-qa-results';
     await category('玩家');
     assert.equal(await page.locator('#field-ExpRate').inputValue(), '3.000000');
     assert.equal(await text('#parameter-count'), '123');
+    assert.equal(await text('#unknown-count'), '1');
     await save();
     ok('高级参数编辑、嵌套未知字段和源码到表单同步');
+
+    await page.locator('#unknown-summary').click();
+    assert.equal(await page.locator('#unknown-only').isChecked(), true);
+    assert.equal(await page.locator('#parameter-rows tr').count(), 1);
+    assert.equal(await page.locator('#parameter-rows .unknown-tag').count(), 1);
+    await page.locator('#unknown-only').uncheck();
+    assert.equal(await page.locator('#parameter-rows tr').count(), 123);
+    ok('未知字段统计准确，筛选沿用参数原顺序');
 
     await page.locator('#tab-advanced').click();
     await page.locator('#mode-source').click();
@@ -217,6 +237,24 @@ const output = process.env.PALBOX_QA_OUTPUT || '/tmp/palbox-qa-results';
     await importContext.close();
     ok('拖放文件和单独 OptionSettings 粘贴导入，不补入缺失参数');
 
+    const legacySource = '; 保留旧注释\n[/Script/Pal.PalGameWorldSettings]\nOptionSettings=(ServerName="已有服务器",ExpRate=2,LegacyCustom=(A,B))\n';
+    const legacy = { version: 1, activeId: 'existing-id', profiles: [{ id: 'existing-id', name: '已有配置', source: legacySource, updatedAt: '2026-01-01T00:00:00Z' }] };
+    const legacyContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] });
+    await legacyContext.addInitScript(workspace => localStorage.setItem('palbox.workspace.v1', JSON.stringify(workspace)), legacy);
+    const legacyPage = await legacyContext.newPage();
+    legacyPage.on('pageerror', error => errors.push(error.message));
+    await legacyPage.goto(url);
+    await legacyPage.locator('#field-ServerName').waitFor();
+    assert.equal(await legacyPage.locator('#profile-title').textContent(), '已有配置');
+    assert.equal(await legacyPage.locator('#field-ExpRate').count(), 0);
+    assert.equal(await legacyPage.locator('#unknown-count').textContent(), '1');
+    assert.equal(await legacyPage.evaluate(() => localStorage.getItem('palbox.workspace.v1')), JSON.stringify(legacy));
+    await legacyPage.locator('#header-copy-button').click();
+    await legacyPage.waitForFunction(() => document.getElementById('toast').textContent.includes('已复制'));
+    assert.equal(await legacyPage.evaluate(() => navigator.clipboard.readText()), legacySource);
+    await legacyContext.close();
+    ok('已有 v1 工作空间直接恢复，ID、注释、参数顺序和原始数据保持不变');
+
     const failedContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] });
     await failedContext.addInitScript(() => {
       Storage.prototype.setItem = function () { throw new DOMException('Quota exceeded', 'QuotaExceededError'); };
@@ -250,5 +288,12 @@ const output = process.env.PALBOX_QA_OUTPUT || '/tmp/palbox-qa-results';
     assert.deepEqual(errors, []);
     ok('所有场景无未捕获浏览器异常');
     console.log(`\n${count} browser scenarios passed. Artifacts: ${output}`);
-  } finally { await browser.close(); }
-})().catch(error => { console.error(error); process.exitCode = 1; });
+  } finally {
+    await browser.close();
+    if (server?.listening) await new Promise(resolve => server.close(resolve));
+  }
+})().catch(async error => {
+  console.error(error);
+  if (server?.listening) await new Promise(resolve => server.close(resolve));
+  process.exitCode = 1;
+});

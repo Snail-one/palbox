@@ -1,0 +1,37 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 7px;
+  padding: 9px 15px;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: nowrap;
+  font-weight: 550;
+  transition: background .15s,box-shadow .15s;
+}
+
+.button .icon {
+  width: 15px;
+  height: 15px;
+}
+
+.secondary {
+  background: #ffffff;
+  border: 1px solid #e4e4e4;
+}
+
+.primary {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.primary:hover {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.button-arrow {
+  margin-left: 12px;
+}

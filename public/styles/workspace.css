@@ -1,0 +1,137 @@
+.profile-overview {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 21px 23px;
+  position: relative;
+  overflow: hidden;
+}
+
+.profile-overview:before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 25%;
+  height: 50%;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+}
+
+.profile-emblem {
+  width: 47px;
+  height: 47px;
+  border: 1px solid #ebebeb;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.profile-emblem>.icon {
+  width: 23px;
+  height: 23px;
+}
+
+.profile-info {
+  min-width: 0;
+}
+
+.profile-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.profile-title-row h2 {
+  font-size: 16px;
+  font-weight: 650;
+  max-width: 38vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag {
+  font-size: 9px;
+  border: 1px solid #ececec;
+  line-height: 1.5;
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.profile-details {
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  margin-top: 6px;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.profile-details>span:first-child {
+  max-width: 40vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.detail-separator {
+  margin: 0 4px;
+}
+
+.profile-tools {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding-left: 5px;
+}
+
+.summary-grid {
+  display: grid;
+  gap: 16px;
+  margin: 19px 0 28px;
+}
+
+.summary-card {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 19px 19px 15px;
+  position: relative;
+  flex-wrap: wrap;
+}
+
+.summary-icon {
+  width: 37px;
+  height: 37px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.summary-card strong {
+  letter-spacing: -.5px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-unit {
+  font-size: 10px;
+  margin-left: 6px;
+}
+
+.summary-caption {
+  width: 100%;
+  padding-left: 51px;
+  margin-top: -6px;
+}

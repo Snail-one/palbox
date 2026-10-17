@@ -1,8 +1,7 @@
-'use strict';
-const { test } = require('node:test');
-const assert = require('node:assert/strict');
-const { once } = require('node:events');
-const { createServer } = require('../server.cjs');
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import { createServer } from '../../server/http-server.js';
 
 test('Node.js 静态服务', async t => {
   const server = createServer();
@@ -20,7 +19,7 @@ test('Node.js 静态服务', async t => {
     }
   });
   await t.test('样式、脚本、图标和浏览器测试页面可访问', async () => {
-    for (const route of ['/styles.css', '/js/config.js', '/js/template.js', '/js/schema.js', '/js/storage.js', '/js/app.js', '/assets/favicon.svg', '/tests/index.html', '/tests/suite.js', '/tests/runner.js']) {
+    for (const route of ['/styles/index.css', '/src/domain/config.js', '/src/domain/template.js', '/src/domain/schema.js', '/src/services/storage.js', '/src/main.js', '/assets/favicon.svg', '/tests/index.html', '/tests/shared/core-cases.js', '/tests/browser/runner.js']) {
       const response = await fetch(base + route);
       assert.equal(response.status, 200, route);
       assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
@@ -28,17 +27,17 @@ test('Node.js 静态服务', async t => {
     }
   });
   await t.test('HEAD 返回正确长度且没有响应正文', async () => {
-    const get = await fetch(base + '/js/config.js');
-    const head = await fetch(base + '/js/config.js', { method: 'HEAD' });
+    const get = await fetch(base + '/src/domain/config.js');
+    const head = await fetch(base + '/src/domain/config.js', { method: 'HEAD' });
     assert.equal(head.status, 200);
     assert.equal(head.headers.get('content-length'), get.headers.get('content-length'));
     assert.equal(await head.text(), '');
   });
   await t.test('查询参数不影响静态资源加载', async () => {
-    assert.equal((await fetch(base + '/styles.css?v=1')).status, 200);
+    assert.equal((await fetch(base + '/styles/index.css?v=1')).status, 200);
   });
   await t.test('工作区元数据、源码和不存在的文件不可访问', async () => {
-    for (const route of ['/.git/config', '/.aws/credentials', '/.codex/config.toml', '/server.cjs', '/package.json', '/README.md', '/tests/browser.cjs', '/missing', '/js/%2e%2e%2f.git%2fconfig']) {
+    for (const route of ['/.git/config', '/.aws/credentials', '/.codex/config.toml', '/server/index.js', '/server/http-server.js', '/tests/unit/config.test.js', '/tests/integration/server.test.js', '/package.json', '/README.md', '/tests/browser.cjs', '/missing', '/js/%2e%2e%2f.git%2fconfig']) {
       assert.equal((await fetch(base + route)).status, 404, route);
     }
   });

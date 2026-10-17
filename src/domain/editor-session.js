@@ -1,0 +1,88 @@
+import { parse, serialize, validateRaw } from './config.js';
+
+/** Config editing state. No DOM, browser storage or UI navigation dependencies. */
+export class EditorSession {
+  #validate;
+  #doc;
+  #baseline;
+  #changes = new Map();
+  #errors = new Map();
+  #drafts = new Map();
+  #sourceDraft = null;
+
+  constructor(source, { validate = () => null } = {}) {
+    this.#validate = validate;
+    this.reset(source);
+  }
+
+  get entries() { return this.#doc.entries; }
+  get sourceDraft() { return this.#sourceDraft; }
+  get errorCount() { return this.#errors.size; }
+  get dirty() { return this.#sourceDraft !== null || this.errorCount > 0 || this.source() !== this.#baseline.source; }
+  get blockReason() {
+    if (this.#sourceDraft !== null) return '请先应用源码修改，或还原源码后再操作。';
+    return this.errorCount ? '请先修正标记的输入错误。' : null;
+  }
+
+  reset(source) {
+    const doc = parse(source);
+    this.#doc = doc;
+    this.#baseline = doc;
+    this.#changes.clear();
+    this.#errors.clear();
+    this.#drafts.clear();
+    this.#sourceDraft = null;
+  }
+
+  raw(key) { return this.#changes.has(key) ? this.#changes.get(key) : this.entries.find(entry => entry.key === key)?.raw; }
+  error(key) { return this.#errors.get(key) || ''; }
+  draft(key) { return this.#drafts.get(key); }
+  source() { return serialize(this.#doc, this.#changes); }
+  toIni() { return serialize(this.#doc, this.#changes, { download: true }); }
+  isModified(key) { return this.#baseline.entries.find(entry => entry.key === key)?.raw !== this.raw(key); }
+
+  changedKeys() {
+    const before = new Map(this.#baseline.entries.map(entry => [entry.key, entry.raw]));
+    const after = new Map(this.entries.map(entry => [entry.key, this.raw(entry.key)]));
+    return [...new Set([...before.keys(), ...after.keys()])].filter(key => before.get(key) !== after.get(key));
+  }
+
+  update(key, raw, draft = raw) {
+    if (!this.entries.some(entry => entry.key === key)) throw new Error(`参数 ${key} 不存在。`);
+    let error = null;
+    try { validateRaw(raw); error = this.#validate(key, raw); }
+    catch (caught) { error = caught.message; }
+    if (error) {
+      this.#errors.set(key, error);
+      this.#drafts.set(key, draft);
+    } else {
+      this.#errors.delete(key);
+      this.#drafts.delete(key);
+      if (raw === this.entries.find(entry => entry.key === key).raw) this.#changes.delete(key);
+      else this.#changes.set(key, raw);
+    }
+    return error;
+  }
+
+  reject(key, message, draft) {
+    this.#errors.set(key, message);
+    this.#drafts.set(key, draft);
+  }
+
+  setSourceDraft(text) { this.#sourceDraft = text === this.source() ? null : text; }
+  discardSourceDraft() { this.#sourceDraft = null; }
+
+  applySource(text) {
+    const doc = parse(text);
+    for (const entry of doc.entries) {
+      if (this.raw(entry.key) === entry.raw) continue;
+      const error = this.#validate(entry.key, entry.raw);
+      if (error) throw new Error(`${entry.key}：${error}`);
+    }
+    this.#doc = doc;
+    this.#changes.clear();
+    this.#errors.clear();
+    this.#drafts.clear();
+    this.#sourceDraft = null;
+  }
+}

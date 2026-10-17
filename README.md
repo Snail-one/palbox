@@ -10,9 +10,9 @@
 npm start
 ```
 
-访问 <http://127.0.0.1:8080>，按 `Ctrl+C` 停止。也可直接运行 `node server.cjs`。默认仅监听本机，修改端口可使用 `PORT=8081 npm start`（Linux/macOS）。
+访问 <http://127.0.0.1:8080>，按 `Ctrl+C` 停止。也可直接运行 `node server/index.js`。默认仅监听本机，修改端口可使用 `PORT=8081 npm start`（Linux/macOS）。
 
-Node.js 使用内置 HTTP 模块提供页面和静态资源；所有配置编辑与存储仍在浏览器中完成。无需 Python 或第三方运行依赖。也可直接打开 `index.html` 或部署到静态文件服务器，推荐保持访问地址固定，让本地存储的来源保持稳定。
+Node.js 使用内置 HTTP 模块提供页面和静态资源；所有配置编辑与存储仍在浏览器中完成。无需 Python 或第三方运行依赖。前端使用原生 ES Modules，请通过 HTTP 访问，不要直接双击 HTML 文件。推荐保持访问地址固定，让本地存储的来源保持稳定。
 
 ## 使用
 
@@ -38,27 +38,61 @@ Node.js 使用内置 HTTP 模块提供页面和静态资源；所有配置编辑
 
 修改 `DefaultPalWorldSettings.ini` 不会直接更新运行配置。参数行为与版本差异以 [帕鲁官方配置文档](https://docs.palworldgame.com/settings-and-operation/configuration/) 为准；本工具不连接服务器，也不修改存档或 Mod 配置。
 
-## 文件组织
+## 项目结构
 
-- `js/template.js`：用户提供的默认配置模板。
-- `js/schema.js`：中文字段说明、分类、控件类型和已知限制。
-- `js/config.js`：INI/Unreal 元组解析与序列化；保留未编辑参数、未知参数及其他 INI 段落和注释。复制时将目标 `OptionSettings` 整理为单行。
-- `js/storage.js`：本地工作空间格式与读写。
-- `js/app.js`、`index.html`、`styles.css`：无框架界面与交互。
-- `server.cjs`：使用 Node.js 内置模块的本地静态服务器，仅提供页面需要的资源。
+```text
+public/                  页面、图标和按职责拆分的样式
+src/
+  main.js                浏览器入口，创建并注入依赖
+  app.js                 组装应用，连接界面和服务
+  domain/                配置解析、参数目录、模板和编辑状态
+  application/           工作空间操作与持久化协调
+  services/              浏览器存储、剪贴板和文件读取适配器
+  ui/                    页面组件、弹窗和导航
+server/                  Node.js 启动入口与静态 HTTP 服务
+  index.js
+  http-server.js
+tests/
+  unit/                  领域规则、服务与架构约束测试
+  integration/           HTTP 服务测试
+  e2e/                   Playwright 浏览器回归
+  shared/                Node.js 与浏览器共用的配置测试用例
+  browser/               浏览器中的配置测试页面
+docs/architecture.md    模块职责、依赖方向和扩展说明
+```
+
+模块使用 ES Modules，通过 `import` / `export` 明确依赖，不再使用 `window.Pal*` 全局命名空间或依赖脚本加载顺序。领域层可直接在 Node.js 中测试，存储、剪贴板和文件实现通过入口注入。详细设计见 [架构说明](docs/architecture.md)。
+
+样式入口为 `public/styles/index.css`，设计变量统一放在 `tokens.css`，其余按布局、控件、编辑器、弹窗和响应式规则组织。历史重复声明已整理，外观沿用浅灰背景、黑色文字、橙色重点。
 
 解析器拒绝重复目标段落、重复目标配置项、重复参数以及未闭合的引号和括号。新版本的未知参数和枚举可保留；导入不强制重写旧配置，修改已知字段时才进行对应验证。
 
-## 验证
+## 开发与验证
 
-运行核心配置与 Node.js 服务测试：
+运行开发服务（服务端文件变动后自动重启，前端文件修改后刷新页面即可）：
+
+```sh
+npm run dev
+```
+
+核心功能和服务端只使用 Node.js 内置模块，运行和普通测试不需要安装第三方依赖：
 
 ```sh
 npm test
+npm run test:unit
+npm run test:integration
 ```
 
-测试覆盖完整模板往返、仅更新指定字段、中文与转义字符串、空值、负数、嵌套列表、未知字段、BOM/换行、其他段落与注释、错误输入隔离、存储恢复、保存失败和 HTTP 静态资源访问。在浏览器访问 `/tests/index.html` 也可运行核心配置测试。
+测试覆盖完整模板往返、注释与顺序保留、嵌套列表、空值、未知字段、编辑与源码草稿隔离、保存失败回滚、已有 v1 存储兼容和 HTTP 资源访问。架构测试会检查循环依赖和领域／应用／服务／界面层之间的依赖方向。在浏览器访问 `/tests/index.html` 也可运行共用配置测试。
 
-界面验收：分别在桌面和手机宽度检查分类、搜索、密码显示、表单与源码同步、配置复制隔离、删除确认、刷新恢复、未保存提醒和复制内容再导入。
+浏览器测试的开发依赖已固定在 `package-lock.json`。首次运行时安装：
 
-另提供可选的 Playwright 自动化验收脚本 `tests/browser.cjs`。在可解析 `playwright` 包且已安装 Chromium 的环境中，启动上述静态服务器后运行 `node tests/browser.cjs`。可通过 `PALBOX_BASE_URL` 指定服务地址，`PALBOX_QA_OUTPUT` 指定截图与导入测试样例的输出目录（默认 `/tmp/palbox-qa-results`）。Playwright 只用于开发验收，网页不依赖它。
+```sh
+npm ci
+npx playwright install chromium
+npm run test:e2e
+```
+
+`npm run test:browser` 是兼容别名。测试默认自行启动随机本机端口并在结束后关闭，覆盖真实剪贴板、导入、配置复制、刷新恢复、存储失败和手机布局；无需手动先启动服务。
+
+可设置 `PALBOX_BASE_URL` 测试已有服务，`PALBOX_QA_OUTPUT` 指定截图与导入样例的输出目录（默认 `test-results/e2e`，已加入 Git 忽略）。Playwright 仅用于开发验收，生产运行不依赖它。
