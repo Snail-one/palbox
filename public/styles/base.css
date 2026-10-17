@@ -16,6 +16,12 @@ select {
   font: inherit;
 }
 
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
+textarea,
+select {
+  background-color: var(--input-bg);
+}
+
 button,
 a,
 input,

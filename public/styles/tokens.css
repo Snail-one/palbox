@@ -1,6 +1,7 @@
 :root {
   color-scheme: light;
   --bg: #f3f4f6;
+  --input-bg: #f0f1f3;
   --white: #ffffff;
   --line: #ebe5df;
   --accent: #c64a0c;

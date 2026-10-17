@@ -150,11 +150,11 @@ select:focus {
 
 .sidebar-import {
   border-color: #ddcaba;
-  background: #fffdf9;
+  background: var(--input-bg);
 }
 
 .sidebar-import:hover {
-  background: var(--accent-soft);
+  background: #e5e7eb;
   border-color: #e5a071;
 }
 
@@ -282,8 +282,8 @@ h1 {
 }
 
 .search-box {
-  background: #fcfaf7;
-  border-color: #e9dfd4;
+  background-color: var(--input-bg);
+  border-color: #d5d7da;
 }
 
 .search-box input {
@@ -320,8 +320,8 @@ h1 {
 .raw-input,
 #import-text,
 .dialog-name-label input {
-  background: #fffefa;
-  border-color: #dfd4c8;
+  background-color: var(--input-bg);
+  border-color: #d5d7da;
 }
 
 .toggle {
@@ -612,7 +612,7 @@ textarea::placeholder {
 }
 
 .source-editor {
-  background: #fff;
+  background-color: var(--input-bg);
   border-color: #dedede;
 }
 
