@@ -249,33 +249,47 @@ export class Manager {
     try { await stat(this.runtime.config); }
     catch (error) { if (error.code !== 'ENOENT') throw error; await atomicWrite(this.runtime.config, output(this.store.active().source)); }
   }
+  servicePhase(phase, message) {
+    if (this.busy) { this.busy.phase = phase; this.busy.message = message; }
+  }
+  async startGame() {
+    this.servicePhase('starting', '正在启动游戏服务，等待管理接口就绪。');
+    await this.runtime.start();
+  }
+  async stopGame(options) {
+    this.servicePhase('stopping', '正在保存世界并等待游戏服务退出。');
+    await this.runtime.stop(options);
+  }
+  async installGame() {
+    const update = this.busy?.action === 'update';
+    this.servicePhase(update ? 'updating' : 'installing', update ? '正在启动 SteamCMD，准备更新服务端。' : '正在启动 SteamCMD，准备下载和安装服务端。');
+    await this.runtime.install({ onProgress: (phase, message) => this.servicePhase(update && phase === 'installing' ? 'updating' : phase, message) });
+  }
   async execute(action, payload, task) {
     switch (action) {
       case 'install':
-        task.message = '正在通过 SteamCMD 下载服务端，请查看安装日志';
-        await this.runtime.install();
+        await this.installGame();
         task.defaultsImported = await this.store.importDefaultIfPending();
         try { await this.store.syncDefaultProfile(); } catch (error) { this.runtime.log('palbox', `同步游戏默认配置失败：${error.message}\n`); }
         await this.ensureConfig();
         this.updateCache = null;
         this.versionCache = null;
-        if (payload.start) await this.runtime.start();
+        if (payload.start) await this.startGame();
         break;
       case 'update': {
         const running = Boolean(this.runtime.game);
-        if (running) { task.message = '保存世界并正常停服'; await this.runtime.stop({ requireSave: true }); }
+        if (running) await this.stopGame({ requireSave: true });
         await this.backup('before-update');
-        task.message = '正在更新并校验服务端文件';
-        await this.runtime.install();
+        await this.installGame();
         try { await this.store.syncDefaultProfile(); } catch (error) { this.runtime.log('palbox', `同步游戏默认配置失败：${error.message}\n`); }
         this.updateCache = null;
         this.versionCache = null;
-        if (running) await this.runtime.start();
+        if (running) await this.startGame();
         break;
       }
-      case 'start': await this.ensureConfig(); await this.runtime.start(); break;
-      case 'stop': await this.runtime.stop(); break;
-      case 'restart': await this.requireRunning(); await this.runtime.stop({ requireSave: true }); await this.runtime.start(); break;
+      case 'start': await this.ensureConfig(); await this.startGame(); break;
+      case 'stop': await this.stopGame(); break;
+      case 'restart': await this.requireRunning(); await this.stopGame({ requireSave: true }); await this.startGame(); break;
       case 'apply': {
         const snapshot = this.store.snapshot();
         if (payload.revision !== snapshot.revision || payload.profileId !== snapshot.workspace.activeId) throw failure('配置已变更，请等待自动保存完成后重新应用。', 409);
@@ -286,21 +300,22 @@ export class Manager {
         const restPort = Number(values.get('RESTAPIPort') || 8212);
         if (!Number.isInteger(restPort) || restPort < 1 || restPort > 65535 || restPort === this.runtime.port || restPort === this.webPort) throw failure('REST API 端口无效或与现有服务端口冲突。');
         const running = Boolean(this.runtime.game);
-        if (running) { task.message = '保存世界并正常停服'; await this.runtime.stop({ requireSave: true }); }
+        if (running) await this.stopGame({ requireSave: true });
         await this.backup('manual');
+        this.servicePhase('applying', '正在将配置写入游戏文件。');
         await atomicWrite(this.runtime.config, source);
-        if (running) { task.message = '配置已写入，正在启动游戏服'; await this.runtime.start(); }
+        if (running) await this.startGame();
         break;
       }
       case 'backup': {
         const running = Boolean(this.runtime.game);
-        if (running) { task.message = '保存世界并停服，准备一致性备份'; await this.runtime.stop({ requireSave: true }); }
+        if (running) await this.stopGame({ requireSave: true });
         try {
           await this.requireWorldSave();
           task.backup = await this.backup('manual');
           if (!task.backup) throw failure('存档目录已不存在，未创建备份。', 409);
         }
-        finally { if (running && !this.closing) await this.runtime.start(); }
+        finally { if (running && !this.closing) await this.startGame(); }
         break;
       }
       case 'delete-backup': await this.deleteBackup(payload.id); break;
@@ -308,10 +323,11 @@ export class Manager {
       case 'restore-native': {
         const running = Boolean(this.runtime.game);
         await this.native.restore(payload.id, async () => {
-          if (running) await this.runtime.stop({ requireSave: true });
+          if (running) await this.stopGame({ requireSave: true });
           await this.backup('manual');
+          this.servicePhase('restoring', '正在恢复官方备份中的世界和玩家存档。');
         });
-        if (running) await this.runtime.start();
+        if (running) await this.startGame();
         break;
       }
       case 'import-save': await this.restoreImported(payload.id, task); break;
@@ -342,6 +358,7 @@ export class Manager {
       }
       case 'force-stop':
         await this.requireRunning();
+        this.servicePhase('force-stopping', '正在强制停止游戏服务，请稍候。');
         await this.runtime.forceStop();
         break;
     }
@@ -364,13 +381,13 @@ export class Manager {
     let rollbackFailed = false;
     let failureError = null;
     try {
-      if (wasRunning) { task.message = '保存世界并停服，准备导入存档'; await this.runtime.stop({ requireSave: true }); }
+      if (wasRunning) await this.stopGame({ requireSave: true });
       const target = await this.targetWorld(imported);
       task.message = '正在创建恢复前完整备份';
       task.backup = await this.backup('manual');
       const ensured = await this.native.ensureWorld(target);
       if (ensured.created) created = ensured.directory;
-      task.message = '正在替换世界与玩家存档';
+      this.servicePhase('restoring', '正在替换世界与玩家存档。');
       await this.native.replaceWorld(target, imported.snapshot, { beforeSwap: async () => {
         if (await this.targetWorld(imported) !== target) throw failure('当前世界已改变，请刷新后重试。', 409);
       } });
@@ -387,13 +404,13 @@ export class Manager {
     if (rollbackFailed) throw failureError;
     if (failureError) {
       if (wasRunning && !this.runtime.game && !this.closing) {
-        try { await this.runtime.start(); }
+        try { await this.startGame(); }
         catch (error) { this.runtime.log('palbox', `导入失败后启动游戏服失败：${error.message}\n`); }
       }
       throw failureError;
     }
     if (wasRunning && !this.runtime.game && !this.closing) {
-      try { task.message = '存档已导入，正在启动游戏服'; await this.runtime.start(); }
+      try { await this.startGame(); }
       catch (error) { throw failure(`存档已导入，但游戏服启动失败：${error.message}`, 500); }
     }
   }
@@ -421,6 +438,7 @@ export class Manager {
     return false;
   }
   async backup(category, protectedId = null) {
+    this.servicePhase('backing', '正在创建存档和配置的完整备份。');
     // Stop the process before archiving so world/player files belong to one save.
     if (this.runtime.game) throw failure('创建备份前需要停止游戏服。', 409);
     if (!(await this.hasBackupFiles())) return null;
@@ -474,8 +492,9 @@ export class Manager {
     const types = await this.runtime.run('tar', ['-tvzf', file], 'palbox', { captureLimit });
     if (types.length >= captureLimit || types.trim().split('\n').some(line => !['-', 'd'].includes(line[0]))) throw failure('备份包含链接或不支持的文件类型。');
     const running = Boolean(this.runtime.game);
-    if (running) await this.runtime.stop({ requireSave: true });
+    if (running) await this.stopGame({ requireSave: true });
     await this.backup('manual', id);
+    this.servicePhase('restoring', '正在恢复完整备份中的存档和配置。');
     const stage = path.join(this.runtime.server, `.restore-${randomUUID()}`);
     const previous = path.join(this.runtime.server, `.saved-${randomUUID()}`);
     await mkdir(stage, { recursive: true });
@@ -489,7 +508,7 @@ export class Manager {
       catch (error) { if (moved) await rename(previous, this.runtime.saved); throw error; }
       if (moved) await rm(previous, { recursive: true });
     } finally { await rm(stage, { recursive: true, force: true }); }
-    if (running) await this.runtime.start();
+    if (running) await this.startGame();
   }
   async bannedPlayers() {
     const value = await readBanList(this.runtime.saved);

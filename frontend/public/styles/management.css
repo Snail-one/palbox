@@ -31,6 +31,8 @@
 .server-heading-actions { flex-shrink: 0; }
 .server-primary-actions { display: contents; }
 .server-primary-actions [data-action="force-stop"] { color: var(--red); }
+.server-primary-actions #game-state, .server-primary-actions [data-action="update"] { margin-inline-start: 16px; }
+.server-primary-actions #game-state { flex-shrink: 0; padding: 5px 9px; font-size: 11px; }
 .management-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; margin: 0; }
 .server-metric { min-width: 0; }
 .server-metric + .server-metric { padding-left: 16px; border-left: 1px solid var(--line); }

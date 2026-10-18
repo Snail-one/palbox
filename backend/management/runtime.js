@@ -75,7 +75,7 @@ export class Runtime {
     if (!child?.pid) return;
     try { process.kill(-child.pid, signal); } catch (error) { if (error.code !== 'ESRCH') throw error; }
   }
-  run(command, args, channel = 'palbox', { captureLimit = 65536, pty = false, ...options } = {}) {
+  run(command, args, channel = 'palbox', { captureLimit = 65536, pty = false, onOutput, ...options } = {}) {
     if (this.closing) return Promise.reject(failure('面板正在关闭。', 503));
     return new Promise((resolve, reject) => {
       const usePty = pty && ptyAvailable;
@@ -86,7 +86,7 @@ export class Runtime {
       child.stdout.setEncoding('utf8');
       child.stderr.setEncoding('utf8');
       let output = '';
-      const collect = data => { output = (output + data.toString()).slice(-captureLimit); this.log(channel, data); };
+      const collect = data => { output = (output + data.toString()).slice(-captureLimit); this.log(channel, data); onOutput?.(data); };
       child.stdout.on('data', collect); child.stderr.on('data', collect);
       child.once('error', error => { if (this.command === child) this.command = null; reject(error); });
       child.once('close', (code, signal) => {
@@ -101,12 +101,21 @@ export class Runtime {
     delete env.PALBOX_ADMIN_PASSWORD_FILE;
     return env;
   }
-  async install() {
+  async install({ onProgress } = {}) {
     if (this.game) throw failure('请先停止游戏服再安装或更新。', 409);
     await mkdir(this.server, { recursive: true });
     const args = this.installArgs || ['+force_install_dir', this.server, '+login', 'anonymous', '+app_update', '2394010', 'validate', '+quit'];
-    const result = await this.run(this.steamcmd, args, 'steamcmd', { pty: true });
+    let progressText = '';
+    const result = await this.run(this.steamcmd, args, 'steamcmd', { pty: true, onOutput: text => {
+      progressText = (progressText + stripVTControlCharacters(String(text))).slice(-4096);
+      const state = [...progressText.matchAll(/Update state \([^)]+\)\s*([^\r\n]+)/gi)].at(-1)?.[1];
+      if (!state) return;
+      if (/downloading/i.test(state)) onProgress?.('downloading', '正在通过 SteamCMD 下载服务端文件，请查看安装日志。');
+      else if (/verifying/i.test(state)) onProgress?.('verifying', '正在校验服务端文件完整性，请稍候。');
+      else if (/staging|committing|preallocating|reconfiguring/i.test(state)) onProgress?.('installing', '正在安装服务端文件，请稍候。');
+    } });
     if (!/Success!.*App\s+'2394010'.*(?:fully installed|up to date)/i.test(stripVTControlCharacters(result)) || !(await this.installed())) throw failure('SteamCMD 未确认安装完成或启动文件不完整，请检查安装日志。', 500);
+    onProgress?.('installing', '服务端文件已就绪，正在完成安装配置。');
   }
   async rest(endpoint, body) {
     const source = await readFile(this.config, 'utf8');

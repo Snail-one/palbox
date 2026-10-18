@@ -2,6 +2,7 @@ import { createArgsDialog } from './args-dialog.js';
 import { createSaveImportDialog } from './save-import-dialog.js';
 import { formatBytes } from './format.js';
 import { filterPollingLogs } from './log-filter.js';
+import { gameServiceState } from './game-service-state.js';
 
 function uptimeLabel(seconds) {
   if (!Number.isFinite(seconds)) return '—';
@@ -20,11 +21,12 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   section.setAttribute('aria-label', '帕鲁服务管理');
   section.id = 'server-service';
   section.innerHTML = `
-    <h2>游戏服务 <span id="game-state" class="save-status" data-state="pending">连接中</span></h2>
+    <h2>游戏服务</h2>
     <div class="management-actions server-heading-actions"><label class="auto-start-switch" title="启用后，面板或容器重启并完成初始化时会自动创建启动任务；服务端未安装或尚未初始化时跳过"><input type="checkbox" role="switch" class="sr-only" id="auto-start" disabled><span class="toggle" aria-hidden="true"></span><span>自动启动</span></label></div>
     <div class="server-primary-actions" role="group" aria-label="游戏服务操作">
+        <span id="game-state" class="save-status" data-state="pending" role="status" title="正在连接面板，读取游戏服务状态。">连接中</span>
         <button class="button primary" data-action="install" hidden>安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop" hidden>停止</button><button class="button secondary" data-action="restart" hidden>重启</button>
-        <button class="button secondary" data-action="update" title="更新前会自动备份，运行中的游戏服务将短暂停服。">更新服务端</button><button class="button secondary" data-action="force-stop" title="仅在正常停止无效时使用，可能丢失最近一次未保存的进度。">强制停止</button><button class="button secondary" id="show-running-config" disabled>运行参数</button><button class="button secondary" id="edit-game-args" disabled>启动参数</button><button class="button secondary" id="edit-install-args" disabled>安装参数</button><button class="button secondary" id="edit-shutdown-wait" title="设置关服倒计时和游戏内提示文字" disabled>关服设置</button>
+        <button class="button secondary" data-action="force-stop" title="仅在正常停止无效时使用，可能丢失最近一次未保存的进度。">强制停止</button><button class="button secondary" data-action="update" title="更新前会自动备份，运行中的游戏服务将短暂停服。">更新服务端</button><button class="button secondary" id="show-running-config" disabled>运行参数</button><button class="button secondary" id="edit-game-args" disabled>启动参数</button><button class="button secondary" id="edit-install-args" disabled>安装参数</button><button class="button secondary" id="edit-shutdown-wait" title="设置关服倒计时和游戏内提示文字" disabled>关服设置</button>
     </div>
     <button type="button" id="show-task-history" class="button secondary" aria-haspopup="dialog" aria-controls="task-history">任务记录</button>`;
   $('game-actions').append(section);
@@ -455,11 +457,16 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     if (!stopped && !document.hidden && !$('game-page').hidden && !$('game-players-view').hidden) void loadBans();
     if (polling || stopped || document.hidden) return;
     polling = true;
+    let statusReceived = false;
     try {
       const value = await api.request('status'); lastStatus = value; lastErrorMessage = '';
+      statusReceived = true;
       const game = $('game-state');
-      game.textContent = !value.installed ? '未安装' : value.running ? (value.ready ? '运行中' : value.task?.action === 'start' || value.task?.action === 'install' || value.task?.action === 'apply' || value.task?.action === 'restart' ? '启动中' : '接口异常') : '已停止';
-      game.dataset.state = value.running && value.ready ? 'saved' : 'pending';
+      const serviceState = gameServiceState(value);
+      game.textContent = serviceState.label;
+      game.dataset.state = serviceState.state;
+      game.title = serviceState.description;
+      game.setAttribute('aria-label', `${serviceState.label}。${serviceState.description}`);
       const config = $('game-config-state');
       config.textContent = value.configuration === 'pending' ? '待生效' : value.running && value.ready ? '已生效' : '已写入';
       config.dataset.state = value.configuration === 'pending' ? 'pending' : value.running && value.ready ? 'saved' : 'written';
@@ -514,7 +521,14 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     } catch (caught) {
       error(caught.message);
       actionButtons.forEach(button => { button.disabled = true; });
-      if (caught.status === 401) { stopped = true; stopLogs(); $('game-state').textContent = '需登录'; }
+      if (!statusReceived || caught.status === 401) {
+        const game = $('game-state');
+        game.textContent = caught.status === 401 ? '需登录' : '连接失败';
+        game.dataset.state = 'error';
+        game.title = caught.message;
+        game.setAttribute('aria-label', `${game.textContent}。${caught.message}`);
+      }
+      if (caught.status === 401) { stopped = true; stopLogs(); }
     } finally { polling = false; }
   }
   for (const button of $('manager-log-channel').querySelectorAll('button')) button.addEventListener('click', () => {
