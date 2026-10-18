@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { WorkspaceService } from '../../src/application/workspace-service.js';
-import template from '../../src/domain/template.js';
+import { WorkspaceService } from '../../frontend/src/application/workspace-service.js';
+import template from '../../shared/domain/template.js';
 
 const KEY = 'workspace';
 const createRepository = getStorage => ({

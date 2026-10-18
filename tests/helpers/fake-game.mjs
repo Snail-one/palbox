@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { readFile, writeFile, access } from 'node:fs/promises';
 import path from 'node:path';
-import { parse, decodeString } from '../../src/domain/config.js';
+import { parse, decodeString } from '../../shared/domain/config.js';
 
 const file = process.argv[2];
 const argvFile = process.argv[3];

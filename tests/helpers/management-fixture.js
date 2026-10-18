@@ -4,11 +4,12 @@ import { once } from 'node:events';
 import { createServer as createNetServer } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Manager } from '../../server/management/manager.js';
-import { Runtime } from '../../server/management/runtime.js';
-import { createManagementApi } from '../../server/management/api.js';
-import { createServer } from '../../server/http-server.js';
-import { serialize, parse } from '../../src/domain/config.js';
+import { Manager } from '../../backend/management/manager.js';
+import { Runtime } from '../../backend/management/runtime.js';
+import { createManagementApi } from '../../backend/management/api.js';
+import { createServer } from '../../backend/http-server.js';
+import { createServer as createFrontendServer } from '../../frontend/http-server.js';
+import { serialize, parse } from '../../shared/domain/config.js';
 
 const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
 
@@ -35,7 +36,10 @@ export async function managementFixture({ setup = true, username = 'admin', pass
   // Fixtures provision their original input before the first managed edit.
   manager.store.workspace = snapshot.workspace;
   await manager.store.persist();
-  const server = createServer({ api: createManagementApi(manager) });
+  const backend = createServer({ api: createManagementApi(manager) });
+  backend.listen(0, '127.0.0.1'); await once(backend, 'listening');
+  const apiBase = `http://127.0.0.1:${backend.address().port}`;
+  const server = createFrontendServer({ apiUrl: apiBase });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const base = `http://127.0.0.1:${server.address().port}`;
   let cookie = '';
@@ -63,7 +67,14 @@ export async function managementFixture({ setup = true, username = 'admin', pass
     await manager.operation;
     return manager.tasks.find(t => t.id === initial.id);
   }
-  return { directory, manager, runtime, server, base, restPort, username, password, argvFile, request, upload, login, task,
-    async close() { await manager.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }); }
+  return { directory, manager, runtime, server, backend, base, apiBase, restPort, username, password, argvFile, request, upload, login, task,
+    async close() {
+      await manager.close();
+      for (const service of [server, backend]) {
+        service.closeAllConnections();
+        await new Promise(resolve => service.close(resolve));
+      }
+      await rm(directory, { recursive: true, force: true });
+    }
   };
 }

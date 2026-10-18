@@ -1,4 +1,5 @@
 import http from 'node:http';
+import https from 'node:https';
 import { readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,13 +15,18 @@ const contentTypes = new Map([
   ['.ico', 'image/x-icon']
 ]);
 
-/** Serve only browser-owned roots; server code and Node tests stay private. */
-export function createServer({ root = projectRoot, api } = {}) {
+/** Publish browser assets and stream API traffic to the independent backend. */
+export function createServer({ root = projectRoot, apiUrl = 'http://127.0.0.1:8081' } = {}) {
+  const upstream = new URL(apiUrl);
+  if (!['http:', 'https:'].includes(upstream.protocol) || upstream.pathname !== '/' || upstream.search || upstream.hash || upstream.username || upstream.password) {
+    throw new Error('PALBOX_API_URL 必须是 HTTP(S) 服务地址，不能包含路径、凭据或查询参数。');
+  }
   const mounts = [
-    ['/src/', path.join(root, 'src'), new Set(['.js'])],
+    ['/src/', path.join(root, 'frontend/src'), new Set(['.js'])],
+    ['/shared/domain/', path.join(root, 'shared/domain'), new Set(['.js'])],
     ['/tests/browser/', path.join(root, 'tests/browser'), new Set(['.html', '.js'])],
     ['/tests/shared/', path.join(root, 'tests/shared'), new Set(['.js'])],
-    ['/', path.join(root, 'public'), new Set(contentTypes.keys())]
+    ['/', path.join(root, 'frontend/public'), new Set(contentTypes.keys())]
   ];
   const server = http.createServer(async (request, response) => {
     const headers = { 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' };
@@ -33,12 +39,7 @@ export function createServer({ root = projectRoot, api } = {}) {
     catch { send(400, 'Bad request'); return; }
     if (pathname === '/healthz' && request.method === 'GET') { send(200, 'ok'); return; }
     if (pathname.startsWith('/api/')) {
-      if (api) { await api(request, response, pathname); return; }
-      if (pathname === '/api/bootstrap' && request.method === 'GET') {
-        response.writeHead(503, { ...headers, 'Content-Type': 'application/json' });
-        response.end(JSON.stringify({ error: '管理服务尚未初始化。' })); return;
-      }
-      send(404, 'Not found'); return;
+      proxy(request, response, upstream); return;
     }
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       headers.Allow = 'GET, HEAD'; send(405, 'Method not allowed'); return;
@@ -65,4 +66,32 @@ export function createServer({ root = projectRoot, api } = {}) {
   });
   server.requestTimeout = 30 * 60 * 1000;
   return server;
+}
+
+// Preserve the public Host and Origin for same-origin authentication.
+// Stream uploads and downloads without buffering save archives in memory.
+function proxy(request, response, upstream) {
+  const transport = upstream.protocol === 'https:' ? https : http;
+  const forwarded = { ...request.headers };
+  for (const name of (forwarded.connection || '').split(',')) delete forwarded[name.trim().toLowerCase()];
+  for (const name of ['connection', 'keep-alive', 'proxy-authorization', 'proxy-authenticate', 'te', 'trailer', 'transfer-encoding', 'upgrade']) delete forwarded[name];
+  const pending = transport.request({
+    protocol: upstream.protocol, hostname: upstream.hostname, port: upstream.port,
+    method: request.method, path: request.url, headers: forwarded
+  }, incoming => {
+    response.writeHead(incoming.statusCode, incoming.headers);
+    incoming.on('error', () => response.destroy());
+    incoming.pipe(response);
+  });
+  pending.setTimeout(30 * 60 * 1000, () => pending.destroy(new Error('API timeout')));
+  pending.on('error', () => {
+    if (response.destroyed) return;
+    if (response.headersSent) { response.destroy(); return; }
+    response.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+    response.end(JSON.stringify({ error: '无法连接 Palbox 管理服务。' }));
+  });
+  request.on('aborted', () => pending.destroy());
+  request.on('error', () => pending.destroy());
+  response.on('close', () => pending.destroy());
+  request.pipe(pending);
 }

@@ -1,9 +1,9 @@
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
-import { parse, serialize, encodeString } from '../../src/domain/config.js';
-import { createProfile, createWorkspace, validateWorkspace } from '../../src/domain/workspace.js';
-import template from '../../src/domain/template.js';
+import { parse, serialize, encodeString } from '../../shared/domain/config.js';
+import { createProfile, createWorkspace, validateWorkspace } from '../../shared/domain/workspace.js';
+import template from '../../shared/domain/template.js';
 import { jsonWrite, readJson, failure } from './files.js';
 
 export function managedTemplate(port = 8211) {

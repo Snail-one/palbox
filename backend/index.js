@@ -10,7 +10,7 @@ function port(value, name) {
 
 let manager;
 try {
-  const listenPort = port(process.env.PORT || '8080', 'PORT');
+  const listenPort = port(process.env.PORT || '8081', 'PORT');
   manager = new Manager({ directory: process.env.PALBOX_DATA_DIR || fileURLToPath(new URL('../data', import.meta.url)), steamcmd: process.env.PALBOX_STEAMCMD || '/opt/steamcmd/steamcmd.sh', port: port(process.env.PALBOX_GAME_PORT || '8211', 'PALBOX_GAME_PORT'), webPort: listenPort });
   await manager.initialize();
   const api = createManagementApi(manager, { secureCookie: process.env.PALBOX_SECURE_COOKIE === 'true' });

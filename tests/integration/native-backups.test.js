@@ -4,7 +4,7 @@ import { readFile, writeFile, mkdir, rm, readdir, symlink, copyFile } from 'node
 import path from 'node:path';
 import { managementFixture } from '../helpers/management-fixture.js';
 import { nativeBackupFixture } from '../helpers/native-backup-fixture.js';
-import { Manager } from '../../server/management/manager.js';
+import { Manager } from '../../backend/management/manager.js';
 
 test('官方备份在线查看和下载不停止游戏，下载包包含世界和玩家数据', async t => {
   const f = await managementFixture(); t.after(() => f.close()); await f.login();

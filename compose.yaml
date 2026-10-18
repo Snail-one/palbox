@@ -1,15 +1,31 @@
 services:
+  frontend:
+    build:
+      context: .
+      target: frontend
+    image: palbox-frontend:local
+    restart: unless-stopped
+    ports:
+      # 网页监听地址；需要内网访问时改成服务器内网 IP 或 0.0.0.0。
+      - "127.0.0.1:8080:8080/tcp"
+    environment:
+      PALBOX_API_URL: "http://palbox:8081"
+    depends_on:
+      palbox:
+        condition: service_healthy
   palbox:
-    build: .
+    build:
+      context: .
+      target: backend
     image: palbox:local
     platform: linux/amd64
     restart: unless-stopped
     stop_grace_period: 120s
     ports:
-      # 宿主机网页监听地址和端口：需要内网访问时把 127.0.0.1 改成服务器内网 IP 或 0.0.0.0。
-      - "127.0.0.1:8080:8080/tcp"
       # 游戏 UDP 端口：修改 PALBOX_GAME_PORT 时，这里的宿主机端口也要一起改。
       - "8211:8211/udp"
+    expose:
+      - "8081"
     environment:
       # 首次打开网页时创建管理员用户名和密码，无需在这里配置登录密码。
       PALBOX_GAME_PORT: "8211"

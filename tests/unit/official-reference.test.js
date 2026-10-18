@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { createCatalog } from '../../src/domain/catalog.js';
-import { parse } from '../../src/domain/config.js';
-import { EditorSession } from '../../src/domain/editor-session.js';
+import { createCatalog } from '../../shared/domain/catalog.js';
+import { parse } from '../../shared/domain/config.js';
+import { EditorSession } from '../../shared/domain/editor-session.js';
 
 const reference = JSON.parse(await readFile(new URL('../fixtures/official-parameters.json', import.meta.url), 'utf8'));
 const catalog = createCatalog();

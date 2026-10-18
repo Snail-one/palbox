@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createRemoteRepository } from '../../src/services/management-api.js';
+import { createRemoteRepository } from '../../frontend/src/services/management-api.js';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 

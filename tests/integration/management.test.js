@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdir, access, symlink } from 'node:fs/promises';
 import path from 'node:path';
 import { managementFixture } from '../helpers/management-fixture.js';
-import { parse } from '../../src/domain/config.js';
+import { parse } from '../../shared/domain/config.js';
 
 const value = (source, key) => parse(source).entries.find(e => e.key === key)?.raw;
 
@@ -210,15 +210,18 @@ test('首次访问通过网页初始化管理员，重启沿用账号，密码�
   const directory = await mkdtemp(path.join(tmpdir(), 'palbox-index-'));
   const probe = createServer(); probe.listen(0, '127.0.0.1'); await once(probe, 'listening');
   const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
+  const apiProbe = createServer(); apiProbe.listen(0, '127.0.0.1'); await once(apiProbe, 'listening');
+  const apiPort = apiProbe.address().port; await new Promise(resolve => apiProbe.close(resolve));
   const username = 'index-admin';
   const password = 'index-test-password-123';
-  const env = { ...process.env, PATH: path.dirname(process.execPath) + path.delimiter + process.env.PATH, HOST: '127.0.0.1', PORT: String(port), PALBOX_DATA_DIR: directory, PALBOX_GAME_ARGS: 'not-json' };
+  const env = { ...process.env, PATH: path.dirname(process.execPath) + path.delimiter + process.env.PATH, HOST: '127.0.0.1', PORT: String(port), API_HOST: '127.0.0.1', API_PORT: String(apiPort), PALBOX_DATA_DIR: directory, PALBOX_GAME_ARGS: 'not-json' };
+  delete env.PALBOX_API_URL;
   delete env.PALBOX_ADMIN_PASSWORD;
   delete env.PALBOX_ADMIN_PASSWORD_FILE;
   const children = [];
   t.after(async () => {
     for (const { child } of children) {
-      if (child.exitCode === null && child.signalCode === null) { const done = once(child, 'exit'); child.kill('SIGKILL'); await done; }
+      if (child.exitCode === null && child.signalCode === null) { const done = once(child, 'exit'); child.kill('SIGTERM'); await done; }
     }
     await rm(directory, { recursive: true, force: true });
   });
@@ -233,8 +236,9 @@ test('首次访问通过网页初始化管理员，重启沿用账号，密码�
   }
   async function ready(run) {
     const deadline = Date.now() + 5000;
-    while (!run.output.includes('已启动') && Date.now() < deadline && run.child.exitCode === null) await new Promise(resolve => setTimeout(resolve, 30));
-    assert.match(run.output, /已启动/);
+    while (!(run.output.includes('前端已启动') && run.output.includes('游戏管理已启动')) && Date.now() < deadline && run.child.exitCode === null) await new Promise(resolve => setTimeout(resolve, 30));
+    assert.match(run.output, /前端已启动/);
+    assert.match(run.output, /游戏管理已启动/);
     assert.equal(run.output.includes(password), false);
   }
   const post = (route, value, headers = {}) => fetch(`http://127.0.0.1:${port}${route}`, {
@@ -245,6 +249,7 @@ test('首次访问通过网页初始化管理员，重启沿用账号，密码�
   const initialized = launch({ PALBOX_ADMIN_PASSWORD: password, PALBOX_ADMIN_PASSWORD_FILE: '/nonexistent/palbox-password' });
   await ready(initialized);
   assert.equal((await fetch(`http://127.0.0.1:${port}/healthz`)).status, 200);
+  assert.equal((await fetch(`http://127.0.0.1:${apiPort}/`)).status, 404);
   assert.deepEqual(await (await fetch(`http://127.0.0.1:${port}/api/bootstrap`)).json(), { mode: 'managed', authenticated: false, setupRequired: true });
   await assert.rejects(access(settingsFile), { code: 'ENOENT' });
   assert.equal((await post('/api/setup', { username, password: 'short' })).status, 400);
@@ -270,12 +275,14 @@ test('首次访问通过网页初始化管理员，重启沿用账号，密码�
   assert.equal(await readFile(settingsFile, 'utf8'), settings);
   restarted.child.kill('SIGTERM');
   assert.equal((await restarted.closed)[0], 0);
+  await assert.rejects(fetch(`http://127.0.0.1:${apiPort}/healthz`));
+  await assert.rejects(fetch(`http://127.0.0.1:${port}/healthz`));
 });
 
 test('不支持旧版 settings.json 与损坏的管理员记录', { skip: process.platform !== 'linux' }, async t => {
   const { mkdtemp, mkdir, writeFile, readFile, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
-  const { Manager } = await import('../../server/management/manager.js');
+  const { Manager } = await import('../../backend/management/manager.js');
   const directory = await mkdtemp(path.join(tmpdir(), 'palbox-legacy-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const file = path.join(directory, 'palbox/settings.json');

@@ -11,7 +11,7 @@ const fixtures = [];
 const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
 
 (async () => {
-  const Config = await import('../../src/domain/config.js');
+  const Config = await import('../../shared/domain/config.js');
   const { managementFixture } = await import('../helpers/management-fixture.js');
   async function fixture(workspace) {
     const f = await managementFixture(); fixtures.push(f);

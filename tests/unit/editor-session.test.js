@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { EditorSession } from '../../src/domain/editor-session.js';
-import { createCatalog } from '../../src/domain/catalog.js';
-import { parse } from '../../src/domain/config.js';
-import template from '../../src/domain/template.js';
+import { EditorSession } from '../../shared/domain/editor-session.js';
+import { createCatalog } from '../../shared/domain/catalog.js';
+import { parse } from '../../shared/domain/config.js';
+import template from '../../shared/domain/template.js';
 
 const catalog = createCatalog();
 const session = (source = template) => new EditorSession(source, { validate: catalog.validate, formatOutput: catalog.formatOutput });

@@ -1,8 +1,10 @@
 # Docker 服务管理
 
-一个容器运行 Palbox、SteamCMD 和一个帕鲁专用服务器，支持 Linux amd64。管理服务在游戏停服时继续运行，不需要 Docker socket。游戏文件首次运行时由 SteamCMD 下载，镜像本身不打包游戏文件。
+前端容器运行网页与 API 代理，后端 `palbox` 容器运行管理 API、SteamCMD 和一个帕鲁专用服务器，支持 Linux amd64。前端没有游戏数据挂载，后端 HTTP 端口仅在 Compose 网络内开放。管理服务在游戏停服时继续运行，不需要 Docker socket。游戏文件首次运行时由 SteamCMD 下载，镜像本身不打包游戏文件。
 
-镜像基于 `debian:13-slim`，从官方 `node:22-trixie-slim` 镜像复制 Node.js 22 运行时。SteamCMD 从 `client-update.steamstatic.com` 下载，配置下载重试与连接超时；使用系统自带的 `C.UTF-8`，不额外生成语言环境。除 `curl`、`ca-certificates`、`lib32gcc-s1`、`procps` 外，仅补充入口脚本需要的 `tini`、`gosu`，Node.js 运行库 `libstdc++6`、`libatomic1`，以及支持 `TZ` 的 `tzdata`。`tar` 和用户管理命令由 Debian 基础镜像提供。
+后端镜像基于 `debian:13-slim`，从官方 `node:22-trixie-slim` 镜像复制 Node.js 22 运行时。SteamCMD 从 `client-update.steamstatic.com` 下载，配置下载重试与连接超时；使用系统自带的 `C.UTF-8`，不额外生成语言环境。除 `curl`、`ca-certificates`、`lib32gcc-s1`、`procps` 外，仅补充入口脚本需要的 `tini`、`gosu`，Node.js 运行库 `libstdc++6`、`libatomic1`，以及支持 `TZ` 的 `tzdata`。`tar` 和用户管理命令由 Debian 基础镜像提供。
+
+前端镜像基于 `node:22-trixie-slim`，仅包含浏览器资源、共享领域模块和静态代理服务。Dockerfile 提供 `frontend` / `backend` 两个独立构建目标；Compose 会分别构建。单独构建时使用 `docker build --target frontend -t palbox-frontend:local .` 和 `docker build --target backend -t palbox:local .`。
 
 ## 启动
 
@@ -10,19 +12,19 @@
 
 所有容器配置都直接写在项目根目录的 `compose.yaml` 中，不再读取 `.env`。首次启动前编辑该文件：
 
-- 确认 `volumes` 中的宿主机数据目录，默认 `/srv/palbox`。
+- 确认 `volumes` 中的宿主机数据目录，默认 `./data`。
 - 修改 `PALBOX_GAME_PORT` 时，同步修改 `ports` 中游戏端口映射的宿主机一侧。
 
 随后启动：
 
 ```sh
 docker compose up -d --build
-docker compose logs -f palbox
+docker compose logs -f frontend palbox
 ```
 
 默认面板地址为 <http://127.0.0.1:8080>。**首次访问**会进入初始化页面，设置管理员用户名和至少 12 位密码，随后用该账号登录。进入「游戏管理」后点击「安装服务端」下载游戏服务端，安装完成后点击「启动」；安装进度可在「运行日志 → 安装与更新」查看。安装失败后面板仍可访问，可查看日志后重试。游戏管理员密码与面板登录密码独立，新的管理配置会生成随机游戏管理员密码并启用 REST API。
 
-默认网页只绑定宿主机回环地址。需要从内网访问时，将 `compose.yaml` 中 `ports` 的 `127.0.0.1` 改成服务器内网 IP 或 `0.0.0.0`；公网使用 HTTPS 反向代理，并设置 `PALBOX_SECURE_COOKIE=true`。游戏 REST API 仅由管理后端通过容器内的回环地址访问，不映射到宿主机。
+默认网页只绑定宿主机回环地址。需要从内网访问时，将 `compose.yaml` 中 `frontend.ports` 的 `127.0.0.1` 改成服务器内网 IP 或 `0.0.0.0`；公网使用 HTTPS 反向代理，并设置 `PALBOX_SECURE_COOKIE=true`。游戏 REST API 仅由管理后端通过容器内的回环地址访问，不映射到宿主机。
 
 初始化完成前，任何能访问面板端口的人都可以抢先创建管理员。请先在本机或可信内网完成初始化，再把端口暴露到更大范围。
 
@@ -38,10 +40,12 @@ docker compose up -d --build
 
 ## 目录
 
-宿主机默认 `/srv/palbox` 挂载到容器 `/data`：
+宿主机默认 `./data` 挂载到容器 `/data`：
 
 ```text
-/app/                                  Palbox 程序与网页
+/app/backend/                          后端 API（palbox 容器）
+/app/frontend/                         网页与代理（frontend 容器）
+/app/shared/                           两个镜像各自包含的共享领域模块
 /opt/steamcmd/                          SteamCMD
 /data/
 ├── server/                            游戏安装目录
@@ -113,13 +117,15 @@ Docker 部署的全部配置都在 `compose.yaml` 中，不再读取 `.env`。
 | `environment.PALBOX_SECURE_COOKIE` | `false` | HTTPS 部署时为登录 Cookie 设置 Secure |
 | `PUID` / `PGID`（可选） | `1000` / `1000` | 入口脚本默认使用 `1000:1000`，compose 中不再预置；需要自定义时再在 `environment` 中添加 |
 | `TZ`（可选） | 容器默认时区 | 需要指定时区时再在 `environment` 中添加，镜像已安装 `tzdata` |
-| `ports` 第一项 | `127.0.0.1:8080` | 网页绑定地址和宿主机端口 |
-| `ports` 第二项 | `8211:8211/udp` | 游戏 UDP 端口映射 |
-| `volumes` | `/srv/palbox:/data` | 宿主机数据目录 |
+| `frontend.ports` | `127.0.0.1:8080:8080/tcp` | 网页绑定地址和宿主机端口 |
+| `frontend.environment.PALBOX_API_URL` | `http://palbox:8081` | 前端代理访问的后端地址 |
+| `palbox.expose` | `8081` | 后端 API，仅供容器内部网络访问 |
+| `palbox.ports` | `8211:8211/udp` | 游戏 UDP 端口映射 |
+| `volumes` | `./data:/data` | 宿主机数据目录 |
 
-直接运行镜像而不使用 Compose 时，仍可通过环境变量配置端口和运行用户；管理员账号、游戏安装/启动和启动参数统一在网页中管理，不再通过环境变量提供。`npm start` / `dev.sh` 的开发流程同样使用环境变量配置其他参数。
+直接运行镜像而不使用 Compose 时，需分别启动前后端，并把前端的 `PALBOX_API_URL` 指向可访问的后端地址。两个容器均通过 `HOST` / `PORT` 配置各自监听（前端默认 8080，后端默认 8081）；`PUID` / `PGID` 仅用于后端运行用户。管理员账号、游戏安装/启动和启动参数统一在网页中管理，不再通过环境变量提供。`npm start` / `dev.sh` 的开发流程同样使用环境变量配置其他参数。
 
-使用现有存档时，可以在面板「存档管理 → 导入存档」上传官方快照 `.tar.gz`，也可以先将完整的 `Pal/Saved` 放入 `/srv/palbox/server/Pal/Saved`，不要只复制单个 `Level.sav`。安装完成后检查输入配置与存档，再在面板中手动启动。
+使用现有存档时，可以在面板「存档管理 → 导入存档」上传官方快照 `.tar.gz`，也可以先将完整的 `Pal/Saved` 放入 `./data/server/Pal/Saved`，不要只复制单个 `Level.sav`。安装完成后检查输入配置与存档，再在面板中手动启动。
 
 ## 验证
 

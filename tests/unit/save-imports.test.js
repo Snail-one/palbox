@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectSnapshot } from '../../server/management/save-imports.js';
+import { detectSnapshot } from '../../backend/management/save-imports.js';
 
 const file = (name, size = 16) => ({ name, type: 'file', size });
 const dir = name => ({ name, type: 'directory', size: 0 });

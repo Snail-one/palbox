@@ -1,4 +1,4 @@
-import { decodeString } from '../../domain/config.js';
+import { decodeString } from '../../../../shared/domain/config.js';
 import { savedTime } from '../dom.js';
 
 export function createSummary({ dom, editor, workspace, catalog, isDirty, persistence = {} }) {

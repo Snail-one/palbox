@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, readFile, access } from 'node:fs/promises';
 import { appendFileSync, existsSync, renameSync, statSync, constants } from 'node:fs';
 import path from 'node:path';
-import { decodeString, parse } from '../../src/domain/config.js';
+import { decodeString, parse } from '../../shared/domain/config.js';
 import { failure } from './files.js';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));

@@ -1,4 +1,4 @@
-import { parse } from '../domain/config.js';
+import { parse } from '../../../shared/domain/config.js';
 
 export const MAX_CONFIG_BYTES = 2 * 1024 * 1024;
 

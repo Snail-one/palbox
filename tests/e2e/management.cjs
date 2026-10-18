@@ -6,7 +6,7 @@ const path = require('node:path');
 
 (async () => {
   const { managementFixture } = await import('../helpers/management-fixture.js');
-  const { parse } = await import('../../src/domain/config.js');
+  const { parse } = await import('../../shared/domain/config.js');
   const f = await managementFixture();
   const output = path.resolve('test-results/management');
   await fs.mkdir(output, { recursive: true });
@@ -37,7 +37,8 @@ const path = require('node:path');
     assert.equal(await page.locator('.server-metric').count(), 5);
     assert.equal(await page.locator('#game-overview').isVisible(), true);
     assert.equal(await page.locator('#game-logs').isVisible(), true);
-    assert.equal(await page.locator('#game-overview > section').last().getAttribute('id'), 'game-logs');
+    assert.equal(await page.locator('#game-overview > section').last().getAttribute('aria-label'), '任务记录');
+    assert.equal(await page.locator('#game-logs + section #task-history').count(), 1);
     assert.equal(await page.locator('#game-saves').isVisible(), false);
     await page.locator('#nav-game-saves').click();
     await page.locator('#save-management').waitFor();

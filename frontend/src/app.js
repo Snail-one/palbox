@@ -1,4 +1,4 @@
-import { EditorSession } from './domain/editor-session.js';
+import { EditorSession } from '../../shared/domain/editor-session.js';
 import { WorkspaceService } from './application/workspace-service.js';
 import { createDom } from './ui/dom.js';
 import { createDialog } from './ui/dialog.js';

@@ -1,5 +1,5 @@
 import { createApp } from './app.js';
-import { createCatalog } from './domain/catalog.js';
+import { createCatalog } from '../../shared/domain/catalog.js';
 import { createClipboard } from './services/clipboard.js';
 import { readConfigFile, validateImport } from './services/config-files.js';
 import { createManagementClient, createRemoteRepository } from './services/management-api.js';

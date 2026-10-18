@@ -29,16 +29,18 @@ fi
 
 export HOST="${HOST:-127.0.0.1}"
 export PORT="${PORT:-8080}"
+export API_PORT="${API_PORT:-8081}"
 export PALBOX_DATA_DIR="${PALBOX_DATA_DIR:-$PWD/data}"
 
 echo "游戏管理：http://$HOST:$PORT/#game"
 echo "配置管理：http://$HOST:$PORT/#configuration"
+echo "独立后端：http://${API_HOST:-127.0.0.1}:$API_PORT"
 echo '首次打开页面时请在浏览器中设置管理员用户名和密码。'
 echo "数据目录：$PALBOX_DATA_DIR（已有数据沿用原管理员账号）"
 if [[ "$watch" == true ]]; then
-  echo '后端修改自动重启，前端修改后刷新页面。按 Ctrl+C 停止。'
-  exec "$node_bin" --watch server/index.js
+  echo '前后端服务独立运行，服务代码修改自动重启，页面修改后刷新。按 Ctrl+C 停止。'
+  exec "$node_bin" scripts/start.js --watch
 fi
 
 echo '按 Ctrl+C 停止服务。'
-exec "$node_bin" server/index.js
+exec "$node_bin" scripts/start.js

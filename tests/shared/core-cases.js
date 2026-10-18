@@ -1,7 +1,7 @@
-import * as C from '../../src/domain/config.js';
-import template from '../../src/domain/template.js';
-import * as Schema from '../../src/domain/schema.js';
-import { validateWorkspace } from '../../src/domain/workspace.js';
+import * as C from '../../shared/domain/config.js';
+import template from '../../shared/domain/template.js';
+import * as Schema from '../../shared/domain/schema.js';
+import { validateWorkspace } from '../../shared/domain/workspace.js';
 
 export function coreCases() {
   const cases = [];

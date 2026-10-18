@@ -1,11 +1,14 @@
 # Palbox 模块与依赖
 
-Palbox 使用原生 ES Modules 和 Node.js 内置 HTTP 服务。保持无构建步骤；Playwright 只是开发测试依赖。
+Palbox 使用原生 ES Modules 和 Node.js 内置 HTTP 服务。前端、后端独立启动和部署，领域规则位于 `shared/domain/`，双方均不依赖对方的实现目录。保持无构建步骤；Playwright 只是开发测试依赖。
 
 ## 边界
 
 ```mermaid
 flowchart TD
+  Browser[浏览器] --> Frontend[frontend 静态服务与 API 代理]
+  Frontend -->|/api/ HTTP| Backend[backend 管理 API]
+  Backend --> Shared[shared/domain]
   Main[浏览器入口 main.js] --> App[应用组装 app.js]
   Main --> Adapters[services 浏览器适配器]
   App --> UI[ui 组件与交互]
@@ -45,24 +48,30 @@ flowchart TD
 
 ## 扩展位置
 
-- 添加参数说明：官方字段在 `src/domain/schema.js` 中维护，社区字段在 `src/domain/community-fields.js` 中维护。元数据提供中文名称、用途、控件及 `verification` 状态和来源；社区字段仅在模板包含该字段且有说明来源时进入目录，以“未验证”铭牌呈现状态。来源为当前用户补充时使用 `user-provided`，不冒充外部文档。`catalog.js` 统一控制表单、验证、搜索与三种状态统计，未知新字段不会因模板出现而自动识别。界面通过 `parameter-evidence.js` 统一呈现状态铭牌与悬浮提示说明，来源仅在元数据和文档保留。详见 [参数明细](parameters.md)。
-- 更新默认参数：修改 `src/domain/template.js` 的参数列表。模板只定义新建配置的默认值与原始顺序，不参与识别判定；没有官方或社区用途说明的新字段仍然属于未识别参数。已有配置不自动覆盖。
+- 添加参数说明：官方字段在 `shared/domain/schema.js` 中维护，社区字段在 `shared/domain/community-fields.js` 中维护。元数据提供中文名称、用途、控件及 `verification` 状态和来源；社区字段仅在模板包含该字段且有说明来源时进入目录，以“未验证”铭牌呈现状态。来源为当前用户补充时使用 `user-provided`，不冒充外部文档。`catalog.js` 统一控制表单、验证、搜索与三种状态统计，未知新字段不会因模板出现而自动识别。界面通过 `parameter-evidence.js` 统一呈现状态铭牌与悬浮提示说明，来源仅在元数据和文档保留。详见 [参数明细](parameters.md)。
+- 更新默认参数：修改 `shared/domain/template.js` 的参数列表。模板只定义新建配置的默认值与原始顺序，不参与识别判定；没有官方或社区用途说明的新字段仍然属于未识别参数。已有配置不自动覆盖。
 - 更换存储：实现 `{ load(), save(workspace) }` 仓库接口，在入口替换适配器。工作空间服务不需要更改。
 - 更换剪贴板或文件实现：提供 `{ write(text) }` 或 `{ read(file), validate(source) }`，在入口注入；组件不访问具体实现。
-- 调整外观：修改 `public/styles/tokens.css` 的设计变量，或对应的样式模块；`index.css` 明确控制加载顺序。
+- 调整外观：修改 `frontend/public/styles/tokens.css` 的设计变量，或对应的样式模块；`index.css` 明确控制加载顺序。
 
 ## 服务与验证
 
-`server/index.js` 负责管理初始化、启动任务和退出时保存停服；`server/http-server.js` 提供可测试的 `createServer()`。它只发布 `public`、浏览器源码和浏览器测试资源，不发布服务端、Node 测试或工作区元数据；路径和符号链接必须保持在对应发布目录中。
+`backend/index.js` 负责管理初始化、启动任务和退出时保存停服；`backend/http-server.js` 仅暴露 `/api/` 和 `/healthz`，不发布网页或源码。默认后端监听 `127.0.0.1:8081`。
+
+`frontend/index.js` 独立启动静态资源与 API 代理服务，默认监听 `127.0.0.1:8080`。`frontend/http-server.js` 只发布 `frontend/public`、`frontend/src`、`shared/domain` 和浏览器测试资源，不发布后端、Node 测试或工作区元数据；路径和符号链接必须保持在对应发布目录中。`/src/` 对应浏览器源码，`/shared/domain/` 对应共享规则，因此浏览器与 Node 使用同一套 ES Modules，无需构建或复制规则。
+
+前端通过 `PALBOX_API_URL` 选择后端，浏览器始终请求同源 `/api/`。代理保留公开站点的 Host、Origin、Cookie 和 CSRF 标头，认证继续执行现有来源校验；请求和响应以流传输，支持大存档上传、下载和取消。后端不可达时返回 JSON 502，静态页面仍可访问。无需开放跨域凭据。若替换为其他静态服务器，需为 `/api/` 配置同源代理并保留原始 Host 和 Origin。
+
+`npm start` / `dev.sh` 使用 `scripts/start.js` 启动两个独立进程，任一进程退出时停止另一个，收到退出信号时等待后端完成停服。也可分别执行 `start:frontend`、`start:backend`；开发命令使用相应的 `dev:*`。Docker 的 `frontend` 和 `backend` 构建目标分别只复制自身目录与共享规则。Compose 仅向宿主机暴露前端 HTTP 和游戏 UDP，后端 HTTP 通过内部网络供代理使用。
 
 `npm test` 运行单元和 HTTP 集成测试。`npm run test:e2e` 独立启动本机服务，检查真实浏览器交互并在结束后释放服务。共用配置用例同时由 Node.js 单元测试和浏览器测试页面执行。
 
 ## 管理模式
 
-所有启动入口均使用 `server/management`。`files.js` 提供写入临时文件、fsync 和原子替换；`store.js` 在服务器保存工作空间并检查版本冲突；`auth.js` 管理管理员用户名与 scrypt 密码校验、HttpOnly 会话和 CSRF 验证；`api.js` 提供固定的 JSON API 与备份下载，不提供任意命令执行；`save-imports.js` 负责官方存档上传的流式落盘、tar 安全校验、布局识别与临时暂存。全新部署没有 `palbox/settings.json` 时进入首次初始化状态，由 `/api/setup` 创建管理员；旧版缺少用户名的配置会被拒绝启动。
+后端使用 `backend/management`。`files.js` 提供写入临时文件、fsync 和原子替换；`store.js` 在服务器保存工作空间并检查版本冲突；`auth.js` 管理管理员用户名与 scrypt 密码校验、HttpOnly 会话和 CSRF 验证；`api.js` 提供固定的 JSON API 与备份下载，不提供任意命令执行；`save-imports.js` 负责官方存档上传的流式落盘、tar 安全校验、布局识别与临时暂存。全新部署没有 `palbox/settings.json` 时进入首次初始化状态，由 `/api/setup` 创建管理员；旧版缺少用户名的配置会被拒绝启动。
 
 `runtime.js` 管理 SteamCMD 和游戏进程组，使用参数数组启动子进程，处理 REST API、日志轮换、就绪等待和停服。游戏启动参数保存在 `settings.json` 的 `gameArgs`，由 `manager.js` 在初始化和设置更新时同步到 `runtime.args`，所有启动与自动重启路径共用同一份参数。官方存档通过 `/api/save-import` 流式上传并暂存到 `palbox/imports`，校验通过后由 `import-save` 任务停服、创建完整备份、替换世界存档并恢复运行状态。`manager.js` 串行执行后台任务，处理应用配置、停服备份、归档路径校验、临时目录恢复。`native-backups.js` 识别官方世界快照、验证文件与路径、在线导出并在停服后恢复对应世界；面板不再运行自动备份定时器。面板进程与游戏进程分开管理，游戏停服不会关闭网页。
 
 浏览器入口先请求 `/api/bootstrap` 检查管理服务、初始化与登录状态：未初始化时转入 `/setup.html` 创建管理员，未登录时转入登录页；管理服务不可用时显示错误。远程仓库保留同步编辑接口，将服务器写入串行排队，通过订阅状态区别「保存中」「已保存」「保存失败」。服务器确认前会保留离开提醒，失败时保留最新草稿；并发版本冲突不会静默覆盖。配置应用前等待队列写入完成，再携带配置 ID 和版本号提交任务。
 
-原有编辑器只处理预设和草稿；游戏配置的写入必须经过管理任务。`ui/management-panel.js` 通过注入的 API 客户端展示状态、任务、日志、备份和玩家操作。服务端数据位于 `/data`，具体结构见 [Docker 文档](docker.md)。
+原有编辑器只处理预设和草稿；游戏配置的写入必须经过管理任务。`frontend/src/ui/management-panel.js` 通过注入的 API 客户端展示状态、任务、日志、备份和玩家操作。服务端数据位于 `/data`，具体结构见 [Docker 文档](docker.md)。

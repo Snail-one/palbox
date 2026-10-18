@@ -9,9 +9,9 @@ import { SaveImports } from './save-imports.js';
 import { ManagementStore } from './store.js';
 import { atomicWrite, readJson, jsonWrite, failure } from './files.js';
 import { normalizeUsername, passwordRecord, validUsername } from './auth.js';
-import { EditorSession } from '../../src/domain/editor-session.js';
-import { createCatalog } from '../../src/domain/catalog.js';
-import { parse, decodeString } from '../../src/domain/config.js';
+import { EditorSession } from '../../shared/domain/editor-session.js';
+import { createCatalog } from '../../shared/domain/catalog.js';
+import { parse, decodeString } from '../../shared/domain/config.js';
 
 const exec = promisify(execFile);
 const shellQuote = value => "'" + String(value).replaceAll("'", "'\\''") + "'";

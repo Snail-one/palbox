@@ -17,7 +17,7 @@
 
 ## 管理面板
 
-项目只提供一个管理网页，包含「游戏管理」和「配置管理」。配置统一保存到服务器，登录后可以管理游戏服务、存档与备份。Docker 镜像包含 Node.js 和 SteamCMD，一个容器管理一个游戏服务端。
+项目只提供一个管理网页，包含「游戏管理」和「配置管理」。配置统一保存到服务器，登录后可以管理游戏服务、存档与备份。前后端独立运行：前端提供网页并代理 `/api/`，后端提供管理 API。Docker 使用独立前端容器和包含 Node.js、SteamCMD 的后端容器，一个后端管理一个游戏服务端。
 
 ## 快速开始
 
@@ -39,10 +39,10 @@ npm start
 默认仅监听本机。Linux / macOS 下可通过环境变量修改地址和端口：
 
 ```sh
-HOST=127.0.0.1 PORT=8081 npm start
+HOST=127.0.0.1 PORT=8090 API_PORT=8091 npm start
 ```
 
-所有启动入口均打开同一个管理面板，配置保存在项目的 `data/` 目录；默认不自动下载或启动游戏。请通过 HTTP 访问页面。
+`npm start` 同时启动前端（默认 `127.0.0.1:8080`）和后端（默认 `127.0.0.1:8081`），通过 `API_HOST` / `API_PORT` 调整后端监听。配置保存在项目的 `data/` 目录；默认不自动下载或启动游戏。请通过 HTTP 访问页面。
 
 ### 编辑配置
 
@@ -64,7 +64,7 @@ HOST=127.0.0.1 PORT=8081 npm start
 
 ```sh
 docker compose up -d --build
-docker compose logs -f palbox
+docker compose logs -f frontend palbox
 ```
 
 打开 **<http://127.0.0.1:8080>**，首次访问时在页面中创建管理员用户名和至少 12 位密码，随后用该账号登录。进入「游戏管理」后点击「安装服务端」下载游戏服务端，安装完成后点击「启动」；安装进度可在「运行日志 → 安装与更新」查看。
@@ -75,7 +75,7 @@ docker compose logs -f palbox
 | --- | --- |
 | 面板地址 | `http://127.0.0.1:8080` |
 | 游戏端口 | UDP `8211` |
-| 宿主机数据目录 | `/srv/palbox` |
+| 宿主机数据目录 | `./data` |
 | 容器数据目录 | `/data` |
 
 管理模式中，「已保存」表示面板配置已存盘；点击「应用配置」才会写入游戏并按需重启。
@@ -97,7 +97,7 @@ docker compose logs -f palbox
 可覆盖启动参数，例如：
 
 ```sh
-PORT=8081 ./dev.sh
+PORT=8090 API_PORT=8091 ./dev.sh
 ```
 
 也可使用标准开发命令启动同一管理面板：
@@ -106,7 +106,19 @@ PORT=8081 ./dev.sh
 npm run dev
 ```
 
-服务端文件修改后自动重启；前端文件修改后刷新页面即可。
+前后端服务各自监听服务代码变更并自动重启；浏览器代码或样式修改后刷新页面即可。按 `Ctrl+C` 会停止两个服务。
+
+也可在两个终端分别启动，独立调试或部署：
+
+```sh
+# 终端一：仅管理 API，默认 127.0.0.1:8081
+npm run dev:backend
+
+# 终端二：网页与 API 代理，默认 127.0.0.1:8080
+PALBOX_API_URL=http://127.0.0.1:8081 npm run dev:frontend
+```
+
+生产独立启动使用 `npm run start:backend` / `npm run start:frontend`。两个入口各自读取 `HOST` 和 `PORT`；`PALBOX_API_URL` 是前端进程访问后端的 HTTP(S) 地址（仅 origin，不含路径）。浏览器统一请求当前站点的 `/api/`，上传、下载、登录 Cookie 与 CSRF 校验均经由代理。后端不提供 HTML 或静态文件，前端无需访问游戏数据目录。
 
 ### 单元与集成测试
 
@@ -142,20 +154,22 @@ npm run test:e2e:managed
 
 ```text
 palbox/
-├── public/             页面、样式和静态资源
-├── src/
-│   ├── domain/         配置解析、参数目录、模板与编辑状态
-│   ├── application/    工作空间操作与持久化协调
-│   ├── services/       存储、剪贴板、文件与管理 API 适配器
-│   ├── ui/             页面组件与交互
-│   ├── app.js          应用组装
-│   └── main.js         浏览器入口
-├── server/             HTTP 服务与游戏管理后端
-├── docker/             容器入口脚本
+├── frontend/
+│   ├── public/         页面、样式和静态资源
+│   ├── src/            浏览器应用、工作空间操作、API 适配器和界面
+│   ├── http-server.js  静态资源服务与流式 API 代理
+│   └── index.js        前端独立入口
+├── backend/
+│   ├── management/     认证、配置存储、游戏进程、任务与备份
+│   ├── http-server.js  仅 API 和健康检查
+│   └── index.js        后端独立入口
+├── shared/domain/      前后端共用的配置解析、参数目录、模板与编辑规则
+├── scripts/start.js    本地双进程启动与退出协调
+├── docker/             后端容器入口脚本
 ├── tests/              单元、集成与浏览器测试
 ├── docs/               使用、部署与架构文档
-├── Dockerfile          服务管理镜像
-└── compose.yaml        Docker Compose 配置
+├── Dockerfile          frontend / backend 两个镜像目标
+└── compose.yaml        前后端独立容器配置
 ```
 
 前端使用原生 ES Modules，服务端使用 Node.js 内置模块，无构建步骤。模块职责、依赖边界和扩展方式见 [架构说明](docs/architecture.md)。

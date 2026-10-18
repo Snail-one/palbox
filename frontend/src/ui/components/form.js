@@ -1,4 +1,4 @@
-import * as config from '../../domain/config.js';
+import * as config from '../../../../shared/domain/config.js';
 import { createFieldFeedback } from './field-feedback.js';
 import { createParameterEvidence } from './parameter-evidence.js';
 

@@ -2,7 +2,7 @@
 FROM node:22-trixie-slim AS node-runtime
 
 # 固定 Debian 大版本，SteamCMD 和游戏文件在运行时安装。
-FROM debian:13-slim
+FROM debian:13-slim AS backend
 
 ARG TARGETARCH
 ARG DEBIAN_FRONTEND=noninteractive
@@ -34,25 +34,37 @@ RUN curl --fail --silent --show-error --location --retry 3 --connect-timeout 15 
     && ln -s /opt/steamcmd/linux64/steamclient.so /home/node/.steam/sdk64/steamclient.so \
     && chown -R node:node /opt/steamcmd /home/node /data
 
-# 复制面板与管理后端，无需安装 npm 依赖或构建。
+# 后端镜像仅包含管理 API 和共享领域模块。
 WORKDIR /app
 COPY package.json ./
-COPY public ./public
-COPY src ./src
-COPY server ./server
+COPY backend ./backend
+COPY shared ./shared
 COPY docker/entrypoint.sh /usr/local/bin/palbox-entrypoint
 RUN chmod 755 /usr/local/bin/palbox-entrypoint
 
-ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080 \
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=8081 \
     PALBOX_DATA_DIR=/data PALBOX_STEAMCMD=/opt/steamcmd/steamcmd.sh \
     HOME=/home/node
 
-EXPOSE 8080/tcp 8211/udp
+EXPOSE 8081/tcp 8211/udp
 VOLUME ["/data"]
 STOPSIGNAL SIGTERM
 # 游戏停服时面板仍需可用，健康检查使用面板接口。
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD ["node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    CMD ["node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||8081)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 # 入口先处理挂载目录权限，再通过 gosu 以普通用户运行服务。
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/palbox-entrypoint"]
-CMD ["node", "server/index.js"]
+CMD ["node", "backend/index.js"]
+
+# 前端独立部署，无需 SteamCMD 或游戏数据目录。
+FROM node-runtime AS frontend
+WORKDIR /app
+COPY package.json ./
+COPY frontend ./frontend
+COPY shared ./shared
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080 PALBOX_API_URL=http://palbox:8081
+USER node
+EXPOSE 8080/tcp
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD ["node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+CMD ["node", "frontend/index.js"]

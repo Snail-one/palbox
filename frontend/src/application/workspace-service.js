@@ -1,5 +1,5 @@
-import { parse } from '../domain/config.js';
-import { createProfile, createWorkspace, validateWorkspace } from '../domain/workspace.js';
+import { parse } from '../../../shared/domain/config.js';
+import { createProfile, createWorkspace, validateWorkspace } from '../../../shared/domain/workspace.js';
 
 /** Coordinates persistence through an injected { load, save } repository. */
 export class WorkspaceService {
