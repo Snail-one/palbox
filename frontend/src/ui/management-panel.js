@@ -1,5 +1,6 @@
 import { createArgsDialog } from './args-dialog.js';
 import { createSaveImportDialog } from './save-import-dialog.js';
+import { formatBytes } from './format.js';
 import { filterPollingLogs } from './log-filter.js';
 
 function uptimeLabel(seconds) {
@@ -172,19 +173,22 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   for (const button of actionButtons) button.addEventListener('click', () => button.dataset.action === 'import-save' ? saveImport.open() : action(button.dataset.action));
   async function loadBackups() {
     const backups = await api.request('backups');
-    $('save-backup-summary').textContent = `${backups.length} 份 · ${(backups.reduce((total, backup) => total + backup.bytes, 0) / 1024 / 1024).toFixed(1)} MB`;
+    const totalBytes = backups.reduce((total, backup) => total + backup.bytes, 0);
+    $('save-backup-summary').textContent = `${backups.length} 份 · ${formatBytes(totalBytes)}`;
+    $('save-backup-summary').title = `${totalBytes} 字节`;
     $('manager-backups').replaceChildren();
     if (!backups.length) $('manager-backups').textContent = '暂无完整备份。手动创建后，可在这里下载或恢复。';
     for (const backup of backups) {
       const row = document.createElement('div'); row.className = 'backup-row'; row.dataset.backupId = backup.id;
       const label = document.createElement('span');
       const category = { manual: '手动', scheduled: '旧定时归档', 'before-update': '更新前' }[backup.category];
-      label.textContent = `${new Date(backup.createdAt).toLocaleString()} · ${category} · ${(backup.bytes / 1024 / 1024).toFixed(1)} MB`;
+      label.textContent = `${new Date(backup.createdAt).toLocaleString()} · ${category} · ${formatBytes(backup.bytes)}`;
+      label.title = `${backup.bytes} 字节`;
       const download = document.createElement('a'); download.className = 'button secondary'; download.textContent = '下载'; download.href = `/api/backup?id=${encodeURIComponent(backup.id)}`; download.setAttribute('download', '');
       const restore = document.createElement('button'); restore.className = 'button secondary'; restore.textContent = '恢复'; restore.disabled = Boolean(lastStatus?.task); restore.addEventListener('click', () => action('restore', { id: backup.id }));
       const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'button secondary danger-hover'; remove.textContent = '删除'; remove.disabled = Boolean(lastStatus?.task);
       remove.addEventListener('click', async () => {
-        const confirmed = await ask({ title: '删除这份完整备份？', description: `${new Date(backup.createdAt).toLocaleString()} · ${category} · ${(backup.bytes / 1024 / 1024).toFixed(1)} MB。确认后永久删除这份归档，无法撤销。当前游戏存档保持不变。`, confirm: '删除备份', danger: true, symbol: 'trash' });
+        const confirmed = await ask({ title: '删除这份完整备份？', description: `${new Date(backup.createdAt).toLocaleString()} · ${category} · ${formatBytes(backup.bytes)}。确认后永久删除这份归档，无法撤销。当前游戏存档保持不变。`, confirm: '删除备份', danger: true, symbol: 'trash' });
         if (confirmed) await action('delete-backup', { id: backup.id }, false);
       });
       row.append(label, download, restore, remove); $('manager-backups').append(row);
@@ -196,13 +200,16 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     badge.textContent = value.enabled === null ? '尚未配置' : value.enabled ? '已启用' : '未启用';
     badge.dataset.state = value.enabled ? 'saved' : 'pending';
     $('native-backup-note').textContent = value.enabled === false ? '当前游戏配置未启用官方自动备份，可前往配置管理开启。' : value.activeWorld ? `当前世界：${value.activeWorld}。下载无需停服，恢复需要停服。` : '世界尚未生成或无法确认当前世界；可下载已有备份，暂不允许恢复。';
-    $('native-backup-summary').textContent = `${value.backups.length} 份`;
+    const nativeBytes = value.backups.reduce((total, backup) => total + backup.bytes, 0);
+    $('native-backup-summary').textContent = `${value.backups.length} 份 · ${formatBytes(nativeBytes)}`;
+    $('native-backup-summary').title = `${nativeBytes} 字节`;
     $('native-backups').replaceChildren();
     if (!value.backups.length) $('native-backups').textContent = '暂无完整的官方备份。游戏生成备份后会自动显示；正在写入或已轮换的备份可能暂不可用。';
     for (const backup of value.backups) {
       const row = document.createElement('div'); row.className = 'backup-row';
       const label = document.createElement('span');
-      label.textContent = `${backup.timestamp} · 世界 ${backup.worldId} · ${(backup.bytes / 1024 / 1024).toFixed(1)} MB`;
+      label.textContent = `${backup.timestamp} · 世界 ${backup.worldId} · ${formatBytes(backup.bytes)}`;
+      label.title = `${backup.bytes} 字节`;
       const download = document.createElement('a'); download.className = 'button secondary'; download.textContent = '下载'; download.href = `/api/native-backup?id=${encodeURIComponent(backup.id)}`; download.setAttribute('download', '');
       const restore = document.createElement('button'); restore.className = 'button secondary'; restore.textContent = '恢复'; restore.disabled = Boolean(lastStatus?.task) || !backup.canRestore;
       if (!backup.canRestore) restore.title = '只能恢复已确认的当前世界备份';

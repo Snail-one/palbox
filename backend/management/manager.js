@@ -243,6 +243,7 @@ export class Manager {
         task.message = '正在通过 SteamCMD 下载服务端，请查看安装日志';
         await this.runtime.install();
         task.defaultsImported = await this.store.importDefaultIfPending();
+        try { await this.store.syncDefaultProfile(); } catch (error) { this.runtime.log('palbox', `同步游戏默认配置失败：${error.message}\n`); }
         await this.ensureConfig();
         this.updateCache = null;
         this.versionCache = null;
@@ -254,6 +255,7 @@ export class Manager {
         await this.backup('before-update');
         task.message = '正在更新并校验服务端文件';
         await this.runtime.install();
+        try { await this.store.syncDefaultProfile(); } catch (error) { this.runtime.log('palbox', `同步游戏默认配置失败：${error.message}\n`); }
         this.updateCache = null;
         this.versionCache = null;
         if (running) await this.runtime.start();
@@ -265,7 +267,9 @@ export class Manager {
       case 'apply': {
         const snapshot = this.store.snapshot();
         if (payload.revision !== snapshot.revision || payload.profileId !== snapshot.workspace.activeId) throw failure('配置已变更，请等待自动保存完成后重新应用。', 409);
-        const source = output(this.store.active().source);
+        const active = this.store.active();
+        if (active.locked) throw failure('游戏默认配置为只读，不能应用；请创建副本后编辑。', 409);
+        const source = output(active.source);
         const values = new Map(parse(source).entries.map(e => [e.key, e.raw]));
         if (values.get('RESTAPIEnabled') !== 'True' || !decodeString(values.get('AdminPassword') || '""')) throw failure('管理模式需要 RESTAPIEnabled=True 和非空管理员密码。');
         const restPort = Number(values.get('RESTAPIPort') || 8212);

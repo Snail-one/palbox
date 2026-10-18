@@ -1,4 +1,5 @@
 import { EditorSession } from '../../shared/domain/editor-session.js';
+import { DERIVED_DEFAULT_ORIGIN } from '../../shared/domain/workspace.js';
 import { WorkspaceService } from './application/workspace-service.js';
 import { createDom } from './ui/dom.js';
 import { createDialog } from './ui/dialog.js';
@@ -105,13 +106,20 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
     async create(name) {
       try {
         const { source } = await management.request('default-configuration');
-        workspace.add(name, source, { origin: '官方默认配置（DefaultPalWorldSettings.ini）' });
+        workspace.add(name, source, { origin: DERIVED_DEFAULT_ORIGIN });
         changedProfile('已从官方默认配置创建');
       } catch (error) { notifications.toast(error.message, true); }
     },
-    duplicate(name, id = workspace.active.id, { fromList = false } = {}) {
+    async duplicate(name, id = workspace.active.id, { fromList = false } = {}) {
       const sourceProfile = workspace.profiles.find(profile => profile.id === id) ?? workspace.active;
-      const source = id === workspace.active.id ? editor.source() : sourceProfile.source;
+      let source;
+      if (sourceProfile.locked) {
+        // A copy of the read-only entry must be usable as a managed configuration.
+        try { ({ source } = await management.request('default-configuration')); }
+        catch (error) { notifications.toast(error.message, true); return; }
+      } else {
+        source = id === workspace.active.id ? editor.source() : sourceProfile.source;
+      }
       workspace.add(name, source, { select: !fromList, origin: `复制自「${sourceProfile.name}」` });
       if (!fromList) { changedProfile('已创建独立副本'); return; }
       const success = persist();
@@ -128,9 +136,17 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
     async remove(id = workspace.active.id, { fromList = false } = {}) {
       let fallbackSource;
       let fallbackOrigin;
-      if (workspace.profiles.length === 1) {
-        try { ({ source: fallbackSource } = await management.request('default-configuration')); fallbackOrigin = '官方默认配置（DefaultPalWorldSettings.ini）'; }
-        catch (error) { notifications.toast(error.message, true); return; }
+      const editable = workspace.profiles.filter(profile => !profile.locked);
+      if (editable.length === 1 && editable[0].id === id) {
+        try {
+          ({ source: fallbackSource } = await management.request('default-configuration'));
+          fallbackOrigin = DERIVED_DEFAULT_ORIGIN;
+        } catch (error) {
+          const locked = workspace.profiles.find(profile => profile.locked);
+          if (!locked) { notifications.toast(error.message, true); return; }
+          fallbackSource = locked.source;
+          fallbackOrigin = DERIVED_DEFAULT_ORIGIN;
+        }
       }
       const activeRemoved = id === workspace.active.id;
       workspace.remove(id, { fallbackSource, fallbackOrigin });

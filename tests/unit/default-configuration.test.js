@@ -8,6 +8,7 @@ import { ManagementStore } from '../../backend/management/store.js';
 import { Manager } from '../../backend/management/manager.js';
 import { createManagementApi } from '../../backend/management/api.js';
 import { parse, decodeString } from '../../shared/domain/config.js';
+import { DERIVED_DEFAULT_ORIGIN, GAME_DEFAULT_PROFILE_NAME, OFFICIAL_DEFAULT_ORIGIN } from '../../shared/domain/workspace.js';
 
 const official = '; Official defaults\r\n[/Script/Pal.PalGameWorldSettings]\r\nOptionSettings=(ServerName="Official World",ExpRate=2.500000,FutureFlag=(Enabled=True),RESTAPIEnabled=False,AdminPassword="",PublicPort=8211)\r\n';
 const values = source => new Map(parse(source).entries.map(entry => [entry.key, entry.raw]));
@@ -35,11 +36,19 @@ test('初始默认配置读取游戏官方文件，保留注释、未知参数�
   assert.ok(source.startsWith('; Official defaults\r\n'));
   assert.equal(settings.size, values(official).size, '不能混入内置模板中的游戏参数');
   assert.equal(store.active().initialSource, source);
-  await writeFile(file, official.replace('ExpRate=2.500000', 'ExpRate=8.000000'));
+  const locked = store.workspace.profiles.find(profile => profile.locked);
+  assert.ok(locked);
+  assert.equal(locked.name, GAME_DEFAULT_PROFILE_NAME);
+  assert.equal(locked.origin, OFFICIAL_DEFAULT_ORIGIN);
+  assert.equal(locked.source, official, '只读默认项直接使用游戏默认文件原文');
+  assert.notEqual(store.active().id, locked.id);
+  const changed = official.replace('ExpRate=2.500000', 'ExpRate=8.000000');
+  await writeFile(file, changed);
   assert.equal(values(await store.defaultTemplate()).get('ExpRate'), '8.000000', '新建时读取当前官方文件');
   const restarted = new ManagementStore(directory, 9000);
   await restarted.initialize();
   assert.equal(restarted.active().source, source, '更新官方文件不覆盖已经保存的配置');
+  assert.equal(restarted.workspace.profiles.find(profile => profile.locked).source, changed, '只读默认项跟随官方文件更新');
 });
 
 test('未安装时只建立管理占位配置，安装后导入官方文件并更新恢复基准', async t => {
@@ -56,9 +65,12 @@ test('未安装时只建立管理占位配置，安装后导入官方文件并�
   await restarted.initialize();
   assert.equal(await restarted.importDefaultIfPending(), true);
   assert.equal(restarted.active().id, id);
-  assert.equal(restarted.revision, revision + 1);
+  assert.equal(restarted.revision, revision + 2, '启动时新增只读默认项，安装后导入占位配置');
   assert.equal(values(restarted.active().source).get('ServerName'), '"Official World"');
   assert.equal(restarted.active().initialSource, restarted.active().source);
+  const locked = restarted.workspace.profiles.find(profile => profile.locked);
+  assert.ok(locked);
+  assert.equal(locked.source, official);
   assert.equal(await restarted.importDefaultIfPending(), false);
   assert.equal(JSON.parse(await readFile(restarted.file, 'utf8')).pendingDefault, undefined);
 });
@@ -73,6 +85,7 @@ test('安装前已修改的配置和现有游戏配置不会被默认文件覆�
   await writeFile(file, official);
   assert.equal(await store.importDefaultIfPending(), false);
   assert.equal(store.active().source, 'OptionSettings=(ServerName="My World")');
+  assert.equal(store.workspace.profiles.find(profile => profile.locked).source, official);
   await rm(store.file);
   const config = path.join(directory, 'server/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini');
   await mkdir(path.dirname(config), { recursive: true });
@@ -154,4 +167,75 @@ test('默认配置接口要求登录，文件缺失时返回明确错误且现�
   assert.equal(available.status, 200);
   assert.equal(available.body.template, null);
   assert.equal((await request('/api/workspace', { cookie })).body.workspace.activeId, manager.store.active().id);
+});
+
+test('游戏默认配置由服务端维护，客户端不能修改、删除或选中', async t => {
+  const { directory, file } = await fixture(t);
+  await writeFile(file, official);
+  const store = new ManagementStore(directory, 9000);
+  await store.initialize();
+  const workingId = store.active().id;
+  const lockedId = store.workspace.profiles.find(profile => profile.locked).id;
+
+  let snapshot = store.snapshot();
+  const target = snapshot.workspace.profiles.find(profile => profile.id === lockedId);
+  target.source = 'OptionSettings=(ServerName="Tampered")';
+  target.name = '篡改的默认配置';
+  await store.update(snapshot.workspace, snapshot.revision);
+  let current = store.snapshot().workspace;
+  assert.equal(current.profiles.find(profile => profile.id === lockedId).source, official);
+  assert.equal(current.profiles.find(profile => profile.id === lockedId).name, GAME_DEFAULT_PROFILE_NAME);
+  assert.equal(current.profiles.find(profile => profile.id === lockedId).locked, true);
+  assert.equal(current.activeId, workingId);
+
+  snapshot = store.snapshot();
+  snapshot.workspace.profiles = snapshot.workspace.profiles.filter(profile => profile.id !== lockedId);
+  await store.update(snapshot.workspace, snapshot.revision);
+  current = store.snapshot().workspace;
+  assert.ok(current.profiles.some(profile => profile.id === lockedId));
+  assert.equal(current.profiles.find(profile => profile.id === lockedId).source, official);
+
+  snapshot = store.snapshot();
+  const fake = structuredClone(snapshot.workspace.profiles.find(profile => profile.id === workingId));
+  fake.id = 'fake-locked'; fake.name = '伪只读'; fake.locked = true; fake.origin = OFFICIAL_DEFAULT_ORIGIN;
+  snapshot.workspace.profiles.push(fake);
+  await store.update(snapshot.workspace, snapshot.revision);
+  const savedFake = store.snapshot().workspace.profiles.find(profile => profile.id === 'fake-locked');
+  assert.equal(savedFake.locked, undefined);
+  assert.equal(savedFake.origin, DERIVED_DEFAULT_ORIGIN);
+
+  snapshot = store.snapshot();
+  snapshot.workspace.activeId = lockedId;
+  await assert.rejects(store.update(snapshot.workspace, snapshot.revision), { status: 409, message: /只读/ });
+
+  const changed = official.replace('ExpRate=2.500000', 'ExpRate=7.000000');
+  await writeFile(file, changed);
+  await store.syncDefaultProfile();
+  assert.equal(store.snapshot().workspace.profiles.find(profile => profile.id === lockedId).source, changed);
+});
+
+test('旧版官方来源配置迁移为可编辑副本，并自动补充只读默认项', async t => {
+  const { directory, file } = await fixture(t);
+  await writeFile(file, official);
+  const legacy = {
+    version: 1,
+    activeId: 'legacy',
+    profiles: [{
+      id: 'legacy', name: '旧配置', source: 'OptionSettings=(ExpRate=2)',
+      initialSource: 'OptionSettings=(ExpRate=2)', updatedAt: '2026-01-01T00:00:00Z',
+      origin: OFFICIAL_DEFAULT_ORIGIN
+    }]
+  };
+  await mkdir(path.join(directory, 'palbox'), { recursive: true });
+  await writeFile(path.join(directory, 'palbox/workspace.json'), JSON.stringify({ workspace: legacy, revision: 4 }));
+  const store = new ManagementStore(directory);
+  await store.initialize();
+  const profile = store.workspace.profiles.find(candidate => candidate.id === 'legacy');
+  assert.equal(profile.origin, DERIVED_DEFAULT_ORIGIN);
+  assert.equal(profile.locked, undefined);
+  assert.equal(store.active().id, 'legacy');
+  const locked = store.workspace.profiles.find(candidate => candidate.locked);
+  assert.ok(locked);
+  assert.equal(locked.source, official);
+  assert.equal(locked.origin, OFFICIAL_DEFAULT_ORIGIN);
 });

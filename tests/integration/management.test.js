@@ -4,6 +4,7 @@ import { readFile, writeFile, mkdir, access, symlink, utimes } from 'node:fs/pro
 import path from 'node:path';
 import { managementFixture } from '../helpers/management-fixture.js';
 import { parse } from '../../shared/domain/config.js';
+import { DERIVED_DEFAULT_ORIGIN, OFFICIAL_DEFAULT_ORIGIN } from '../../shared/domain/workspace.js';
 
 const value = (source, key) => parse(source).entries.find(e => e.key === key)?.raw;
 
@@ -24,7 +25,12 @@ test('管理 API 登录、权限、并发保存与路径边界', { skip: process
   assert.equal((await f.request('/api/tasks', { method: 'POST', body: { action: 'install' }, headers: { 'X-Palbox-CSRF': 'bad' } })).status, 403);
   assert.equal((await f.request('/api/workspace', { method: 'PUT', body: null })).status, 400);
   const snapshot = await (await f.request('/api/workspace')).json();
-  assert.equal(snapshot.workspace.profiles[0].origin, '官方默认配置（DefaultPalWorldSettings.ini）');
+  assert.equal(snapshot.workspace.profiles[0].origin, DERIVED_DEFAULT_ORIGIN);
+  const locked = snapshot.workspace.profiles.find(profile => profile.locked);
+  assert.ok(locked);
+  assert.equal(locked.origin, OFFICIAL_DEFAULT_ORIGIN);
+  assert.equal(locked.name, '游戏默认配置');
+  assert.notEqual(snapshot.workspace.activeId, locked.id);
   const original = snapshot.workspace.profiles[0].initialSource;
   snapshot.workspace.profiles[0].source = snapshot.workspace.profiles[0].source.replace('ExpRate=1.000000', 'ExpRate=2');
   snapshot.workspace.profiles[0].initialSource = 'OptionSettings=(Wrong=1)';
@@ -33,7 +39,13 @@ test('管理 API 登录、权限、并发保存与路径边界', { skip: process
   const current = await (await f.request('/api/workspace')).json();
   assert.equal(value(current.workspace.profiles[0].source, 'ExpRate'), '2');
   assert.equal(current.workspace.profiles[0].initialSource, original);
-  assert.equal(current.workspace.profiles[0].origin, '官方默认配置（DefaultPalWorldSettings.ini）');
+  assert.equal(current.workspace.profiles[0].origin, DERIVED_DEFAULT_ORIGIN);
+  assert.equal(current.workspace.profiles.find(profile => profile.locked).source, locked.source);
+  const defaultFile = path.join(f.directory, 'server/DefaultPalWorldSettings.ini');
+  const changedDefault = (await readFile(defaultFile, 'utf8')).replace('ExpRate=1.000000', 'ExpRate=6.000000');
+  await writeFile(defaultFile, changedDefault);
+  const refreshed = await (await f.request('/api/workspace')).json();
+  assert.equal(refreshed.workspace.profiles.find(profile => profile.locked).source, changedDefault);
   assert.equal((await f.request('/api/settings')).status, 200);
   assert.equal(JSON.stringify(await (await f.request('/api/settings')).json()).includes('hash'), false);
   for (const route of ['/api/backup?id=../../etc/passwd', '/api/logs?channel=../../etc/passwd']) assert.ok((await f.request(route)).status >= 400);

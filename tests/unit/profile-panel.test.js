@@ -34,7 +34,7 @@ class FakeElement {
 
 const IDS = [
   'source-view-dialog', 'source-view-text', 'source-view-description', 'view-profile-source',
-  'source-view-close', 'source-view-ok', 'source-view-copy', 'source-view-save', 'source-view-mode',
+  'source-view-close', 'source-view-ok', 'source-view-copy', 'source-view-save', 'source-view-file', 'source-view-mode',
   'source-view-error', 'new-profile', 'rename-profile', 'copy-profile', 'delete-profile',
   'profile-list', 'profile-count', 'profile-origin'
 ];
@@ -59,7 +59,7 @@ function setup({ failSave = false } = {}) {
     icon: () => new FakeElement('svg')
   };
   const imported = { id: 'imported', name: '二号世界', source: 'OptionSettings=(ExpRate=2)', origin: '导入文件：world.ini' };
-  const official = { id: 'official', name: '我的帕鲁世界', source: 'OptionSettings=(ExpRate=1)', origin: '官方默认配置（DefaultPalWorldSettings.ini）' };
+  const official = { id: 'official', name: '游戏默认配置', source: 'OptionSettings=(ExpRate=1)', origin: '官方默认配置（DefaultPalWorldSettings.ini）', locked: true };
   const workspace = { active: imported, profiles: [imported, official] };
   const saves = [];
   const panel = createProfilePanel({
@@ -93,6 +93,7 @@ test('点击配置名称弹出可编辑源码，保存调用回调并关闭弹�
   assert.equal(saveButton.hidden, false);
   assert.equal(saveButton.disabled, false);
   assert.equal(elements.get('source-view-mode').textContent, 'UTF-8 · 可编辑');
+  assert.equal(elements.get('source-view-file').textContent, '输入源码 · PalWorldSettings.ini');
   assert.match(elements.get('source-view-description').textContent, /来源：导入文件：world\.ini/);
 
   text.value = 'OptionSettings=(ExpRate=5)';
@@ -112,9 +113,14 @@ test('官方默认配置来源的弹窗只读且不会调用保存回调', async
   assert.equal(saveButton.hidden, true);
   assert.equal(saveButton.disabled, true);
   assert.equal(elements.get('source-view-mode').textContent, 'UTF-8 · 只读');
-  assert.match(elements.get('source-view-description').textContent, /只读/);
+  assert.equal(elements.get('source-view-file').textContent, '输入源码 · DefaultPalWorldSettings.ini');
+  assert.match(elements.get('source-view-description').textContent, /不可修改|只读/);
   await saveButton.fire('click');
   assert.deepEqual(saves, []);
+  const tools = rows[1].children[1];
+  assert.equal(tools.children[0].disabled, true);
+  assert.equal(tools.children[0].children[1].textContent, '只读');
+  assert.deepEqual(tools.children.map(button => button.dataset.profileAction), ['select', 'duplicate']);
 });
 
 test('保存失败时保留弹窗并显示错误', async () => {

@@ -2,7 +2,10 @@ import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { parse, serialize, encodeString } from '../../shared/domain/config.js';
-import { createProfile, createWorkspace, validateWorkspace } from '../../shared/domain/workspace.js';
+import {
+  createProfile, createWorkspace, validateWorkspace,
+  GAME_DEFAULT_PROFILE_ID, GAME_DEFAULT_PROFILE_NAME, OFFICIAL_DEFAULT_ORIGIN, DERIVED_DEFAULT_ORIGIN
+} from '../../shared/domain/workspace.js';
 import { jsonWrite, readJson, failure } from './files.js';
 
 export function managedTemplate(port, source) {
@@ -18,7 +21,8 @@ export function managedTemplate(port, source) {
 
 export function validateConfigurationWorkspace(value) {
   try { validateWorkspace(value); } catch (error) { throw failure(error.message); }
-  if (value.profiles.length > 100) throw failure('最多保留 100 套配置。');
+  // The server-owned default entry is additional to the user limit.
+  if (value.profiles.filter(profile => profile.locked !== true).length > 100) throw failure('最多保留 100 套配置。');
   for (const profile of value.profiles) {
     if (profile.source.length > 1024 * 1024 || (profile.initialSource?.length || 0) > 1024 * 1024 || profile.name.length > 100) throw failure('配置内容或名称过长。');
     try {
@@ -58,7 +62,7 @@ export class ManagementStore {
           source = managedTemplate(this.gamePort, '[/Script/Pal.PalGameWorldSettings]\nOptionSettings=()\n');
           origin = '安装前占位配置';
           pendingDefault = true;
-        } else origin = '官方默认配置（DefaultPalWorldSettings.ini）';
+        } else origin = DERIVED_DEFAULT_ORIGIN;
       }
       this.workspace = createWorkspace(createProfile('我的帕鲁世界', source, { origin }));
       this.revision = 1;
@@ -68,10 +72,12 @@ export class ManagementStore {
       await this.persist();
     }
     for (const profile of this.workspace.profiles) profile.initialSource ??= profile.source;
+    // The game-default entry is owned by the server and always mirrors the file.
+    await this.syncDefaultProfile();
   }
   snapshot() { return { workspace: structuredClone(this.workspace), revision: this.revision }; }
   active() { return this.workspace.profiles.find(p => p.id === this.workspace.activeId); }
-  async defaultTemplate({ optional = false } = {}) {
+  async readDefaultFile({ optional = false } = {}) {
     let source;
     try { source = await readFile(path.join(this.directory, 'server/DefaultPalWorldSettings.ini'), 'utf8'); }
     catch (error) {
@@ -81,24 +87,107 @@ export class ManagementStore {
     }
     try {
       if (Buffer.byteLength(source, 'utf8') > 1024 * 1024 || !parse(source).entries.length) throw new Error('默认配置内容无效');
-      return managedTemplate(this.gamePort, source);
     } catch { throw failure('DefaultPalWorldSettings.ini 内容无效，请检查游戏目录中的官方默认配置。', 409); }
+    return source;
+  }
+  async defaultTemplate({ optional = false } = {}) {
+    const source = await this.readDefaultFile({ optional });
+    return source === null ? null : managedTemplate(this.gamePort, source);
+  }
+  /**
+   * Server-owned read-only entry that mirrors DefaultPalWorldSettings.ini.
+   * Legacy profiles that only claimed the official origin become editable copies;
+   * only this entry may carry locked/origin=official.
+   */
+  applyDefaultProfile(workspace, source) {
+    let changed = false;
+    let locked = workspace.profiles.find(profile => profile.locked === true) ?? workspace.profiles.find(profile => profile.id === GAME_DEFAULT_PROFILE_ID);
+    if (locked) {
+      if (locked.locked !== true) { locked.locked = true; changed = true; }
+      for (const profile of workspace.profiles) {
+        if (profile !== locked && profile.locked) { delete profile.locked; changed = true; }
+      }
+    }
+    for (const profile of workspace.profiles) {
+      if (profile !== locked && !profile.locked && profile.origin === OFFICIAL_DEFAULT_ORIGIN) {
+        profile.origin = DERIVED_DEFAULT_ORIGIN;
+        changed = true;
+      }
+    }
+    if (source !== null) {
+      if (!locked) {
+        locked = createProfile(GAME_DEFAULT_PROFILE_NAME, source, { id: () => GAME_DEFAULT_PROFILE_ID, origin: OFFICIAL_DEFAULT_ORIGIN, locked: true });
+        workspace.profiles.push(locked);
+        changed = true;
+      } else if (locked.name !== GAME_DEFAULT_PROFILE_NAME || locked.source !== source || locked.initialSource !== source || locked.origin !== OFFICIAL_DEFAULT_ORIGIN || locked.locked !== true) {
+        Object.assign(locked, {
+          name: GAME_DEFAULT_PROFILE_NAME, source, initialSource: source,
+          origin: OFFICIAL_DEFAULT_ORIGIN, locked: true, updatedAt: new Date().toISOString()
+        });
+        changed = true;
+      }
+    } else if (locked && locked.origin !== OFFICIAL_DEFAULT_ORIGIN) {
+      locked.origin = OFFICIAL_DEFAULT_ORIGIN;
+      changed = true;
+    }
+    if (locked && workspace.activeId === locked.id) {
+      const fallback = workspace.profiles.find(profile => profile.id !== locked.id && !profile.locked);
+      if (fallback) {
+        workspace.activeId = fallback.id;
+        changed = true;
+      } else if (locked.source) {
+        const editable = createProfile('我的帕鲁世界', managedTemplate(this.gamePort, locked.source), { origin: DERIVED_DEFAULT_ORIGIN });
+        workspace.profiles.push(editable);
+        workspace.activeId = editable.id;
+        changed = true;
+      }
+    }
+    return changed;
+  }
+  syncDefaultProfile() {
+    const operation = this.writes.then(async () => {
+      let source = null;
+      try { source = await this.readDefaultFile({ optional: true }); }
+      catch { source = null; }
+      if (!this.applyDefaultProfile(this.workspace, source)) return false;
+      this.revision += 1;
+      await this.persist();
+      return true;
+    });
+    this.writes = operation.catch(() => {});
+    return operation;
   }
   persist() { return jsonWrite(this.file, { ...this.snapshot(), ...(this.pendingDefault ? { pendingDefault: this.pendingDefault } : {}) }); }
   importDefaultIfPending() {
     const operation = this.writes.then(async () => {
-      if (!this.pendingDefault) return false;
-      const profile = this.workspace.profiles.find(profile => profile.id === this.pendingDefault.id);
-      if (!profile || profile.source !== this.pendingDefault.source) return false;
-      const source = await this.defaultTemplate();
+      const pending = this.pendingDefault;
+      let imported = false;
+      let source = null;
+      if (pending) {
+        const profile = this.workspace.profiles.find(candidate => candidate.id === pending.id);
+        if (profile && profile.source === pending.source) {
+          source = await this.readDefaultFile();
+          imported = true;
+        }
+      }
+      if (source === null) {
+        try { source = await this.readDefaultFile({ optional: true }); }
+        catch { source = null; }
+      }
       const workspace = structuredClone(this.workspace);
-      const imported = workspace.profiles.find(candidate => candidate.id === profile.id);
-      imported.source = source; imported.initialSource = source; imported.updatedAt = new Date().toISOString();
-      imported.origin = '官方默认配置（DefaultPalWorldSettings.ini）';
+      if (imported) {
+        const profile = workspace.profiles.find(candidate => candidate.id === pending.id);
+        const managed = managedTemplate(this.gamePort, source);
+        profile.source = managed; profile.initialSource = managed; profile.updatedAt = new Date().toISOString();
+        profile.origin = DERIVED_DEFAULT_ORIGIN;
+      }
+      const changed = this.applyDefaultProfile(workspace, source) || imported;
+      if (!changed) return false;
       const revision = this.revision + 1;
-      await jsonWrite(this.file, { workspace, revision });
-      this.workspace = workspace; this.revision = revision; this.pendingDefault = null;
-      return true;
+      const nextPending = imported ? null : this.pendingDefault;
+      await jsonWrite(this.file, { workspace, revision, ...(nextPending ? { pendingDefault: nextPending } : {}) });
+      this.workspace = workspace; this.revision = revision; this.pendingDefault = nextPending;
+      return imported;
     });
     this.writes = operation.catch(() => {});
     return operation;
@@ -108,12 +197,24 @@ export class ManagementStore {
       if (revision !== this.revision) throw failure('配置已在其他页面修改，请刷新后再编辑。', 409);
       validateConfigurationWorkspace(workspace);
       const candidate = structuredClone(workspace);
-      for (const profile of candidate.profiles) {
+      const locked = this.workspace.profiles.find(profile => profile.locked === true);
+      for (let index = 0; index < candidate.profiles.length; index++) {
+        const profile = candidate.profiles[index];
+        if (locked && profile.id === locked.id) {
+          // The server owns this entry; client edits to it are never persisted.
+          candidate.profiles[index] = structuredClone(locked);
+          continue;
+        }
         const previous = this.workspace.profiles.find(p => p.id === profile.id);
+        delete profile.locked;
         // A later edit cannot accidentally replace the original input baseline or origin.
         profile.initialSource = previous?.initialSource ?? previous?.source ?? profile.initialSource ?? profile.source;
         if (previous?.origin) profile.origin = previous.origin;
+        if (profile.origin === OFFICIAL_DEFAULT_ORIGIN) profile.origin = DERIVED_DEFAULT_ORIGIN;
       }
+      if (locked && !candidate.profiles.some(profile => profile.id === locked.id)) candidate.profiles.push(structuredClone(locked));
+      if (locked && candidate.activeId === locked.id) throw failure('游戏默认配置为只读，不能作为当前编辑配置。', 409);
+      validateConfigurationWorkspace(candidate);
       const next = this.revision + 1;
       const pendingDefault = this.pendingDefault && candidate.profiles.some(profile => profile.id === this.pendingDefault.id && profile.source === this.pendingDefault.source) ? this.pendingDefault : null;
       await jsonWrite(this.file, { workspace: candidate, revision: next, ...(pendingDefault ? { pendingDefault } : {}) });

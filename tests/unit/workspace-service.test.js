@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { WorkspaceService } from '../../frontend/src/application/workspace-service.js';
+import { DERIVED_DEFAULT_ORIGIN, OFFICIAL_DEFAULT_ORIGIN } from '../../shared/domain/workspace.js';
 import template from '../../shared/domain/template.js';
 
 const KEY = 'workspace';
@@ -185,6 +186,61 @@ test('旧配置首次保存前捕获输入基准，保存失败与重试不会�
   assert.equal(service.initialSource, old.profiles[0].source);
   const loaded = new WorkspaceService({ repository: { load: () => JSON.parse(data.get(KEY)) }, template });
   assert.equal(loaded.initialSource, old.profiles[0].source);
+});
+
+test('锁定的游戏默认配置不能选择、重命名、删除或修改源码', () => {
+  const lockedSource = 'OptionSettings=(ExpRate=1)';
+  const initial = {
+    version: 1,
+    activeId: 'editable',
+    profiles: [
+      { id: 'editable', name: '我的世界', source: 'OptionSettings=(ExpRate=2)', initialSource: 'OptionSettings=(ExpRate=2)', updatedAt: '2026-01-01' },
+      { id: 'locked', name: '游戏默认配置', source: lockedSource, initialSource: lockedSource, updatedAt: '2026-01-01', origin: OFFICIAL_DEFAULT_ORIGIN, locked: true }
+    ]
+  };
+  const { service, data } = setup(initial);
+  assert.throws(() => service.select('locked'), /只读/);
+  assert.throws(() => service.rename('改名', 'locked'), /不能重命名/);
+  assert.throws(() => service.remove('locked'), /不能删除/);
+  assert.throws(() => service.updateSource('locked', 'OptionSettings=(ExpRate=9)'), /不能修改源码/);
+  assert.equal(service.profiles.find(profile => profile.id === 'locked').source, lockedSource);
+  assert.equal(service.active.id, 'editable');
+  assert.equal(data.get(KEY), JSON.stringify(initial));
+});
+
+test('删除最后一个可编辑配置时从游戏默认配置创建可编辑副本', () => {
+  const lockedSource = 'OptionSettings=(ExpRate=1)';
+  const initial = {
+    version: 1,
+    activeId: 'editable',
+    profiles: [
+      { id: 'editable', name: '我的世界', source: 'OptionSettings=(ExpRate=2)', initialSource: 'OptionSettings=(ExpRate=2)', updatedAt: '2026-01-01' },
+      { id: 'locked', name: '游戏默认配置', source: lockedSource, initialSource: lockedSource, updatedAt: '2026-01-01', origin: OFFICIAL_DEFAULT_ORIGIN, locked: true }
+    ]
+  };
+  const { service } = setup(initial);
+  service.remove('editable');
+  assert.equal(service.profiles.length, 2);
+  assert.ok(service.profiles.some(profile => profile.id === 'locked'));
+  assert.notEqual(service.active.id, 'locked');
+  assert.equal(service.active.source, lockedSource);
+  assert.equal(service.active.origin, DERIVED_DEFAULT_ORIGIN);
+  assert.equal(service.persisted, false);
+});
+
+test('删除最后一个可编辑配置时优先使用服务端提供的新默认配置', () => {
+  const initial = {
+    version: 1,
+    activeId: 'editable',
+    profiles: [
+      { id: 'editable', name: '我的世界', source: 'OptionSettings=(ExpRate=2)', initialSource: 'OptionSettings=(ExpRate=2)', updatedAt: '2026-01-01' },
+      { id: 'locked', name: '游戏默认配置', source: 'OptionSettings=(ExpRate=1)', initialSource: 'OptionSettings=(ExpRate=1)', updatedAt: '2026-01-01', origin: OFFICIAL_DEFAULT_ORIGIN, locked: true }
+    ]
+  };
+  const { service } = setup(initial);
+  service.remove('editable', { fallbackSource: 'OptionSettings=(ExpRate=9)', fallbackOrigin: '基于官方默认配置（DefaultPalWorldSettings.ini）' });
+  assert.equal(service.active.source, 'OptionSettings=(ExpRate=9)');
+  assert.equal(service.active.origin, DERIVED_DEFAULT_ORIGIN);
 });
 
 test('损坏的输入基准不能用于覆盖已有记录', () => {

@@ -1,5 +1,5 @@
 import { parse } from '../../../shared/domain/config.js';
-import { createProfile, createWorkspace, validateWorkspace } from '../../../shared/domain/workspace.js';
+import { createProfile, createWorkspace, validateWorkspace, DERIVED_DEFAULT_ORIGIN } from '../../../shared/domain/workspace.js';
 
 /** Coordinates persistence through an injected { load, save } repository. */
 export class WorkspaceService {
@@ -58,7 +58,9 @@ export class WorkspaceService {
   }
 
   select(id) {
-    if (!this.profiles.some(profile => profile.id === id)) throw new Error('配置不存在。');
+    const profile = this.profiles.find(candidate => candidate.id === id);
+    if (!profile) throw new Error('配置不存在。');
+    if (profile.locked) throw new Error('游戏默认配置为只读，不能选择；请创建副本后编辑。');
     this.#workspace.activeId = id;
   }
 
@@ -74,17 +76,25 @@ export class WorkspaceService {
   rename(name, id = this.active.id) {
     const profile = this.profiles.find(profile => profile.id === id);
     if (!profile) throw new Error('配置不存在。');
+    if (profile.locked) throw new Error('游戏默认配置不能重命名。');
     profile.name = name;
     this.#persisted = false;
   }
 
-  remove(id = this.active.id, { fallbackSource = this.#template, fallbackOrigin } = {}) {
-    if (!this.profiles.some(profile => profile.id === id)) throw new Error('配置不存在。');
+  remove(id = this.active.id, { fallbackSource, fallbackOrigin } = {}) {
+    const removed = this.profiles.find(profile => profile.id === id);
+    if (!removed) throw new Error('配置不存在。');
+    if (removed.locked) throw new Error('游戏默认配置不能删除。');
     const activeRemoved = id === this.active.id;
     const remaining = this.profiles.filter(profile => profile.id !== id);
-    if (!remaining.length) { parse(fallbackSource); remaining.push(this.#profile('我的帕鲁世界', fallbackSource, fallbackOrigin)); }
+    if (!remaining.some(profile => !profile.locked)) {
+      const locked = remaining.find(profile => profile.locked);
+      const source = fallbackSource ?? locked?.source ?? this.#template;
+      parse(source);
+      remaining.push(this.#profile('我的帕鲁世界', source, fallbackOrigin ?? (locked ? DERIVED_DEFAULT_ORIGIN : '内置模板')));
+    }
     this.#workspace.profiles = remaining;
-    if (activeRemoved) this.select(remaining[0].id);
+    if (activeRemoved) this.select(remaining.find(profile => !profile.locked).id);
     this.#persisted = false;
   }
 
@@ -93,6 +103,7 @@ export class WorkspaceService {
   updateSource(id, source) {
     const profile = this.profiles.find(candidate => candidate.id === id);
     if (!profile) throw new Error('配置不存在。');
+    if (profile.locked) throw new Error('游戏默认配置只读取自游戏目录中的 DefaultPalWorldSettings.ini，不能修改源码。');
     parse(source);
     // Capture legacy profiles before their first edit; later saves keep this baseline.
     profile.initialSource ??= profile.source;

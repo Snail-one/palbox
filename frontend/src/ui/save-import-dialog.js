@@ -1,3 +1,5 @@
+import { formatBytes } from './format.js';
+
 export function createSaveImportDialog({ dom, api, onImport }) {
   const { $ } = dom;
   const dialog = $('save-import-dialog');
@@ -33,7 +35,7 @@ export function createSaveImportDialog({ dom, api, onImport }) {
     if (candidate.size > 1024 ** 3) { showError('存档压缩包不能超过 1 GB。'); return; }
     file = candidate; stagedId = null;
     showError('');
-    name.textContent = `${candidate.name} · ${(candidate.size / 1024 / 1024).toFixed(1)} MB`;
+    name.textContent = `${candidate.name} · ${formatBytes(candidate.size)}`;
     status.textContent = '准备上传并恢复存档。';
     confirm.disabled = false;
   }
