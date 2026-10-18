@@ -7,7 +7,7 @@ import { failure, jsonWrite, readJson } from './files.js';
 import { saveName, worldName } from './native-backups.js';
 
 const run = promisify(execFile);
-const importId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const importId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$(?![\s\S])/;
 const listing = /^([-d])[-rwxsStT]{9}[.+@]?\s+\d+\/\d+\s+(\d+)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?::\d{2})?\s+(.+)$/;
 
 export const DEFAULT_IMPORT_LIMITS = Object.freeze({

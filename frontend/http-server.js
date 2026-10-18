@@ -1,10 +1,19 @@
 import http from 'node:http';
 import https from 'node:https';
 import { readFile, realpath } from 'node:fs/promises';
+import { isIP } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isLoopbackOrPrivate } from '../shared/domain/network.js';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
+const securityHeaders = Object.freeze({
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'no-referrer',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+});
 const contentTypes = new Map([
   ['.html', 'text/html; charset=utf-8'],
   ['.css', 'text/css; charset=utf-8'],
@@ -14,6 +23,29 @@ const contentTypes = new Map([
   ['.webp', 'image/webp'],
   ['.ico', 'image/x-icon']
 ]);
+
+/**
+ * Resolve the browser address. Forwarding headers are only honored when the
+ * immediate peer is a local/private proxy; public clients cannot spoof them.
+ * Walking the chain from the right skips trusted private proxies, so a
+ * client-supplied prefix cannot impersonate an internal address.
+ */
+export function clientAddress(request) {
+  const peer = request.socket.remoteAddress || '';
+  if (!isLoopbackOrPrivate(peer)) return peer;
+  const forwarded = request.headers['x-forwarded-for'];
+  const chain = typeof forwarded === 'string' ? forwarded.split(',').map(value => value.trim()).filter(value => isIP(value)) : [];
+  if (chain.length) {
+    for (let index = chain.length - 1; index >= 0; index--) {
+      if (!isLoopbackOrPrivate(chain[index])) return chain[index];
+    }
+    return chain[0];
+  }
+  const real = request.headers['x-real-ip'];
+  if (typeof real === 'string' && isIP(real.trim())) return real.trim();
+  if (forwarded !== undefined || real !== undefined) return '';
+  return peer;
+}
 
 /** Publish browser assets and stream API traffic to the independent backend. */
 export function createServer({ root = projectRoot, apiUrl = 'http://127.0.0.1:8081' } = {}) {
@@ -29,9 +61,10 @@ export function createServer({ root = projectRoot, apiUrl = 'http://127.0.0.1:80
     ['/', path.join(root, 'frontend/public'), new Set(contentTypes.keys())]
   ];
   const server = http.createServer(async (request, response) => {
-    const headers = { 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' };
+    const headers = { 'Cache-Control': 'no-store' };
     const send = (status, text) => {
-      response.writeHead(status, { ...headers, 'Content-Type': 'text/plain; charset=utf-8' });
+      if (response.destroyed || response.writableEnded) return;
+      response.writeHead(status, { ...securityHeaders, ...headers, 'Content-Type': 'text/plain; charset=utf-8' });
       response.end(request.method === 'HEAD' ? undefined : text);
     };
     let pathname;
@@ -58,7 +91,8 @@ export function createServer({ root = projectRoot, apiUrl = 'http://127.0.0.1:80
       const allowedRoot = await realpath(directory);
       if (!resolved.startsWith(allowedRoot + path.sep)) { send(404, 'Not found'); return; }
       const body = await readFile(resolved);
-      response.writeHead(200, { ...headers, 'Content-Type': contentTypes.get(extension), 'Content-Length': body.length });
+      if (response.destroyed || response.writableEnded) return;
+      response.writeHead(200, { ...securityHeaders, ...headers, 'Content-Type': contentTypes.get(extension), 'Content-Length': body.length });
       response.end(request.method === 'HEAD' ? undefined : body);
     } catch (error) {
       send(['ENOENT', 'ENOTDIR', 'EISDIR'].includes(error.code) ? 404 : 500, 'Unable to read asset');
@@ -75,11 +109,18 @@ function proxy(request, response, upstream) {
   const forwarded = { ...request.headers };
   for (const name of (forwarded.connection || '').split(',')) delete forwarded[name.trim().toLowerCase()];
   for (const name of ['connection', 'keep-alive', 'proxy-authorization', 'proxy-authenticate', 'te', 'trailer', 'transfer-encoding', 'upgrade']) delete forwarded[name];
+  const client = clientAddress(request);
+  // Overwrite client-supplied values so the API can trust this header for
+  // rate limiting, auditing and the first-run setup guard. Unknown values are
+  // forwarded explicitly so the API never falls back to the proxy address.
+  forwarded['x-palbox-client-ip'] = client || 'unknown';
+  forwarded['x-forwarded-for'] = client || 'unknown';
   const pending = transport.request({
     protocol: upstream.protocol, hostname: upstream.hostname, port: upstream.port,
     method: request.method, path: request.url, headers: forwarded
   }, incoming => {
-    response.writeHead(incoming.statusCode, incoming.headers);
+    if (response.destroyed || response.writableEnded) { incoming.destroy(); return; }
+    response.writeHead(incoming.statusCode, { ...incoming.headers, ...securityHeaders });
     incoming.on('error', () => response.destroy());
     incoming.pipe(response);
   });
@@ -87,7 +128,7 @@ function proxy(request, response, upstream) {
   pending.on('error', () => {
     if (response.destroyed) return;
     if (response.headersSent) { response.destroy(); return; }
-    response.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+    response.writeHead(502, { ...securityHeaders, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     response.end(JSON.stringify({ error: '无法连接 Palbox 管理服务。' }));
   });
   request.on('aborted', () => pending.destroy());

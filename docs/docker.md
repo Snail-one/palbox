@@ -26,7 +26,9 @@ docker compose logs -f frontend palbox
 
 默认网页只绑定宿主机回环地址。需要从内网访问时，将 `compose.yaml` 中 `frontend.ports` 的 `127.0.0.1` 改成服务器内网 IP 或 `0.0.0.0`；公网使用 HTTPS 反向代理，并设置 `PALBOX_SECURE_COOKIE=true`。游戏 REST API 仅由管理后端通过容器内的回环地址访问，不映射到宿主机。
 
-初始化完成前，任何能访问面板端口的人都可以抢先创建管理员。请先在本机或可信内网完成初始化，再把端口暴露到更大范围。
+初始化完成前，只有来自回环或内网地址（RFC1918、IPv6 ULA、链路本地，包括可信反向代理转发的私网地址）的请求可以创建管理员；公网来源会返回 403。仍建议先在本机或可信内网完成初始化，再把端口暴露到更大范围。管理员登录失败按客户端地址计次，连续失败后仅短暂冷却，避免攻击者长期锁死登录。
+
+前端静态页面与代理响应附带 CSP、X-Frame-Options、Referrer-Policy 和 Permissions-Policy；JSON API 与下载响应附带 `default-src 'none'` 的 CSP。JSON 请求体同时受大小上限和读取截止时间约束，超时连接会被关闭。TLS 终止、HSTS 和公网访问控制仍由反向代理负责。
 
 已有 `settings.json` 时沿用其中的管理员账号。旧版 `settings.json`（`admin` 只有 `salt`/`hash`、没有 `username`）不兼容当前版本：启动会失败并提示先备份数据目录、删除对应的 `palbox/settings.json` 后重新初始化；配置库、存档、备份和日志不受影响。镜像入口以 root 处理挂载目录归属后，通过 gosu 切换到普通用户，游戏和 Node 均以该用户运行；默认使用 `1000:1000`，需要时可通过可选的 `PUID`/`PGID` 环境变量覆盖。
 

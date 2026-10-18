@@ -6,9 +6,9 @@ import { promisify } from 'node:util';
 import { failure } from './files.js';
 
 const run = promisify(execFile);
-export const worldName = /^[A-Za-z0-9_-]{1,128}$/;
-const snapshotName = /^\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}$/;
-export const saveName = /^[A-Za-z0-9_-]{1,128}\.sav$/;
+export const worldName = /^[A-Za-z0-9_-]{1,128}$(?![\s\S])/;
+const snapshotName = /^\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}$(?![\s\S])/;
+export const saveName = /^[A-Za-z0-9_-]{1,128}\.sav$(?![\s\S])/;
 const signature = info => `${info.ino}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`;
 const changing = () => failure('官方备份正在写入或已被轮换，请刷新后重试。', 409);
 

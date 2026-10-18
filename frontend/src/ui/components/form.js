@@ -80,7 +80,7 @@ export function createFormView({ dom, editor, catalog, view, onCategory, onChang
           wrap.append(control);
         } else if (f.type === 'platforms') {
           control = el('fieldset', 'platform-fieldset');
-          control.style.cssText = 'border:0;padding:0;margin:0;min-width:0;width:100%';
+          Object.assign(control.style, { border: '0', padding: '0', margin: '0', minWidth: '0', width: '100%' });
           control.append(el('legend', 'sr-only', f.label));
           const choices = el('div', 'platform-options');
           const platforms = /^\([^()]*\)$/.test(value) ? value.slice(1, -1).split(',').map(v => v.trim()).filter(Boolean) : null;

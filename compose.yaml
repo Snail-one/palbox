@@ -5,6 +5,10 @@ services:
       target: frontend
     image: palbox-frontend:local
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     ports:
       # 网页监听地址；需要内网访问时改成服务器内网 IP 或 0.0.0.0。
       - "127.0.0.1:8080:8080/tcp"
@@ -21,6 +25,9 @@ services:
     platform: linux/amd64
     restart: unless-stopped
     stop_grace_period: 120s
+    security_opt:
+      # 入口脚本用 gosu 降权，保留默认 capabilities，仅禁止提权。
+      - no-new-privileges:true
     ports:
       # 游戏 UDP 端口：修改 PALBOX_GAME_PORT 时，这里的宿主机端口也要一起改。
       - "8211:8211/udp"

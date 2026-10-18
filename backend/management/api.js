@@ -3,24 +3,51 @@ import { constants } from 'node:fs';
 import { Authentication } from './auth.js';
 import { failure } from './files.js';
 import { streamLogs } from './logs.js';
+import { API_SECURITY_HEADERS } from '../security-headers.js';
+import { isLoopbackOrPrivate } from '../../shared/domain/network.js';
 
-async function body(request, limit = 8 * 1024 * 1024) {
+const AUTH_BODY_TIMEOUT_MS = 10 * 1000;
+const DEFAULT_BODY_TIMEOUT_MS = 120 * 1000;
+
+/** Read a JSON object, enforcing both a size limit and an absolute deadline. */
+export async function body(request, limit = 8 * 1024 * 1024, timeoutMs = DEFAULT_BODY_TIMEOUT_MS) {
   if (!request.headers['content-type']?.startsWith('application/json')) throw failure('请求内容必须为 JSON。', 415);
-  let size = 0;
-  const chunks = [];
-  for await (const chunk of request) { size += chunk.length; if (size > limit) throw failure('请求内容过大。', 413); chunks.push(chunk); }
+  let timer;
+  const expired = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      request.destroy();
+      reject(failure('请求内容读取超时。', 408));
+    }, timeoutMs);
+  });
   try {
-    const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
-    return value;
-  } catch { throw failure('JSON 格式不正确。'); }
+    const reading = (async () => {
+      let size = 0;
+      const chunks = [];
+      for await (const chunk of request) {
+        size += chunk.length;
+        if (size > limit) throw failure('请求内容过大。', 413);
+        chunks.push(chunk);
+      }
+      return Buffer.concat(chunks);
+    })();
+    const buffer = await Promise.race([reading, expired]);
+    try {
+      const value = JSON.parse(buffer.toString('utf8'));
+      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
+      return value;
+    } catch { throw failure('JSON 格式不正确。'); }
+  } finally { clearTimeout(timer); }
 }
 
 export function createManagementApi(manager, options = {}) {
-  const auth = new Authentication(() => manager.settings?.admin ?? null, options);
+  const auth = new Authentication(() => manager.settings?.admin ?? null, {
+    ...options,
+    log: options.log ?? (text => manager.runtime.log('palbox', text))
+  });
   return async function api(request, response, pathname) {
     const json = (status, value) => {
-      response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+      if (response.destroyed || response.writableEnded) return;
+      response.writeHead(status, { ...API_SECURITY_HEADERS, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
       response.end(JSON.stringify(value));
     };
     try {
@@ -35,14 +62,17 @@ export function createManagementApi(manager, options = {}) {
       }
       if (pathname === '/api/setup' && request.method === 'POST') {
         auth.verifyOrigin(request);
-        const input = await body(request, 4096);
+        // The panel must be initialized from localhost or a trusted LAN;
+        // public clients are rejected even if the port is exposed too early.
+        if (!isLoopbackOrPrivate(auth.clientAddress(request))) throw failure('请在本机或可信内网完成管理员初始化。', 403);
+        const input = await body(request, 4096, AUTH_BODY_TIMEOUT_MS);
         await manager.setupAdmin(input.username, input.password);
         json(201, { ok: true }); return;
       }
       if (pathname === '/api/login' && request.method === 'POST') {
         auth.verifyOrigin(request);
-        const input = await body(request, 4096);
-        json(200, auth.login(request, input.username, input.password, response)); return;
+        const input = await body(request, 4096, AUTH_BODY_TIMEOUT_MS);
+        json(200, await auth.login(request, input.username, input.password, response)); return;
       }
       auth.require(request, !['GET', 'HEAD'].includes(request.method));
       if (pathname === '/api/default-configuration' && request.method === 'GET') {
@@ -86,7 +116,7 @@ export function createManagementApi(manager, options = {}) {
           handle = await open(archive.file, constants.O_RDONLY | constants.O_NOFOLLOW);
           const info = await handle.stat();
           if (response.destroyed) { await handle.close(); await archive.cleanup(); return; }
-          response.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Disposition': `attachment; filename="${archive.filename}"`, 'Content-Length': info.size, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+          response.writeHead(200, { ...API_SECURITY_HEADERS, 'Content-Type': 'application/gzip', 'Content-Disposition': `attachment; filename="${archive.filename}"`, 'Content-Length': info.size, 'Cache-Control': 'no-store' });
           const stream = handle.createReadStream();
           stream.on('error', () => response.destroy());
           stream.on('close', () => archive.cleanup().catch(error => manager.runtime.log('palbox', `${error.message}\n`)));
@@ -100,7 +130,7 @@ export function createManagementApi(manager, options = {}) {
         const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
         const info = await handle.stat();
         if (!info.isFile()) { await handle.close(); throw failure('备份文件无效。', 404); }
-        response.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Disposition': `attachment; filename="${file.split('/').at(-1)}"`, 'Content-Length': info.size, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+        response.writeHead(200, { ...API_SECURITY_HEADERS, 'Content-Type': 'application/gzip', 'Content-Disposition': `attachment; filename="${file.split('/').at(-1)}"`, 'Content-Length': info.size, 'Cache-Control': 'no-store' });
         const stream = handle.createReadStream();
         stream.on('error', () => response.destroy()); response.on('close', () => stream.destroy()); stream.pipe(response); return;
       }
@@ -110,7 +140,7 @@ export function createManagementApi(manager, options = {}) {
       }
       json(404, { error: '管理接口不存在。' });
     } catch (error) {
-      if (!response.headersSent) json(error.status || (error.code === 'ENOENT' ? 404 : 500), { error: error.status ? error.message : '操作失败，请检查服务器日志。' });
+      if (!response.headersSent && !response.destroyed) json(error.status || (error.code === 'ENOENT' ? 404 : 500), { error: error.status ? error.message : '操作失败，请检查服务器日志。' });
       else response.destroy();
       if (!error.status) manager.runtime.log('palbox', `${error.stack || error}\n`);
     }

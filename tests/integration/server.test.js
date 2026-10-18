@@ -20,11 +20,14 @@ test('Node.js 静态服务', async t => {
   });
   const base = `http://127.0.0.1:${server.address().port}`;
 
-  await t.test('主页和页面入口正常响应', async () => {
+  await t.test('主页和页面入口正常响应并带有安全响应头', async () => {
     for (const route of ['/', '/index.html']) {
       const response = await fetch(base + route);
       assert.equal(response.status, 200);
       assert.match(response.headers.get('content-type'), /text\/html/);
+      assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+      assert.equal(response.headers.get('x-frame-options'), 'DENY');
+      assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
       assert.match(await response.text(), /<title>Palbox · 幻兽帕鲁管理<\/title>/);
     }
   });
@@ -64,7 +67,10 @@ test('Node.js 静态服务', async t => {
     assert.equal((await fetch(base + '/%zz')).status, 400);
   });
   await t.test('后端只提供 API 和健康检查', async () => {
-    assert.equal((await fetch(apiBase + '/healthz')).status, 200);
+    const health = await fetch(apiBase + '/healthz');
+    assert.equal(health.status, 200);
+    assert.equal(health.headers.get('x-frame-options'), 'DENY');
+    assert.match(health.headers.get('content-security-policy'), /default-src 'none'/);
     for (const route of ['/', '/index.html', '/src/main.js', '/shared/domain/config.js', '/styles/index.css']) {
       assert.equal((await fetch(apiBase + route)).status, 404, route);
     }

@@ -19,7 +19,7 @@ const shellQuote = value => "'" + String(value).replaceAll("'", "'\\''") + "'";
 const catalog = createCatalog();
 const output = source => new EditorSession(source, { formatOutput: catalog.formatOutput }).toIni();
 const categories = ['manual', 'scheduled', 'before-update'];
-const backupId = /^[a-z0-9-]+\.tar\.gz$/;
+const backupId = /^[a-z0-9-]+\.tar\.gz$(?![\s\S])/;
 const MISSING = Symbol('missing');
 const MAX_GAME_ARGS = 32;
 const MAX_GAME_ARG_LENGTH = 200;
@@ -129,7 +129,7 @@ export class Manager {
     }
     if (!admin || typeof admin !== 'object' || Array.isArray(admin)
       || admin.username !== normalizeUsername(admin.username) || !validUsername(admin.username)
-      || !/^[a-f0-9]{128}$/.test(admin.hash || '') || !/^[a-f0-9]+$/.test(admin.salt || '')) throw new Error(this.settingsError());
+      || !/^[a-f0-9]{128}$(?![\s\S])/.test(admin.hash || '') || !/^[a-f0-9]+$(?![\s\S])/.test(admin.salt || '')) throw new Error(this.settingsError());
     if (!Number.isInteger(settings.backupRetention) || settings.backupRetention < 1 || settings.backupRetention > 100) throw new Error(this.settingsError());
     if (Object.hasOwn(settings, 'gameArgs')) {
       const message = gameArgsError(settings.gameArgs);
@@ -155,7 +155,7 @@ export class Manager {
       if (!validUsername(name)) throw failure('管理员用户名须为 1 到 64 个字符，且不能包含控制字符。', 400);
       if (typeof password !== 'string' || password.length < 12) throw failure('管理密码至少需要 12 位。', 400);
       if (password.length > 1024) throw failure('管理密码不能超过 1024 位。', 400);
-      const next = { admin: { username: name, ...passwordRecord(password) }, backupRetention: 10, gameArgs: [], installArgs: [...DEFAULT_INSTALL_ARGS] };
+      const next = { admin: { username: name, ...await passwordRecord(password) }, backupRetention: 10, gameArgs: [], installArgs: [...DEFAULT_INSTALL_ARGS] };
       await jsonWrite(this.settingsFile, next);
       this.settings = next;
       this.setupRequired = false;

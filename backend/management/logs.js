@@ -3,6 +3,7 @@ import { watch, appendFileSync, existsSync, renameSync, statSync } from 'node:fs
 import { StringDecoder } from 'node:string_decoder';
 import { stripVTControlCharacters } from 'node:util';
 import path from 'node:path';
+import { API_SECURITY_HEADERS } from '../security-headers.js';
 
 const sources = { game: '游戏', steamcmd: '安装更新', palbox: '面板' };
 const combinedFile = directory => path.join(directory, 'logs/combined.jsonl');
@@ -147,9 +148,9 @@ export async function streamLogs({ request, response, runtime, auth, channel }) 
   const initial = await runtime.logs(channel); // Validate before sending SSE headers.
   if (response.destroyed) return;
   response.writeHead(200, {
+    ...API_SECURITY_HEADERS,
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache, no-store, no-transform',
-    'X-Content-Type-Options': 'nosniff',
     'X-Accel-Buffering': 'no'
   });
   response.flushHeaders();

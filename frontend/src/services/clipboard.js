@@ -4,7 +4,7 @@ export function createClipboard({ navigator, document }) {
     const input = document.createElement('textarea');
     input.value = text;
     input.readOnly = true;
-    input.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+    Object.assign(input.style, { position: 'fixed', left: '-9999px', top: '0', opacity: '0' });
     document.body.append(input);
     try {
       input.focus();

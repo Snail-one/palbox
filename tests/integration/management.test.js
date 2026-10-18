@@ -272,6 +272,10 @@ test('首次访问通过网页初始化管理员，重启沿用账号，密码�
   assert.equal((await post('/api/setup', { username, password: 'short' })).status, 400);
   assert.equal((await post('/api/setup', { username: '   ', password })).status, 400);
   assert.equal((await post('/api/setup', { username, password }, { Origin: 'https://evil.invalid' })).status, 403);
+  // 公网客户端（反向代理通过 X-Forwarded-For 转发）不能抢先初始化；
+  // 伪造内网前缀也不能让追加真实地址的代理链被误判。
+  assert.equal((await post('/api/setup', { username, password }, { 'X-Forwarded-For': '203.0.113.9' })).status, 403);
+  assert.equal((await post('/api/setup', { username, password }, { 'X-Forwarded-For': '10.0.0.1, 203.0.113.9' })).status, 403);
   const created = await post('/api/setup', { username, password });
   assert.equal(created.status, 201);
   assert.deepEqual(await created.json(), { ok: true });
@@ -282,6 +286,9 @@ test('首次访问通过网页初始化管理员，重启沿用账号，密码�
   assert.equal(settings.includes(password), false);
   assert.equal((await stat(settingsFile)).mode & 0o777, 0o600);
   assert.equal((await post('/api/login', { username: 'wrong-user', password })).status, 401);
+  const authLog = await readFile(path.join(directory, 'logs', 'palbox.log'), 'utf8');
+  assert.match(authLog, /登录失败/);
+  assert.equal(authLog.includes(password), false);
   assert.equal((await post('/api/login', { username, password })).status, 200);
   initialized.child.kill('SIGTERM');
   assert.equal((await initialized.closed)[0], 0);

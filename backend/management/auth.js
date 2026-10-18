@@ -75,10 +75,9 @@ export class Authentication {
    */
   clientAddress(request) {
     const peer = request.socket?.remoteAddress || '';
-    if (isLoopbackOrPrivate(peer)) {
-      const forwarded = request.headers?.['x-palbox-client-ip'];
-      if (typeof forwarded === 'string' && isIP(forwarded)) return forwarded;
-    }
+    if (!isLoopbackOrPrivate(peer)) return peer;
+    const forwarded = request.headers?.['x-palbox-client-ip'];
+    if (forwarded !== undefined) return typeof forwarded === 'string' && isIP(forwarded) ? forwarded : '';
     return peer;
   }
   async login(request, username, password, response) {
@@ -105,11 +104,12 @@ export class Authentication {
     const passwordMatches = typeof password === 'string' && password.length <= 1024
       && timingSafeEqual(await hashPassword(password, record.salt), Buffer.from(record.hash, 'hex'));
     if (!nameMatches || !passwordMatches) {
+      const failedAt = Date.now();
       attempts.count++;
-      attempts.expires = now + this.windowMs;
+      attempts.expires = failedAt + this.windowMs;
       // Short cooldown instead of a long lockout: an attacker cannot keep the
       // administrator locked out, while online guessing stays rate limited.
-      if (attempts.count >= this.maxFailures) attempts.blockedUntil = Math.max(attempts.blockedUntil, now + this.cooldownMs);
+      if (attempts.count >= this.maxFailures) attempts.blockedUntil = Math.max(attempts.blockedUntil, failedAt + this.cooldownMs);
       this.log(`登录失败（${ip}，用户名 ${JSON.stringify(normalizeUsername(username)).slice(0, 80)}）\n`);
       throw failure('用户名或密码不正确。', 401);
     }

@@ -11,14 +11,18 @@ function port(value, name) {
 let manager;
 try {
   const listenPort = port(process.env.PORT || '8081', 'PORT');
+  const host = process.env.HOST || '127.0.0.1';
+  const secureCookie = /^(?:true|1)$/i.test(process.env.PALBOX_SECURE_COOKIE || '');
   manager = new Manager({ directory: process.env.PALBOX_DATA_DIR || fileURLToPath(new URL('../data', import.meta.url)), steamcmd: process.env.PALBOX_STEAMCMD || '/opt/steamcmd/steamcmd.sh', port: port(process.env.PALBOX_GAME_PORT || '8211', 'PALBOX_GAME_PORT'), webPort: listenPort });
   await manager.initialize();
-  const api = createManagementApi(manager, { secureCookie: process.env.PALBOX_SECURE_COOKIE === 'true' });
+  const api = createManagementApi(manager, { secureCookie });
   const server = createServer({ api });
-  const host = process.env.HOST || '127.0.0.1';
   server.on('error', error => { console.error(`启动失败：${error.message}`); process.exitCode = 1; manager?.close(); });
   server.listen(listenPort, host, () => {
     console.log(`Palbox 游戏管理已启动：http://${host}:${listenPort}`);
+    if (!secureCookie && !['127.0.0.1', '::1', 'localhost'].includes(host)) {
+      console.warn('提示：未启用 Secure Cookie；若通过 HTTPS 反向代理访问面板，请设置 PALBOX_SECURE_COOKIE=true。');
+    }
   });
   let closing = false;
   async function close() {

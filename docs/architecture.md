@@ -62,13 +62,15 @@ flowchart TD
 
 前端通过 `PALBOX_API_URL` 选择后端，浏览器始终请求同源 `/api/`。代理保留公开站点的 Host、Origin、Cookie 和 CSRF 标头，认证继续执行现有来源校验；请求和响应以流传输，支持大存档上传、下载和取消。后端不可达时返回 JSON 502，静态页面仍可访问。无需开放跨域凭据。若替换为其他静态服务器，需为 `/api/` 配置同源代理并保留原始 Host 和 Origin。
 
+代理根据直连对端和可信代理转发头解析客户端地址，并覆盖写入 `X-Palbox-Client-IP` 与 `X-Forwarded-For`；后端仅在直连对端为回环或内网地址时采信该头，用于登录限流、登录审计和首次初始化来源判断，公网客户端无法伪造。静态资源和代理响应附带 CSP、X-Frame-Options、Referrer-Policy、Permissions-Policy 等安全头。
+
 `npm start` / `dev.sh` 使用 `scripts/start.js` 启动两个独立进程，任一进程退出时停止另一个，收到退出信号时等待后端完成停服。也可分别执行 `start:frontend`、`start:backend`；开发命令使用相应的 `dev:*`。Docker 的 `frontend` 和 `backend` 构建目标分别只复制自身目录与共享规则。Compose 仅向宿主机暴露前端 HTTP 和游戏 UDP，后端 HTTP 通过内部网络供代理使用。
 
 `npm test` 运行单元和 HTTP 集成测试。`npm run test:e2e` 独立启动本机服务，检查真实浏览器交互并在结束后释放服务。共用配置用例同时由 Node.js 单元测试和浏览器测试页面执行。
 
 ## 管理模式
 
-后端使用 `backend/management`。`files.js` 提供写入临时文件、fsync 和原子替换；`store.js` 在服务器保存工作空间并检查版本冲突；`auth.js` 管理管理员用户名与 scrypt 密码校验、HttpOnly 会话和 CSRF 验证；`api.js` 提供固定的 JSON API 与备份下载，不提供任意命令执行；`save-imports.js` 负责官方存档上传的流式落盘、tar 安全校验、布局识别与临时暂存。全新部署没有 `palbox/settings.json` 时进入首次初始化状态，由 `/api/setup` 创建管理员；旧版缺少用户名的配置会被拒绝启动。
+后端使用 `backend/management`。`files.js` 提供写入临时文件、fsync 和原子替换；`store.js` 在服务器保存工作空间并检查版本冲突；`auth.js` 管理管理员用户名与异步 scrypt 密码校验（限制并发哈希）、HttpOnly 会话、CSRF 验证、按客户端地址的失败冷却和登录审计；`api.js` 提供固定的 JSON API 与备份下载，不提供任意命令执行，JSON 请求体带大小上限和绝对读取超时；`save-imports.js` 负责官方存档上传的流式落盘、tar 安全校验、布局识别与临时暂存。全新部署没有 `palbox/settings.json` 时进入首次初始化状态，由 `/api/setup` 创建管理员，仅接受回环或内网来源；旧版缺少用户名的配置会被拒绝启动。
 
 `runtime.js` 管理 SteamCMD 和游戏进程组，使用参数数组启动子进程，处理 REST API、日志轮换、就绪等待和停服。游戏启动参数保存在 `settings.json` 的 `gameArgs`，由 `manager.js` 在初始化和设置更新时同步到 `runtime.args`，所有启动与自动重启路径共用同一份参数。官方存档通过 `/api/save-import` 流式上传并暂存到 `palbox/imports`，校验通过后由 `import-save` 任务停服、创建完整备份、替换世界存档并恢复运行状态。`manager.js` 串行执行后台任务，处理应用配置、停服备份、归档路径校验、临时目录恢复。`native-backups.js` 识别官方世界快照、验证文件与路径、在线导出并在停服后恢复对应世界；面板不再运行自动备份定时器。面板进程与游戏进程分开管理，游戏停服不会关闭网页。
 
