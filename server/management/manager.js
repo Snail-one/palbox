@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { readFile, mkdir, readdir, stat, rename, rm, rmdir, lstat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { Runtime } from './runtime.js';
 import { NativeBackups } from './native-backups.js';
 import { SaveImports } from './save-imports.js';
@@ -11,6 +13,8 @@ import { EditorSession } from '../../src/domain/editor-session.js';
 import { createCatalog } from '../../src/domain/catalog.js';
 import { parse, decodeString } from '../../src/domain/config.js';
 
+const exec = promisify(execFile);
+const shellQuote = value => "'" + String(value).replaceAll("'", "'\\''") + "'";
 const catalog = createCatalog();
 const output = source => new EditorSession(source, { formatOutput: catalog.formatOutput }).toIni();
 const categories = ['manual', 'scheduled', 'before-update'];
@@ -81,6 +85,7 @@ export class Manager {
     this.tasks = [];
     this.busy = null;
     this.closing = false;
+    this.updateCache = null;
   }
   async initialize() {
     for (const sub of ['palbox', 'server', 'logs', ...categories.map(c => `backups/${c}`)]) await mkdir(path.join(this.directory, sub), { recursive: true, mode: 0o700 });
@@ -157,7 +162,7 @@ export class Manager {
   }
   saveTasks() { return jsonWrite(this.tasksFile, this.tasks.slice(0, 40)); }
   async submit(action, payload = {}) {
-    const allowed = ['install', 'update', 'start', 'stop', 'restart', 'apply', 'backup', 'restore', 'restore-native', 'import-save', 'save-world', 'announce', 'kick'];
+    const allowed = ['install', 'update', 'start', 'stop', 'force-stop', 'restart', 'apply', 'backup', 'restore', 'restore-native', 'import-save', 'save-world', 'announce', 'kick', 'ban', 'unban'];
     if (!allowed.includes(action)) throw failure('管理操作不存在。', 404);
     if (action === 'backup' && payload.category && payload.category !== 'manual') throw failure('定时备份已交由游戏官方机制，面板仅支持手动完整备份。');
     if (this.closing) throw failure('管理服务正在关闭。', 503);
@@ -190,6 +195,7 @@ export class Manager {
       case 'install':
         task.message = '正在通过 SteamCMD 下载服务端，请查看安装日志';
         await this.runtime.install(); await this.ensureConfig();
+        this.updateCache = null;
         if (payload.start) await this.runtime.start();
         break;
       case 'update': {
@@ -198,6 +204,7 @@ export class Manager {
         await this.backup('before-update');
         task.message = '正在更新并校验服务端文件';
         await this.runtime.install();
+        this.updateCache = null;
         if (running) await this.runtime.start();
         break;
       }
@@ -243,9 +250,22 @@ export class Manager {
         if (typeof payload.message !== 'string' || !payload.message.trim() || payload.message.length > 500) throw failure('请输入 1 到 500 字的广播内容。');
         await this.runtime.rest('announce', { message: payload.message }); break;
       case 'kick':
+      case 'ban': {
         await this.requireRunning();
         if (typeof payload.userid !== 'string' || !payload.userid || payload.userid.length > 200) throw failure('玩家 ID 无效。');
-        await this.runtime.rest('kick', { userid: payload.userid, message: '管理员已将你移出服务器' }); break;
+        const fallback = action === 'kick' ? '管理员已将你移出服务器' : '管理员已将你封禁';
+        const message = payload.message === undefined || payload.message === null || payload.message === '' ? fallback : payload.message;
+        if (typeof message !== 'string' || !message.trim() || message.length > 500) throw failure('操作理由须为 1 到 500 个字符。');
+        await this.runtime.rest(action, { userid: payload.userid, message: message.trim() }); break;
+      }
+      case 'unban':
+        await this.requireRunning();
+        if (typeof payload.userid !== 'string' || !payload.userid || payload.userid.length > 200) throw failure('玩家 ID 无效。');
+        await this.runtime.rest('unban', { userid: payload.userid }); break;
+      case 'force-stop':
+        await this.requireRunning();
+        await this.runtime.forceStop();
+        break;
     }
   }
   async requireRunning() { if (!this.runtime.game) throw failure('游戏服尚未运行。', 409); }
@@ -373,6 +393,55 @@ export class Manager {
       if (results[2].status === 'fulfilled') status.players = results[2].value.players || [];
     }
     return status;
+  }
+  async installedBuild() {
+    try {
+      const manifest = await readFile(path.join(this.runtime.server, 'steamapps/appmanifest_2394010.acf'), 'utf8');
+      return manifest.match(/"buildid"\s+"(\d+)"/)?.[1] || null;
+    } catch (error) {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    }
+  }
+  async latestBuild() {
+    if (this.busy) throw failure('已有任务正在执行，请稍后再试。', 409);
+    const args = ['+login', 'anonymous', '+app_info_update', '1', '+app_info_print', '2394010', '+quit'];
+    const options = { timeout: 60000, maxBuffer: 8 * 1024 * 1024, env: this.runtime.childEnvironment() };
+    const parse = value => value.match(/"public"\s*\{[\s\S]{0,4000}?"buildid"\s*"(\d+)"/)?.[1] || null;
+    let output = '';
+    try {
+      const result = await exec(this.runtime.steamcmd, args, options);
+      output = `${result.stdout || ''}${result.stderr || ''}`;
+    } catch {}
+    let build = parse(output);
+    if (!build) {
+      try {
+        const command = [this.runtime.steamcmd, ...args].map(shellQuote).join(' ');
+        const result = await exec('script', ['-qec', command, '/dev/null'], options);
+        output = `${result.stdout || ''}${result.stderr || ''}`;
+        build = parse(output);
+      } catch {}
+    }
+    if (!build) throw failure('无法获取 Steam 最新版本信息，请稍后重试。', 502);
+    return build;
+  }
+  async updateInfo() {
+    const now = Date.now();
+    if (this.updateCache && now - this.updateCache.at < 5 * 60 * 1000) return this.updateCache.value;
+    const installedBuild = await this.installedBuild();
+    let value;
+    if (!installedBuild) {
+      value = { installed: false, installedBuild: null, latestBuild: null, updateAvailable: false, checkedAt: new Date().toISOString() };
+    } else {
+      try {
+        const latestBuild = await this.latestBuild();
+        value = { installed: true, installedBuild, latestBuild, updateAvailable: latestBuild !== installedBuild, checkedAt: new Date().toISOString() };
+      } catch (error) {
+        value = { installed: true, installedBuild, latestBuild: null, updateAvailable: null, checkedAt: new Date().toISOString(), error: error.message };
+      }
+    }
+    this.updateCache = { at: now, value };
+    return value;
   }
   async nativeBackups() {
     let source = this.runtime.game ? this.runtime.runningSource : null;

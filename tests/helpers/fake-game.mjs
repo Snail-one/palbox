@@ -23,7 +23,7 @@ const server = http.createServer(async (request, response) => {
     players: { players: [{ name: '<script>test</script>', level: 12, userId: 'steam_test' }] }
   }[endpoint] || { ok: true };
   response.end(JSON.stringify(value));
-  if (endpoint === 'shutdown') server.close(() => process.exit(0));
+  if (endpoint === 'shutdown' || endpoint === 'stop') server.close(() => process.exit(0));
 });
 server.listen(Number(values.get('RESTAPIPort')), '127.0.0.1', () => console.log('Fake PalServer ready'));
 process.on('SIGTERM', () => server.close(() => process.exit(0)));

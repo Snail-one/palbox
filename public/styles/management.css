@@ -39,6 +39,9 @@
 .save-management .management-heading { flex-wrap: wrap; }
 .save-management h3 { font-size: 13px; }
 .save-management .management-heading .management-note { margin: 6px 0 0; }
+#task-history summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+#task-history-list { margin-top: 12px; font-size: 11px; }
+#task-history-list .backup-row { align-items: flex-start; }
 .save-backup-plan { border-top: 1px solid var(--line); padding-top: 18px; margin-top: 18px; }
 .save-backup-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); padding-top: 18px; margin-top: 20px; }
 #save-backup-summary, #manager-backups { font-size: 11px; }

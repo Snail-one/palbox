@@ -137,6 +137,22 @@ export class Runtime {
     while (this.game === child && Date.now() < until) await delay(100);
     if (this.game === child) throw failure('游戏进程尚未退出，已中止后续文件操作。', 504);
   }
+  async forceStop() {
+    const child = this.game;
+    if (!child) return;
+    this.ready = false;
+    try { await this.rest('stop', {}); }
+    catch (error) {
+      this.log('palbox', `API 强制停止失败，发送 SIGKILL：${error.message}\n`);
+      this.kill(child, 'SIGKILL');
+    }
+    const until = Date.now() + Math.min(this.stopTimeout, 10000);
+    while (this.game === child && Date.now() < until) await delay(100);
+    if (this.game === child) this.kill(child, 'SIGKILL');
+    const killedAt = Date.now() + 5000;
+    while (this.game === child && Date.now() < killedAt) await delay(100);
+    if (this.game === child) throw failure('游戏进程尚未退出，请检查系统进程。', 504);
+  }
   async logs(channel) {
     if (!['palbox', 'game', 'steamcmd'].includes(channel)) throw failure('日志类型不存在。', 404);
     const file = path.join(this.directory, 'logs', channel + '.log');
