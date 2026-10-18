@@ -52,12 +52,10 @@ export function createNavigation({ dom, window, isDirty, onSave, onConfiguration
       }
     }
     const configuring = route.page === 'configuration';
+    $('game-actions').hidden = route.page !== 'game' || route.view !== 'overview';
     $('configuration-actions').hidden = !configuring;
     $('configuration-apply').hidden = !configuring || route.view === 'profiles';
     if (configuring && route.view !== 'profiles') onConfigurationView(route.mode || 'form');
-    $('current-page').textContent = name;
-    $('current-section').hidden = false;
-    $('current-section').textContent = route.title;
     $('main').setAttribute('aria-label', route.title);
     document.title = `Palbox · ${name} · ${route.title}`;
     closeSidebar();

@@ -208,22 +208,6 @@
     margin: 0;
   }
 
-  .breadcrumb {
-    gap: 9px;
-  }
-
-  .breadcrumb>span {
-    display: none;
-  }
-
-  .breadcrumb>.icon {
-    display: none;
-  }
-
-  .breadcrumb strong {
-    font-size: 11px;
-  }
-
   main {
     padding: 27px 20px 20px;
   }

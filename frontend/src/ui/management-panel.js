@@ -16,26 +16,29 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   const { $, document } = dom;
   const NATIVE_BACKUP_PAGE_SIZE = 10;
   const section = document.createElement('section');
-  section.className = 'management-panel';
+  section.className = 'game-service-toolbar';
   section.setAttribute('aria-label', '帕鲁服务管理');
   section.id = 'server-service';
   section.innerHTML = `
-    <div class="management-heading server-heading"><div><h2>游戏服务 <span id="game-state" class="save-status" data-state="pending">连接中</span></h2></div><div class="management-actions server-heading-actions"><label class="auto-start-switch" title="启用后，面板或容器重启并完成初始化时会自动创建启动任务；服务端未安装或尚未初始化时跳过"><input type="checkbox" role="switch" class="sr-only" id="auto-start" disabled><span class="toggle" aria-hidden="true"></span><span>自动启动</span></label><button type="button" id="show-task-history" class="button secondary" aria-haspopup="dialog" aria-controls="task-history">任务记录</button><a class="button secondary" href="#configuration">管理配置 →</a></div></div>
-    <div class="management-feedback"><p id="management-task" class="management-task" role="status" hidden></p></div>
-    <div class="server-controls">
-      <div class="management-actions server-primary-actions">
+    <h2>游戏服务 <span id="game-state" class="save-status" data-state="pending">连接中</span></h2>
+    <div class="management-actions server-heading-actions"><label class="auto-start-switch" title="启用后，面板或容器重启并完成初始化时会自动创建启动任务；服务端未安装或尚未初始化时跳过"><input type="checkbox" role="switch" class="sr-only" id="auto-start" disabled><span class="toggle" aria-hidden="true"></span><span>自动启动</span></label><button type="button" id="show-task-history" class="button secondary" aria-haspopup="dialog" aria-controls="task-history">任务记录</button></div>
+    <div class="server-primary-actions" role="group" aria-label="游戏服务操作">
         <button class="button primary" data-action="install" hidden>安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop" hidden>停止</button><button class="button secondary" data-action="restart" hidden>重启</button>
-        <button class="button secondary" data-action="update" title="更新前会自动备份，运行中的游戏服务将短暂停服。">更新服务端</button><button class="button secondary" data-action="force-stop" title="仅在正常停止无效时使用，可能丢失最近一次未保存的进度。">强制停止</button><button class="button secondary" id="show-running-config" disabled>运行参数</button><button class="button secondary" id="edit-game-args" disabled>启动参数</button><button class="button secondary" id="edit-install-args" disabled>安装参数</button><button class="button secondary" id="edit-shutdown-wait" disabled>关服倒计时</button>
-      </div>
-    </div>
-    <dl class="management-metrics" aria-label="服务器运行信息">
+        <button class="button secondary" data-action="update" title="更新前会自动备份，运行中的游戏服务将短暂停服。">更新服务端</button><button class="button secondary" data-action="force-stop" title="仅在正常停止无效时使用，可能丢失最近一次未保存的进度。">强制停止</button><button class="button secondary" id="show-running-config" disabled>运行参数</button><button class="button secondary" id="edit-game-args" disabled>启动参数</button><button class="button secondary" id="edit-install-args" disabled>安装参数</button><button class="button secondary" id="edit-shutdown-wait" title="设置关服倒计时和游戏内提示文字" disabled>关服设置</button>
+    </div>`;
+  $('game-actions').append(section);
+  const metrics = document.createElement('section');
+  metrics.id = 'server-metrics';
+  metrics.className = 'management-panel';
+  metrics.setAttribute('aria-label', '服务器运行信息');
+  metrics.innerHTML = `<dl class="management-metrics" aria-label="服务器运行信息">
       <div class="server-metric server-version-metric"><dt>游戏版本</dt><dd id="game-version" class="metric-value metric-text">读取中</dd><dd id="game-build-meta" class="server-metric-note" hidden>Steam Build <span id="game-build">—</span></dd><dd class="server-metric-update"><button class="button secondary" id="check-update" disabled>检查更新</button></dd></div>
       <div class="server-metric"><dt>在线玩家</dt><dd id="game-players" class="metric-value">—</dd></div>
       <div class="server-metric"><dt>服务器 FPS</dt><dd id="game-fps" class="metric-value">—</dd></div>
       <div class="server-metric"><dt>游戏端口</dt><dd class="metric-value"><span id="game-port">8211</span><span class="metric-unit">UDP</span></dd></div>
       <div class="server-metric"><dt>运行时间</dt><dd id="game-uptime" class="metric-value">—</dd></div>
     </dl>`;
-  $('game-overview').append(section);
+  $('game-overview').append(metrics);
   const logs = document.createElement('section');
   logs.id = 'game-logs';
   logs.className = 'management-panel';
@@ -119,25 +122,10 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     lastErrorMessage = message;
     notify(message, true);
   }
-  function showTask(task, submitted = false) {
-    const running = task.state === 'running';
-    const completed = !running && activeTaskId === task.id;
-    // Historical tasks from /api/status must not keep the status line visible;
-    // only show a task that is running, was just submitted, or just completed.
-    if (!running && !completed && !submitted) return;
-    const label = names[task.action] || task.action;
-    const state = { running: '执行中', succeeded: '已完成', failed: '失败', interrupted: '已中断' }[task.state] || task.state;
-    const message = running ? `${label}：${task.message}` : `${label} · ${state}`;
-    $('management-task').textContent = message;
-    if (running) {
+  function trackTask(task) {
+    if (task.state === 'running') {
       activeTaskId = task.id;
-      $('management-task').hidden = false;
-    } else {
-      // 完成/失败/中断通过气泡或任务记录反馈，状态栏只显示执行中的任务。
-      $('management-task').hidden = true;
-    }
-    if ((submitted || completed) && !overviewVisible() && !['failed', 'interrupted'].includes(task.state)) notify(message);
-    if (completed) {
+    } else if (activeTaskId === task.id) {
       activeTaskId = null;
       if (task.defaultsImported && task.state === 'succeeded') onDefaultsImported?.();
     }
@@ -160,7 +148,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       if (name === 'apply') payload = { ...payload, ...await getConfiguration() };
       error('');
       const task = await api.request('tasks', { method: 'POST', body: { action: name, ...payload } });
-      showTask(task, true);
+      trackTask(task);
       await refresh();
     } catch (caught) { error(caught.message); }
   }
@@ -241,7 +229,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   const saveImport = createSaveImportDialog({ dom, api, onImport: async id => {
     error('');
     const task = await api.request('tasks', { method: 'POST', body: { action: 'import-save', id } });
-    showTask(task, true);
+    trackTask(task);
     await refresh();
   } });
   for (const button of actionButtons) button.addEventListener('click', () => button.dataset.action === 'import-save' ? saveImport.open() : action(button.dataset.action));
@@ -512,7 +500,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       renderHistory(value.tasks);
       const task = value.task || value.tasks[0];
       if (task) {
-        showTask(task);
+        trackTask(task);
         if (['failed', 'interrupted'].includes(task.state) && task.id !== lastTask) error(task.message);
         if (task.state !== 'running') lastTask = task.id;
       }

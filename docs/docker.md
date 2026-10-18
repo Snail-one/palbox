@@ -98,8 +98,8 @@ docker compose up -d --build
 ## 服务与备份
 
 - 启动、停止、重启：管理游戏进程。停止优先调用官方 API 存档和关服，API 不可用时尝试 SIGTERM；未成功退出不会继续改写文件。正常停止失败时可使用「强制停止」，优先调用官方 `/stop`，必要时发送 SIGKILL。
-- 关服倒计时：在同名设置窗口中编辑倒计时秒数（0–300 秒）和提示文字（1–500 个字符），保存在 `palbox/settings.json` 的 `shutdownWait`、`shutdownMessage`。正常关服调用[官方 `/shutdown`](https://docs.palworldgame.com/api/rest-api/shutdown/) 时传入这两项；保存后下次关服生效，不需要重启面板。旧设置自动沿用默认提示「Palbox 正在维护服务器」。
-- 自动启动：在「服务器概况」标题栏的「任务记录」前切换「自动启动」滑块。启用后，后端启动并监听端口时会自动创建「启动」任务；服务端未安装、尚未完成管理员初始化或检测到游戏已在运行时跳过。设置保存在 `palbox/settings.json` 的 `autoStart`，默认关闭；执行 `docker compose restart palbox`、`up -d` 或宿主机重启后生效。
+- 关服设置：在同名设置窗口中编辑倒计时秒数（0–300 秒）和提示文字（1–500 个字符），保存在 `palbox/settings.json` 的 `shutdownWait`、`shutdownMessage`。正常关服调用[官方 `/shutdown`](https://docs.palworldgame.com/api/rest-api/shutdown/) 时传入这两项；保存后下次关服生效，不需要重启面板。旧设置自动沿用默认提示「Palbox 正在维护服务器」。
+- 自动启动：在「服务器概况」顶部栏的「任务记录」前切换「自动启动」滑块。启用后，后端启动并监听端口时会自动创建「启动」任务；服务端未安装、尚未完成管理员初始化或检测到游戏已在运行时跳过。设置保存在 `palbox/settings.json` 的 `autoStart`，默认关闭；执行 `docker compose restart palbox`、`up -d` 或宿主机重启后生效。
 - 更新：先正常停服并创建更新前备份，再执行 SteamCMD `app_update 2394010 validate`；原先运行的游戏服会重新启动。「检查更新」优先通过 [SteamCMD.net API](https://api.steamcmd.net/v1/info/2394010) 查询最新 build，失败时回退 SteamCMD，并与本地 `appmanifest_2394010.acf` 对比，结果以「游戏版本」卡片旁的气泡显示。
 - 官方自动备份：由 `bIsUseBackupSaveData=True` 启用，游戏运行中自行生成，无需面板停服。面板展示 `SaveGames/0/<世界 ID>/backup/world/<时间>/` 中完整的世界和玩家备份，支持在线下载。官方保留档位为每 30 秒 5 份、每 10 分钟 6 份、每 1 小时 12 份、每 1 天 7 份：[官方说明](https://docs.palworldgame.com/settings-and-operation/configuration/#about-bisusebackupsavedata)。
 - 恢复官方备份：确认备份属于当前世界，复制并验证后保存、停服，先创建完整备份再替换世界和玩家存档。保留当前配置与官方备份历史，原先运行的游戏会重新启动。
@@ -108,7 +108,7 @@ docker compose up -d --build
 - 删除完整备份：在归档条目中点击「删除」并确认，永久移除所选文件，自动更新列表数量和大小。无需停服，不改变当前世界；与其他管理任务串行执行，拒绝越界路径、目录和链接。
 - 恢复备份：校验归档路径和文件类型，先保存并备份当前世界，在临时目录解压后整体替换 `Pal/Saved`。恢复后面板预设不变，可能显示「待生效」。可从页面下载备份留存。
 - 保留数量：每类完整归档分别保留最近 1 到 100 份，默认 5 份；已有自定义保留数量继续沿用。不影响游戏维护的官方备份；恢复时正在使用的备份不会被恢复前备份的清理操作删除。
-- 日志与玩家：概况集中显示服务状态，在线人数、FPS、运行时间、游戏版本与游戏端口在同一信息栏展示，安装、启停、更新、参数设置与强制停止按钮集中在同一操作栏，窄屏自动换行。玩家管理支持广播、带理由的移出/封禁、「已封禁玩家」列表与逐条解封，也可按 UserID 封禁/解封。列表优先读取部分新版本的 `Pal/Saved/SaveGames/Config/banlist.json`；该目录或文件不存在时（属正常情况）自动回退旧版 `Pal/Saved/SaveGames/banlist.txt`，兼容平台前缀 ID、旧版纯数字 Steam ID 以及 `steam_<ID>,<PlayerUID>` 迁移格式，停服时仍可查看；新版游戏在停服时才写回名单，运行中刚封禁的玩家会依据面板任务记录立即显示。解封使用[官方 REST `/unban`](https://docs.palworldgame.com/api/rest-api/unban/)，需要游戏管理接口就绪。昵称、理由和封禁时间可由最近的面板任务记录补充，缺少信息时显示 ID。名单读取失败时提示错误，不回退为成功空列表。本服原生名单位置参考[同类开源面板维护者的实现说明](https://github.com/palserver-gui/palserver-gui/releases/tag/v2.10.0)。游戏服务下方的「任务记录」保留最近任务及状态。
+- 日志与玩家：概况顶部栏的「游戏服务」、状态铭牌、自动启动、任务记录与安装、启停、更新、参数设置、强制停止按钮横向排列，空间不足时自动换行；正文显示游戏版本、在线人数、FPS、游戏端口与运行时间。玩家管理支持广播、带理由的移出/封禁、「已封禁玩家」列表与逐条解封，也可按 UserID 封禁/解封。列表优先读取部分新版本的 `Pal/Saved/SaveGames/Config/banlist.json`；该目录或文件不存在时（属正常情况）自动回退旧版 `Pal/Saved/SaveGames/banlist.txt`，兼容平台前缀 ID、旧版纯数字 Steam ID 以及 `steam_<ID>,<PlayerUID>` 迁移格式，停服时仍可查看；新版游戏在停服时才写回名单，运行中刚封禁的玩家会依据面板任务记录立即显示。解封使用[官方 REST `/unban`](https://docs.palworldgame.com/api/rest-api/unban/)，需要游戏管理接口就绪。昵称、理由和封禁时间可由最近的面板任务记录补充，缺少信息时显示 ID。名单读取失败时提示错误，不回退为成功空列表。本服原生名单位置参考[同类开源面板维护者的实现说明](https://github.com/palserver-gui/palserver-gui/releases/tag/v2.10.0)。顶部栏的「任务记录」可打开弹窗，查看最近任务及状态。
 
 任务串行执行。更新、应用、备份和恢复期间其他管理任务会被拒绝。失败任务保留错误说明和日志，不会显示为成功；游戏异常退出后面板仍可访问，可以排查后手动启动。第一版不自动回滚游戏二进制或强制启动失败的进程。
 

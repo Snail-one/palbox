@@ -30,8 +30,7 @@ export function createSummary({ dom, editor, workspace, catalog, isDirty, persis
       $('profile-title').textContent = profile.name;
       $('profile-server').textContent = decodeString(editor.raw('ServerName') || 'PalWorldSettings.ini');
       $('profile-updated').textContent = savedTime(profile.updatedAt);
-      const section = $('current-section');
-      document.title = `${isDirty() ? '● ' : ''}Palbox · ${$('current-page').textContent}${section.hidden ? '' : ` · ${section.textContent}`}`;
+      document.title = `${isDirty() ? '● ' : ''}${document.title.replace(/^● /, '')}`;
     }
   };
 }

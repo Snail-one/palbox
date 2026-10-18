@@ -253,23 +253,6 @@
   gap: 16px;
 }
 
-.breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  font-size: 11px;
-}
-
-.breadcrumb>.icon {
-  width: 11px;
-}
-
-.breadcrumb strong {
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.breadcrumb-section { border-left: 1px solid var(--line); padding-left: 14px; white-space: nowrap; }
 .topbar-session { display: flex; align-items: center; gap: 16px; margin-left: auto; flex-shrink: 0; }
 .topbar .page-actions:not([hidden]) + .topbar-session { margin-left: 0; }
 
