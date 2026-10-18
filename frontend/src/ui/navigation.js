@@ -8,12 +8,14 @@ export function createNavigation({ dom, window, isDirty, onSave, onConfiguration
     '#game/saves': { page: 'saves', view: 'native', title: '官方备份' },
     '#configuration': { page: 'configuration', view: 'editor', mode: 'form', title: '配置编辑' },
     '#configuration/advanced': { page: 'configuration', view: 'editor', mode: 'advanced', title: '配置编辑' },
-    '#configuration/profiles': { page: 'configuration', view: 'profiles', title: '配置列表' }
+    '#configuration/profiles': { page: 'configuration', view: 'profiles', title: '配置列表' },
+    '#login-logs': { page: 'login-logs', title: '登录日志' }
   };
   const pages = [
     { id: 'game', name: '游戏管理' },
     { id: 'saves', name: '存档管理' },
-    { id: 'configuration', name: '配置管理' }
+    { id: 'configuration', name: '配置管理' },
+    { id: 'login-logs', name: '登录日志' }
   ];
   function closeSidebar() {
     $('sidebar').classList.remove('open');
@@ -41,7 +43,7 @@ export function createNavigation({ dom, window, isDirty, onSave, onConfiguration
       parent.classList.toggle('sidebar-active', active);
       if (active) parent.setAttribute('aria-current', 'page');
       else parent.removeAttribute('aria-current');
-      const links = [...$(`${page.id}-navigation`).querySelectorAll('a')];
+      const links = [...($(`${page.id}-navigation`)?.querySelectorAll('a') ?? [])];
       for (const link of links) {
         const selected = active && link.dataset.view === route.view;
         if (selected) link.setAttribute('aria-current', 'page');
@@ -52,12 +54,11 @@ export function createNavigation({ dom, window, isDirty, onSave, onConfiguration
       }
     }
     const configuring = route.page === 'configuration';
-    $('game-actions').hidden = route.page !== 'game' || route.view !== 'overview';
     $('configuration-actions').hidden = !configuring;
     $('configuration-apply').hidden = !configuring || route.view === 'profiles';
     if (configuring && route.view !== 'profiles') onConfigurationView(route.mode || 'form');
     $('main').setAttribute('aria-label', route.title);
-    document.title = `Palbox · ${name} · ${route.title}`;
+    document.title = name === route.title ? `Palbox · ${name}` : `Palbox · ${name} · ${route.title}`;
     closeSidebar();
     if (focus) { window.scrollTo(0, 0); $('main').focus({ preventScroll: true }); }
   }

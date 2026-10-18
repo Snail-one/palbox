@@ -7,6 +7,21 @@ import { API_SECURITY_HEADERS } from '../security-headers.js';
 
 const sources = { game: '游戏', steamcmd: '安装更新', palbox: '面板' };
 const combinedFile = directory => path.join(directory, 'logs/combined.jsonl');
+const isLoginRecord = text => /^(?:\[[^\]\r\n]+\]\s+)?登录(?:成功|失败|尝试过于频繁)（/.test(text);
+
+export function withoutLoginLogs(text) {
+  return text.split(/(?<=\n)/).filter(line => !isLoginRecord(line)).join('');
+}
+
+export async function initializeLoginLog(directory) {
+  const file = path.join(directory, 'logs/login.log');
+  try { await stat(file); return; }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const legacy = await readLogTail(path.join(directory, 'logs/palbox.log'));
+  const text = legacy.split(/(?<=\n)/).filter(isLoginRecord).join('');
+  try { await writeFile(file, text && !text.endsWith('\n') ? text + '\n' : text, { flag: 'wx', mode: 0o600 }); }
+  catch (error) { if (error.code !== 'EEXIST') throw error; }
+}
 
 export const logTimestamp = at => `[${at.replace('T', ' ').replace(/Z$/, ' UTC')}]`;
 
@@ -91,10 +106,11 @@ export async function readCombinedLog(directory, limit = 65536) {
   const result = [];
   let remaining = limit;
   for (const row of rows.reverse()) {
+    const text = readableLog(row.text);
+    if (row.channel === 'palbox' && isLoginRecord(text)) continue;
     const prefix = `${row.at ? logTimestamp(row.at) + ' ' : ''}[${sources[row.channel]}] `;
     const available = remaining - Buffer.byteLength(prefix + '\n');
     if (available < 0) break;
-    const text = readableLog(row.text);
     const tail = utf8Tail(text, available);
     const formatted = prefix + tail + '\n';
     result.unshift(formatted);

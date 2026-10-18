@@ -57,6 +57,7 @@
           <a id="nav-configuration-form" href="#configuration" data-view="editor" aria-controls="configuration-editor">配置编辑</a>
           <a id="nav-configuration-profiles" href="#configuration/profiles" data-view="profiles" aria-controls="configuration-profiles">配置列表</a>
         </nav>
+        <a id="nav-login-logs" class="workspace-link" href="#login-logs" aria-controls="login-logs-page"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg>登录日志</a>
       </nav>
       <div class="sidebar-bottom">
         <div class="server-card"><span class="server-card-icon"><svg class="icon"><use href="#i-shield"/></svg></span><strong>保存在你的服务器</strong><p>配置、存档与备份持久保存，换设备也能继续管理。</p></div>
@@ -68,7 +69,7 @@
     <div class="main-shell">
       <header class="topbar">
         <button id="mobile-menu" class="icon-button mobile-only" aria-label="打开导航菜单" aria-expanded="false" aria-controls="sidebar"><svg class="icon"><use href="#i-menu"/></svg></button>
-        <div id="game-actions" class="game-topbar-actions" hidden></div>
+        <div id="game-actions" class="game-topbar-actions"></div>
         <div class="page-actions" id="configuration-actions">
           <div id="configuration-apply" class="configuration-apply" role="group" aria-label="配置应用" hidden>
             <div class="configuration-state"><span id="game-config-state" class="save-status" data-state="pending" role="status" aria-label="正在读取游戏配置状态" title="正在读取游戏配置状态">连接中</span></div>
@@ -93,8 +94,15 @@
           <div id="saves-native" hidden></div>
           <div id="saves-archives" hidden></div>
         </section>
+        <section id="login-logs-page" aria-label="登录日志" hidden>
+          <section class="management-panel login-logs-panel" aria-labelledby="login-logs-title">
+            <div class="management-heading"><h2 id="login-logs-title">登录日志</h2></div>
+            <p id="login-log-status" class="management-note" role="status">正在连接实时日志…</p>
+            <pre id="login-log-content" tabindex="0" aria-label="登录记录">正在读取登录日志…</pre>
+          </section>
+        </section>
         <section id="configuration-page" aria-label="配置管理">
-        <div class="summary-grid"><div class="summary-card"><span class="summary-icon summary-neutral"><svg class="icon"><use href="#i-file"/></svg></span><div><span class="summary-label">配置参数</span><div><strong id="parameter-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption" id="recognition-summary">官方说明与社区解释分别标注</span></div><div class="summary-card"><span class="summary-icon summary-muted"><svg class="icon"><use href="#i-user"/></svg></span><div><span class="summary-label">最大在线人数</span><div><strong id="player-count">—</strong><span class="summary-unit">人</span></div></div><span class="summary-caption">一起探索这个世界</span></div>
+        <div class="summary-grid"><div class="summary-card"><div><span class="summary-label">配置参数</span><div><strong id="parameter-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption" id="recognition-summary">官方说明与社区解释分别标注</span></div><div class="summary-card"><div><span class="summary-label">最大在线人数</span><div><strong id="player-count">—</strong><span class="summary-unit">人</span></div></div><span class="summary-caption">一起探索这个世界</span></div>
         <section class="profile-overview" aria-labelledby="profile-title">
           <div class="profile-info">
             <div class="profile-title-row"><h2 id="profile-title"></h2><span class="tag">INI 配置</span></div>
@@ -107,7 +115,7 @@
             <button id="delete-profile" class="button secondary danger-hover" aria-label="删除当前配置"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>删除</button>
           </div>
         </section>
-        <div class="summary-card"><span class="summary-icon summary-accent"><svg class="icon"><use href="#i-edit"/></svg></span><div><span class="summary-label">已修改参数</span><div><strong id="change-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption"><span class="save-status" id="change-caption" role="status" data-state="saved" title="所有有效修改已自动保存到服务器。" aria-label="所有有效修改已自动保存到服务器。">已保存</span></span></div><button type="button" class="summary-card summary-link" id="unknown-summary" aria-label="查看和编辑未识别参数"><span class="summary-icon summary-neutral"><svg class="icon"><use href="#i-code"/></svg></span><div><span class="summary-label">未识别参数</span><div><strong id="unknown-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption">点击集中查看和编辑 →</span></button></div>
+        <div class="summary-card"><div><span class="summary-label">已修改参数</span><div><strong id="change-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption"><span class="save-status" id="change-caption" role="status" data-state="saved" title="所有有效修改已自动保存到服务器。" aria-label="所有有效修改已自动保存到服务器。">已保存</span></span></div><button type="button" class="summary-card summary-link" id="unknown-summary" aria-label="查看和编辑未识别参数"><div><span class="summary-label">未识别参数</span><div><strong id="unknown-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption">点击集中查看和编辑 →</span></button></div>
         <section id="configuration-profiles" class="configuration-library" aria-labelledby="configuration-library-title" hidden>
           <div class="configuration-library-heading"><div><h2 id="configuration-library-title">我的配置 <span id="profile-count" class="subtle-tag">0</span></h2><p>选择一套配置开始编辑，或新建自己的配置。</p></div><button class="button primary" id="new-profile"><svg class="icon"><use href="#i-plus"/></svg>新建配置</button></div>
           <div id="profile-list" class="profile-list"></div>

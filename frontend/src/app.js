@@ -10,6 +10,7 @@ import { createProfilePanel } from './ui/profile-panel.js';
 import { createImportDialog } from './ui/import-dialog.js';
 import { createNavigation } from './ui/navigation.js';
 import { createManagementPanel } from './ui/management-panel.js';
+import { createLoginLogsPanel } from './ui/login-logs-panel.js';
 
 /** Composition root: connect UI callbacks to domain/application services. */
 export function createApp({ document, window, catalog, repository, clipboard, files, management }) {
@@ -187,6 +188,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
     if (!(await repository.flush())) throw new Error(repository.error || '请等待自动保存完成。');
     return { profileId: workspace.active.id, revision: repository.revision };
   } });
+  createLoginLogsPanel({ dom, api: management, window });
   repository.subscribe?.(() => {
     notifications.storage(repository.error || workspace.message);
     summary.render();

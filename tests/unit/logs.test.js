@@ -55,6 +55,38 @@ test('日志尾部窗口与正在写入的 UTF-8 字符不会显示乱码，原�
   assert.match(await readFile(file, 'utf8'), /\x1b\[32m/);
 });
 
+test('登录记录独立存储，兼容旧面板日志且初始化不重复导入', async t => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'palbox-login-logs-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await mkdir(path.join(directory, 'logs'));
+  const oldLogin = '[2026-10-18 08:01:02.123 UTC] 登录失败（203.0.113.9，用户名 "old-admin"）\n';
+  const original = `面板启动\n${oldLogin}普通任务：登录失败原因检查\n`;
+  const panelFile = path.join(directory, 'logs/palbox.log');
+  await writeFile(panelFile, original);
+  // Existing combined journals must also hide old login records.
+  await writeFile(path.join(directory, 'logs/combined.jsonl'), JSON.stringify({ channel: 'palbox', text: original }) + '\n');
+  const runtime = new Runtime(directory);
+  await runtime.initialize();
+  runtime.log('login', '登录成功（198.51.100.2）\n');
+  runtime.log('login', '登录尝试过于频繁（203.0.113.9）\n');
+  runtime.log('palbox', '任务执行完成\n');
+  await runtime.initialize();
+  const log = await runtime.logs('login');
+  assert.equal(log.split(oldLogin).length - 1, 1);
+  assert.match(log, /\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} UTC\] 登录成功/);
+  assert.match(log, /登录尝试过于频繁/);
+  assert.doesNotMatch(log, /面板启动|任务执行完成/);
+  assert.equal(await new Runtime(directory).logs('login'), log);
+  assert.match(await readFile(panelFile, 'utf8'), /old-admin/);
+  for (const channel of ['palbox', 'all']) {
+    const text = await runtime.logs(channel);
+    assert.doesNotMatch(text, /old-admin|登录成功|登录尝试过于频繁/);
+    assert.match(text, /面板启动/);
+    assert.match(text, /普通任务：登录失败原因检查/);
+    assert.match(text, /任务执行完成/);
+  }
+});
+
 test('子进程 stdout 和 stderr 分别流式解码，跨数据块的中文和表情保持完整', async t => {
   const directory = await mkdtemp(path.join(tmpdir(), 'palbox-log-process-'));
   const runtime = new Runtime(directory);
@@ -101,7 +133,7 @@ test('统一日志首次保留原有历史且不重复导入，超长中文日�
   t.after(() => rm(directory, { recursive: true, force: true }));
   await mkdir(path.join(directory, 'logs'));
   await writeFile(path.join(directory, 'logs/game.log'), '已有游戏日志\n');
-  await writeFile(path.join(directory, 'logs/palbox.log'), '已有面板日志\n');
+  await writeFile(path.join(directory, 'logs/palbox.log'), '已有面板日志\n登录成功（127.0.0.1）\n');
   const runtime = new Runtime(directory);
   await runtime.initialize();
   runtime.log('palbox', '新增日志\n');
@@ -110,6 +142,8 @@ test('统一日志首次保留原有历史且不重复导入，超长中文日�
   assert.equal(history.split('已有游戏日志').length - 1, 1);
   assert.match(history, /\[面板\] 已有面板日志/);
   assert.match(history, /\[面板\] 新增日志/);
+  assert.doesNotMatch(history, /登录成功/);
+  assert.match(await runtime.logs('login'), /登录成功（127.0.0.1）/);
   runtime.log('game', '中文🙂'.repeat(16000) + '最后一行\n');
   const text = await runtime.logs('all');
   assert.ok(Buffer.byteLength(text) <= 65536);

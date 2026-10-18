@@ -8,16 +8,15 @@
 .management-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .management-heading h2 { font-size: 17px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .topbar:has(#configuration-actions:not([hidden])) { height: auto; min-height: 73px; flex-wrap: wrap; padding-top: 12px; padding-bottom: 12px; }
-.topbar .page-actions { align-items: center; }
+.topbar .page-actions { align-items: center; justify-content: flex-end; }
 .topbar:has(#game-actions:not([hidden])) { height: auto; min-height: 73px; padding-top: 14px; padding-bottom: 14px; gap: 12px; }
-.game-topbar-actions { flex: 1; min-width: 0; }
+.game-topbar-actions { flex: 1 1 max-content; min-width: 0; }
 .game-service-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; min-width: 0; }
 .game-service-toolbar h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; line-height: 1.5; white-space: nowrap; }
-.game-service-toolbar .button { min-height: 32px; padding: 6px 10px; }
+.game-service-toolbar .button, .configuration-apply .button { min-height: 32px; padding: 6px 10px; }
 .topbar:has(#game-actions:not([hidden])) .topbar-session { margin: 0; }
 .configuration-apply { display: flex; align-items: center; gap: 10px; border-right: 1px solid var(--line); padding-right: 12px; }
 .configuration-apply .save-status, .configuration-apply .button { white-space: nowrap; }
-.configuration-apply .button { min-height: 38px; }
 .configuration-state { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 74px; }
 #game-config-state { padding: 3px 9px; border-radius: 999px; font-size: 10px; font-weight: 600; }
 #game-config-state[data-state="written"] { background: #eef4ff; border-color: #cddcf5; color: #365f97; }
@@ -62,7 +61,7 @@
   .server-metric .metric-value { font-size: 18px; }
 }
 .management-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.management-panel .button:disabled, .game-service-toolbar .button:disabled { opacity: .45; cursor: not-allowed; }
+.management-panel .button:disabled, .game-service-toolbar .button:disabled, .configuration-apply .button:disabled { opacity: .45; cursor: not-allowed; }
 .management-note { font-size: 11px; line-height: 1.8; margin: 13px 0; }
 .management-panel label { font-size: 11px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .management-panel input, .management-panel select { border: 1px solid var(--line); border-radius: 5px; padding: 8px; min-width: 0; font: inherit; }
@@ -100,12 +99,13 @@
 #manager-banned-list, #manager-players-list { font-size: 12px; }
 #banned-management .management-heading { flex-wrap: wrap; }
 /* 游戏概况页占满视口，日志框吃掉服务器卡片之外的剩余高度 */
-main:has(#game-page:not([hidden])) { display: flex; flex-direction: column; }
-#game-page:not([hidden]) { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+main:has(#game-page:not([hidden])), main:has(#login-logs-page:not([hidden])) { display: flex; flex-direction: column; }
+#game-page:not([hidden]), #login-logs-page:not([hidden]) { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 #game-overview:not([hidden]) { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-#game-logs { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 300px; margin-bottom: 0; }
+#game-logs, .login-logs-panel { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 300px; margin-bottom: 0; }
 #game-logs > .management-heading, #game-logs > #manager-log-status { flex: 0 0 auto; }
-#manager-logs { flex: 1 1 auto; height: auto; min-height: 200px; max-height: max(220px, calc(100dvh - 520px)); min-width: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 14px; border-radius: 6px; background: #202124; color: #f4f4f5; font: 11px/1.7 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; margin: 10px 0 0; }
+#manager-logs, #login-log-content { flex: 1 1 auto; height: auto; min-height: 200px; max-height: max(220px, calc(100dvh - 520px)); min-width: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 14px; border-radius: 6px; background: #202124; color: #f4f4f5; font: 11px/1.7 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; margin: 10px 0 0; }
+#login-log-content { max-height: max(220px, calc(100dvh - 340px)); }
 .log-heading { flex-wrap: wrap; }
 .log-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .log-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); white-space: nowrap; }
@@ -113,14 +113,13 @@ main:has(#game-page:not([hidden])) { display: flex; flex-direction: column; }
 .log-type-buttons button.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: none; }
 @media (max-width: 1400px) {
   .topbar { height: auto; min-height: 65px; flex-wrap: wrap; padding-top: 12px; padding-bottom: 12px; }
-  .topbar .page-actions { order: 3; width: 100%; justify-content: flex-end; margin: 0; }
   .topbar:has(#configuration-actions:not([hidden])) .topbar-session { border-left: 0; padding-left: 0; }
 }
 @media (max-width: 760px) {
   .topbar:has(#game-actions:not([hidden])) { flex-wrap: wrap; }
   .topbar:has(#game-actions:not([hidden])) .topbar-session { margin-left: auto; }
   .game-topbar-actions { order: 3; flex: 1 0 100%; width: 100%; }
-  .topbar .page-actions { grid-template-columns: minmax(0, 1fr); }
+  .topbar .page-actions { order: 4; grid-template-columns: minmax(0, 1fr); }
   .topbar .configuration-apply { grid-column: 1 / -1; justify-content: flex-start; border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 10px; }
   .configuration-apply .button { flex: 1; }
   .configuration-tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
@@ -146,7 +145,6 @@ main:has(#game-page:not([hidden])) { display: flex; flex-direction: column; }
   .management-heading h2 { font-size: 15px; }
   .management-actions .button { flex: 1 0 40%; }
   .game-service-toolbar .server-heading-actions { width: auto; gap: 6px; }
-  .game-service-toolbar .server-heading-actions .button { flex: none; }
   .game-service-toolbar { gap: 6px; }
   .game-service-toolbar .server-primary-actions .button { flex: 1 1 auto; min-width: 80px; }
   .management-heading > .button { flex-shrink: 0; font-size: 10px; padding: 7px; }

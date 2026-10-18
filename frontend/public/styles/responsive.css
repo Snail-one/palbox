@@ -106,11 +106,6 @@
     padding: 14px 12px;
   }
 
-  .summary-icon {
-    width: 31px;
-    height: 31px;
-  }
-
   .summary-card strong {
     font-size: 22px;
   }
@@ -227,11 +222,6 @@
 
   .profile-details {
     gap: 3px;
-  }
-
-  .summary-icon {
-    width: 31px;
-    height: 31px;
   }
 
   .summary-caption {
@@ -387,17 +377,6 @@
   .summary-card {
     padding: 12px 10px;
     gap: 5px;
-  }
-
-  .summary-icon {
-    width: 26px;
-    height: 26px;
-    border-radius: 7px;
-  }
-
-  .summary-icon>.icon {
-    width: 14px;
-    height: 14px;
   }
 
   .summary-card>div {

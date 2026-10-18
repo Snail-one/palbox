@@ -139,7 +139,7 @@ const path = require('node:path');
     await page.locator('#configuration-page').waitFor();
     assert.equal(await page.locator('#game-page').isVisible(), false);
     assert.equal(await page.title(), 'Palbox · 配置管理 · 配置编辑');
-    assert.equal(await page.locator('#game-actions').isVisible(), false);
+    assert.equal(await page.locator('#game-actions').isVisible(), true);
     assert.equal(await page.locator('#configuration-actions').isVisible(), true);
     assert.equal(await page.locator('#configuration-profiles').isVisible(), false);
     assert.equal(await page.locator('#configuration-navigation').isVisible(), true);

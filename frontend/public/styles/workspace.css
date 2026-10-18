@@ -113,15 +113,6 @@
   text-align: center;
 }
 
-.summary-icon {
-  width: 37px;
-  height: 37px;
-  display: grid;
-  place-items: center;
-  border-radius: 10px;
-  flex-shrink: 0;
-}
-
 .summary-card strong {
   letter-spacing: -.5px;
   line-height: 1.4;

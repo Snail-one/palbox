@@ -21,11 +21,12 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   section.id = 'server-service';
   section.innerHTML = `
     <h2>游戏服务 <span id="game-state" class="save-status" data-state="pending">连接中</span></h2>
-    <div class="management-actions server-heading-actions"><label class="auto-start-switch" title="启用后，面板或容器重启并完成初始化时会自动创建启动任务；服务端未安装或尚未初始化时跳过"><input type="checkbox" role="switch" class="sr-only" id="auto-start" disabled><span class="toggle" aria-hidden="true"></span><span>自动启动</span></label><button type="button" id="show-task-history" class="button secondary" aria-haspopup="dialog" aria-controls="task-history">任务记录</button></div>
+    <div class="management-actions server-heading-actions"><label class="auto-start-switch" title="启用后，面板或容器重启并完成初始化时会自动创建启动任务；服务端未安装或尚未初始化时跳过"><input type="checkbox" role="switch" class="sr-only" id="auto-start" disabled><span class="toggle" aria-hidden="true"></span><span>自动启动</span></label></div>
     <div class="server-primary-actions" role="group" aria-label="游戏服务操作">
         <button class="button primary" data-action="install" hidden>安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop" hidden>停止</button><button class="button secondary" data-action="restart" hidden>重启</button>
         <button class="button secondary" data-action="update" title="更新前会自动备份，运行中的游戏服务将短暂停服。">更新服务端</button><button class="button secondary" data-action="force-stop" title="仅在正常停止无效时使用，可能丢失最近一次未保存的进度。">强制停止</button><button class="button secondary" id="show-running-config" disabled>运行参数</button><button class="button secondary" id="edit-game-args" disabled>启动参数</button><button class="button secondary" id="edit-install-args" disabled>安装参数</button><button class="button secondary" id="edit-shutdown-wait" title="设置关服倒计时和游戏内提示文字" disabled>关服设置</button>
-    </div>`;
+    </div>
+    <button type="button" id="show-task-history" class="button secondary" aria-haspopup="dialog" aria-controls="task-history">任务记录</button>`;
   $('game-actions').append(section);
   const metrics = document.createElement('section');
   metrics.id = 'server-metrics';
@@ -114,7 +115,6 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   let closeLogs = null;
   let activeLogChannel = null;
   let pageActive = true;
-  function overviewVisible() { return !$('game-page').hidden && !$('game-overview').hidden; }
   let lastErrorMessage = '';
   function error(message) {
     if (!message) { lastErrorMessage = ''; return; }
@@ -505,12 +505,10 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
         if (task.state !== 'running') lastTask = task.id;
       }
       players(value.players);
-      const gameVisible = !$('game-page').hidden;
-      const overviewVisible = gameVisible && !$('game-overview').hidden;
       const savesVisible = !$('saves-page').hidden;
       const archivesVisible = savesVisible && !$('saves-archives').hidden;
       const nativeVisible = savesVisible && !$('saves-native').hidden;
-      if (overviewVisible || archivesVisible) await loadSettings();
+      await loadSettings();
       if (archivesVisible) await loadBackups();
       if (nativeVisible) await loadNativeBackups();
     } catch (caught) {

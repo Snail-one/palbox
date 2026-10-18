@@ -42,7 +42,7 @@ export async function body(request, limit = 8 * 1024 * 1024, timeoutMs = DEFAULT
 export function createManagementApi(manager, options = {}) {
   const auth = new Authentication(() => manager.settings?.admin ?? null, {
     ...options,
-    log: options.log ?? (text => manager.runtime.log('palbox', text))
+    log: options.log ?? (text => manager.runtime.log('login', text))
   });
   return async function api(request, response, pathname) {
     const json = (status, value) => {

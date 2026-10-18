@@ -6,6 +6,55 @@ import { managementFixture } from '../helpers/management-fixture.js';
 
 const withoutTimestamps = text => text.replace(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} UTC\] /gm, '');
 
+test('登录日志独立提供认证后的快照与实时推送，不混入运行日志或泄露密码', { timeout: 10000 }, async t => {
+  const f = await managementFixture();
+  t.after(() => f.close());
+  for (const endpoint of ['logs', 'logs/stream']) {
+    assert.equal((await f.request(`/api/${endpoint}?channel=login`, { authenticated: false })).status, 401);
+  }
+  const { cookie } = await f.login();
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  const response = await fetch(f.base + '/api/logs/stream?channel=login', { headers: { Cookie: cookie }, signal: controller.signal });
+  assert.equal(response.status, 200);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffered = '';
+  async function snapshotIncluding(text) {
+    for (;;) {
+      let index;
+      while ((index = buffered.indexOf('\n\n')) !== -1) {
+        const frame = buffered.slice(0, index); buffered = buffered.slice(index + 2);
+        if (!frame.startsWith('event: log\n')) continue;
+        const snapshot = JSON.parse(frame.split('\ndata: ')[1]).text;
+        if (snapshot.includes(text)) return snapshot;
+      }
+      const { value, done } = await reader.read();
+      assert.equal(done, false);
+      buffered += decoder.decode(value, { stream: true });
+    }
+  }
+  assert.match(await snapshotIncluding('登录成功'), /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} UTC\] 登录成功/);
+  f.manager.status = () => { throw new Error('登录日志不应依赖游戏状态'); };
+  const wrongPassword = 'do-not-log-this-password';
+  assert.equal((await f.request('/api/login', {
+    method: 'POST', authenticated: false,
+    body: { username: 'another-admin', password: wrongPassword }
+  })).status, 401);
+  const snapshot = await snapshotIncluding('登录失败');
+  assert.match(snapshot, /another-admin/);
+  assert.match(snapshot, /127\.0\.0\.1/);
+  assert.doesNotMatch(snapshot, new RegExp(`${wrongPassword}|${f.password}`));
+  assert.equal((await (await f.request('/api/logs?channel=login')).json()).text, snapshot);
+  f.runtime.log('palbox', '普通面板任务\n');
+  for (const channel of ['palbox', 'all']) {
+    const { text } = await (await f.request(`/api/logs?channel=${channel}`)).json();
+    assert.match(text, /普通面板任务/);
+    assert.doesNotMatch(text, /登录成功|登录失败|another-admin/);
+  }
+  assert.doesNotMatch(await f.runtime.logs('login'), /普通面板任务/);
+});
+
 test('实时日志通过前端代理推送，兼容外部写入、轮换并在退出登录后终止', { timeout: 10000 }, async t => {
   const f = await managementFixture();
   t.after(() => f.close());

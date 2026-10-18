@@ -382,7 +382,7 @@ test('首次访问通过网页初始化管理员，重启沿用账号，密码�
   assert.equal(settings.includes(password), false);
   assert.equal((await stat(settingsFile)).mode & 0o777, 0o600);
   assert.equal((await post('/api/login', { username: 'wrong-user', password })).status, 401);
-  const authLog = await readFile(path.join(directory, 'logs', 'palbox.log'), 'utf8');
+  const authLog = await readFile(path.join(directory, 'logs', 'login.log'), 'utf8');
   assert.match(authLog, /登录失败/);
   assert.equal(authLog.includes(password), false);
   assert.equal((await post('/api/login', { username, password })).status, 200);

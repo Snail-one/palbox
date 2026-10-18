@@ -6,7 +6,7 @@ import { stripVTControlCharacters } from 'node:util';
 import path from 'node:path';
 import { decodeString, parse } from '../../shared/domain/config.js';
 import { failure } from './files.js';
-import { appendLog, appendCombinedLog, initializeCombinedLog, readCombinedLog, readLogTail, timestampLogChunk } from './logs.js';
+import { appendLog, appendCombinedLog, initializeCombinedLog, initializeLoginLog, readCombinedLog, readLogTail, timestampLogChunk, withoutLoginLogs } from './logs.js';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 // SteamCMD block-buffers stdout when it is a pipe. A pseudo-terminal keeps its
@@ -42,6 +42,7 @@ export class Runtime {
   }
   async initialize() {
     await mkdir(path.join(this.directory, 'logs'), { recursive: true, mode: 0o700 });
+    await initializeLoginLog(this.directory);
     await initializeCombinedLog(this.directory);
   }
   log(channel, value) {
@@ -190,8 +191,9 @@ export class Runtime {
   }
   async logs(channel) {
     if (channel === 'all') return readCombinedLog(this.directory);
-    if (!['palbox', 'game', 'steamcmd'].includes(channel)) throw failure('日志类型不存在。', 404);
-    return readLogTail(path.join(this.directory, 'logs', channel + '.log'));
+    if (!['palbox', 'game', 'steamcmd', 'login'].includes(channel)) throw failure('日志类型不存在。', 404);
+    const text = await readLogTail(path.join(this.directory, 'logs', channel + '.log'));
+    return channel === 'palbox' ? withoutLoginLogs(text) : text;
   }
   async close() {
     this.closing = true;

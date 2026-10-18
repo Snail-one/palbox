@@ -28,6 +28,7 @@ class Element {
 function setup(hash = '#game') {
   const elements = new Map();
   const $ = id => {
+    if (id === 'login-logs-navigation') return null;
     if (!elements.has(id)) elements.set(id, new Element());
     return elements.get(id);
   };
@@ -78,7 +79,7 @@ test('官方与手动备份可独立进入，切换时仅显示对应页面并�
   assert.equal(app.$('saves-navigation').links[0].getAttribute('aria-current'), 'page');
   assert.equal(app.document.title, 'Palbox · 存档管理 · 官方备份');
   assert.equal(app.$('main').getAttribute('aria-label'), '官方备份');
-  assert.equal(app.$('game-actions').hidden, true);
+  assert.equal(app.$('game-actions').hidden, false);
   app.go('#saves/archives');
   assert.equal(app.$('saves-native').hidden, true);
   assert.equal(app.$('saves-archives').hidden, false);
@@ -110,7 +111,7 @@ test('存档页面与游戏、配置页面互不混用，保存快捷键只作�
   assert.equal(app.$('saves-archives').hidden, true);
   assert.equal(app.$('configuration-editor').hidden, false);
   assert.equal(app.$('configuration-actions').hidden, false);
-  assert.equal(app.$('game-actions').hidden, true);
+  assert.equal(app.$('game-actions').hidden, false);
   assert.equal(app.$('configuration-apply').hidden, false);
   assert.deepEqual(app.modes, ['advanced']);
   app.key(event);
@@ -120,11 +121,28 @@ test('存档页面与游戏、配置页面互不混用，保存快捷键只作�
   app.go('#game/players');
   assert.equal(app.$('game-players-view').hidden, false);
   assert.equal(app.$('game-overview').hidden, true);
-  assert.equal(app.$('game-actions').hidden, true);
+  assert.equal(app.$('game-actions').hidden, false);
   assert.equal(app.$('configuration-page').hidden, true);
   assert.equal(app.$('nav-saves').hasAttribute('aria-current'), false);
   app.go('#game');
   assert.equal(app.$('game-overview').hidden, false);
   assert.equal(app.$('game-actions').hidden, false);
   assert.equal(app.$('configuration-actions').hidden, true);
+});
+
+test('登录日志有独立导航，直接进入和前后切换不混用游戏或配置页面', () => {
+  const app = setup('#login-logs');
+  assert.equal(app.document.title, 'Palbox · 登录日志');
+  assert.equal(app.$('login-logs-page').hidden, false);
+  assert.equal(app.$('main').getAttribute('aria-label'), '登录日志');
+  for (const page of ['game', 'saves', 'configuration']) assert.equal(app.$(`${page}-page`).hidden, true);
+  assert.equal(app.$('nav-login-logs').getAttribute('aria-current'), 'page');
+  assert.equal(app.$('configuration-actions').hidden, true);
+  assert.equal(app.$('game-actions').hidden, false);
+  app.go('#configuration');
+  assert.equal(app.$('login-logs-page').hidden, true);
+  assert.equal(app.$('nav-login-logs').hasAttribute('aria-current'), false);
+  app.go('#login-logs');
+  assert.equal(app.$('login-logs-page').hidden, false);
+  assert.equal(app.$('configuration-apply').hidden, true);
 });
