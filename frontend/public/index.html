@@ -44,14 +44,18 @@
       <nav class="workspace-nav" aria-label="管理模块">
         <a id="nav-game" class="workspace-link" href="#game" aria-controls="game-page"><svg class="icon"><use href="#i-server"/></svg>游戏管理</a>
         <nav id="game-navigation" class="workspace-subnav" aria-label="游戏管理二级菜单">
-          <a id="nav-game-overview" href="#game" data-game-view="overview" aria-controls="game-overview">服务器概况</a>
-          <a id="nav-game-players" href="#game/players" data-game-view="players" aria-controls="game-players-view">玩家管理</a>
-          <a id="nav-game-saves" href="#game/saves" data-game-view="saves" aria-controls="game-saves">存档管理</a>
+          <a id="nav-game-overview" href="#game" data-view="overview" aria-controls="game-overview">服务器概况</a>
+          <a id="nav-game-players" href="#game/players" data-view="players" aria-controls="game-players-view">玩家管理</a>
+        </nav>
+        <a id="nav-saves" class="workspace-link" href="#saves" aria-controls="saves-page"><svg class="icon"><use href="#i-restore"/></svg>存档管理</a>
+        <nav id="saves-navigation" class="workspace-subnav" aria-label="存档管理二级菜单">
+          <a id="nav-saves-native" href="#saves" data-view="native" aria-controls="saves-native">官方备份</a>
+          <a id="nav-saves-archives" href="#saves/archives" data-view="archives" aria-controls="saves-archives">手动备份</a>
         </nav>
         <a id="nav-configuration" class="workspace-link sidebar-active" href="#configuration" aria-controls="configuration-page" aria-current="page"><svg class="icon"><use href="#i-grid"/></svg>配置管理</a>
         <nav id="configuration-navigation" class="workspace-subnav" aria-label="配置管理二级菜单">
-          <a id="nav-configuration-form" href="#configuration" data-configuration-view="editor" aria-controls="configuration-editor">配置编辑</a>
-          <a id="nav-configuration-profiles" href="#configuration/profiles" data-configuration-view="profiles" aria-controls="configuration-profiles">配置列表</a>
+          <a id="nav-configuration-form" href="#configuration" data-view="editor" aria-controls="configuration-editor">配置编辑</a>
+          <a id="nav-configuration-profiles" href="#configuration/profiles" data-view="profiles" aria-controls="configuration-profiles">配置列表</a>
         </nav>
       </nav>
       <div class="sidebar-bottom">
@@ -83,7 +87,10 @@
         <section id="game-page" aria-label="游戏管理" hidden>
           <div id="game-overview"></div>
           <div id="game-players-view" hidden></div>
-          <div id="game-saves" hidden></div>
+        </section>
+        <section id="saves-page" aria-label="存档管理" hidden>
+          <div id="saves-native" hidden></div>
+          <div id="saves-archives" hidden></div>
         </section>
         <section id="configuration-page" aria-label="配置管理">
         <div class="summary-grid"><div class="summary-card"><span class="summary-icon summary-neutral"><svg class="icon"><use href="#i-file"/></svg></span><div><span class="summary-label">配置参数</span><div><strong id="parameter-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption" id="recognition-summary">官方说明与社区解释分别标注</span></div><div class="summary-card"><span class="summary-icon summary-muted"><svg class="icon"><use href="#i-user"/></svg></span><div><span class="summary-label">最大在线人数</span><div><strong id="player-count">—</strong><span class="summary-unit">人</span></div></div><span class="summary-caption">一起探索这个世界</span></div>

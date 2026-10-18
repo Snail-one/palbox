@@ -67,19 +67,21 @@
 .management-panel label { font-size: 11px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .management-panel input, .management-panel select { border: 1px solid var(--line); border-radius: 5px; padding: 8px; min-width: 0; font: inherit; }
 .management-panel form { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin: 10px 0; }
-#backup-settings label { display: grid; }
-#backup-settings input { width: 170px; }
+#backup-settings { margin: 0; }
+#backup-settings input { width: 72px; }
 .save-management .management-heading { flex-wrap: wrap; }
-.save-management h3 { font-size: 13px; }
-.save-management .management-heading .management-note { margin: 6px 0 0; }
 .task-history-dialog { width: min(760px, calc(100vw - 28px)); }
 .task-history-dialog .management-heading { align-items: center; }
 .task-history-dialog h2 { margin: 0; }
 #task-history-list { margin-top: 12px; font-size: 11px; }
 #task-history-list .backup-row { align-items: flex-start; }
 #task-history-list .backup-row:last-child { border-bottom: 0; }
-.save-backup-plan { border-top: 1px solid var(--line); padding-top: 18px; margin-top: 18px; }
-.save-backup-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); padding-top: 18px; margin-top: 20px; }
+.save-backup-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; border-top: 1px solid var(--line); padding-top: 16px; margin-top: 16px; }
+.save-backup-toolbar > [role="status"] { flex-shrink: 0; font-size: 11px; font-variant-numeric: tabular-nums; }
+.save-backup-toolbar .management-note { margin: 0; }
+.backup-policy { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); }
+.backup-policy p { margin: 0; font-size: 11px; line-height: 1.8; }
+.backup-policy .button { padding: 5px 9px; }
 #save-backup-summary, #manager-backups { font-size: 11px; }
 #manager-backups { margin-top: 12px; }
 #native-backups { margin-top: 12px; font-size: 11px; scroll-margin-top: 90px; }
@@ -89,8 +91,6 @@
 .backup-pagination .button.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 #native-backup-summary { font-size: 11px; }
 #native-backup-note { overflow-wrap: anywhere; }
-.save-backup-plan > .management-heading { flex-wrap: wrap; }
-.save-backup-plan h3 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 #manager-announce input { flex: 1; }
 .player-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 13px 0; border-bottom: 1px solid var(--line); }
 .player-row:last-child { border-bottom: 0; }

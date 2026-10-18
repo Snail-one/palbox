@@ -60,17 +60,27 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   bannedPanel.setAttribute('aria-label', '已封禁玩家');
   bannedPanel.innerHTML = `<div class="management-heading"><h2>已封禁玩家 <span id="banned-player-count" class="subtle-tag">—</span></h2><div class="management-actions"><button class="button secondary" id="ban-player" disabled>按 ID 封禁</button><button class="button secondary" id="unban-player" disabled>按 ID 解封</button></div></div><p id="banned-player-note" class="management-note">本服封禁名单，游戏服务运行后可封禁或解封。</p><div id="manager-banned-list">正在读取封禁名单…</div>`;
   $('game-players-view').append(playerPanel, bannedPanel);
+  const nativeSaves = document.createElement('section');
+  nativeSaves.id = 'native-save-management';
+  nativeSaves.className = 'management-panel save-management';
+  nativeSaves.setAttribute('aria-labelledby', 'native-save-title');
+  nativeSaves.innerHTML = `
+    <div class="management-heading"><h2 id="native-save-title">官方存档备份 <span id="native-backup-state" class="save-status" data-state="pending">读取中</span></h2><div class="management-actions"><button class="button secondary" data-action="import-save" disabled><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg>导入存档</button><button class="button primary" data-action="save-world" disabled>保存世界</button></div></div>
+    <p class="management-note">游戏自动生成世界和玩家快照，下载无需停服；恢复前会备份当前数据并停服。</p>
+    <div class="backup-policy"><p>保留策略：30 秒 5 份 · 10 分钟 6 份 · 1 小时 12 份 · 1 天 7 份</p><a class="button secondary" href="#configuration">备份配置 →</a></div>
+    <div class="save-backup-toolbar"><span id="native-backup-summary" role="status">正在读取…</span><p id="native-backup-note" class="management-note"></p></div>
+    <div id="native-backups">正在读取官方备份…</div>`;
+  $('saves-native').append(nativeSaves);
   const saves = document.createElement('section');
   saves.id = 'save-management';
   saves.className = 'management-panel save-management';
   saves.setAttribute('aria-labelledby', 'save-management-title');
   saves.innerHTML = `
-    <div class="management-heading"><div><h2 id="save-management-title">存档管理</h2><p class="management-note">官方自动备份与手动完整备份分开管理。</p></div><div class="management-actions"><button class="button secondary" data-action="import-save" disabled><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg>导入存档</button><button class="button secondary" data-action="backup" disabled>创建完整备份</button><button class="button primary" data-action="save-world" disabled>保存世界</button></div></div>
-    <div class="save-backup-plan"><div class="management-heading"><h3>官方自动备份 <span id="native-backup-state" class="save-status" data-state="pending">读取中</span></h3><a class="button secondary" href="#configuration">管理备份配置 →</a></div><p class="management-note">由游戏在运行中生成，无需停服。保留档位：30 秒 5 份、10 分钟 6 份、1 小时 12 份、1 天 7 份。修改「自动备份世界」后需应用配置。</p><p id="native-backup-note" class="management-note"></p><div class="save-backup-heading"><h3>官方存档备份</h3><span id="native-backup-summary" role="status">正在读取…</span></div><div id="native-backups">正在读取官方备份…</div></div>
-    <div class="save-backup-heading"><h3>完整备份归档</h3><span id="save-backup-summary" role="status">正在读取…</span></div><p id="complete-backup-note" class="management-note">包含世界、玩家存档和游戏配置。手动创建完整备份时会先存档并停服，完成后重新启动；恢复任何备份前都会先备份当前数据。</p>
-    <form id="backup-settings"><label>每类完整备份保留数量<input id="backup-retention" disabled type="number" min="1" max="100" required></label><button class="button secondary" type="submit" disabled>保存设置</button></form>
+    <div class="management-heading"><h2 id="save-management-title">完整备份归档</h2><div class="management-actions"><button class="button primary" data-action="backup" disabled>创建完整备份</button></div></div>
+    <p id="complete-backup-note" class="management-note">包含世界、玩家存档和游戏配置。手动创建完整备份时会先存档并停服，完成后按原状态启动。</p>
+    <div class="save-backup-toolbar"><span id="save-backup-summary" role="status">正在读取…</span><form id="backup-settings"><label>每类保留<input id="backup-retention" aria-label="每类完整备份保留数量" disabled type="number" min="1" max="100" required>份</label><button class="button secondary" type="submit" disabled>保存设置</button></form></div>
     <div id="manager-backups">正在读取完整备份…</div>`;
-  $('game-saves').append(saves);
+  $('saves-archives').append(saves);
   const configurationApply = $('configuration-apply');
   const logout = document.createElement('button');
   logout.id = 'manager-logout'; logout.className = 'button secondary'; logout.type = 'button';
@@ -78,7 +88,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   logout.append(dom.icon('logout'), document.createTextNode('退出'));
   document.querySelector('.topbar-session').append(logout);
   document.querySelector('.bottom-note > span:last-child').textContent = '配置自动保存 · 应用后在游戏中生效';
-  const actionButtons = [...section.querySelectorAll('[data-action]'), ...saves.querySelectorAll('[data-action]'), ...configurationApply.querySelectorAll('[data-action]')];
+  const actionButtons = [...section.querySelectorAll('[data-action]'), ...nativeSaves.querySelectorAll('[data-action]'), ...saves.querySelectorAll('[data-action]'), ...configurationApply.querySelectorAll('[data-action]')];
   actionButtons.forEach(button => { button.disabled = true; });
   const names = { install: '安装服务端', start: '启动', stop: '停止', 'force-stop': '强制停止', restart: '重启', update: '更新服务端', apply: '应用配置', backup: '创建备份', 'delete-backup': '删除备份', restore: '恢复备份', 'restore-native': '恢复官方备份', 'import-save': '导入存档', 'save-world': '保存世界', announce: '发送广播', kick: '移出玩家', ban: '封禁玩家', unban: '解封玩家' };
   let polling = false;
@@ -509,9 +519,12 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       players(value.players);
       const gameVisible = !$('game-page').hidden;
       const overviewVisible = gameVisible && !$('game-overview').hidden;
-      const savesVisible = gameVisible && !$('game-saves').hidden;
-      if (overviewVisible || savesVisible) await loadSettings();
-      if (savesVisible) await Promise.all([loadNativeBackups(), loadBackups()]);
+      const savesVisible = !$('saves-page').hidden;
+      const archivesVisible = savesVisible && !$('saves-archives').hidden;
+      const nativeVisible = savesVisible && !$('saves-native').hidden;
+      if (overviewVisible || archivesVisible) await loadSettings();
+      if (archivesVisible) await loadBackups();
+      if (nativeVisible) await loadNativeBackups();
     } catch (caught) {
       error(caught.message);
       actionButtons.forEach(button => { button.disabled = true; });

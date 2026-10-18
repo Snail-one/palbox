@@ -1,5 +1,20 @@
 export function createNavigation({ dom, window, isDirty, onSave, onConfigurationView }) {
   const { $, document } = dom;
+  const routes = {
+    '#game': { page: 'game', view: 'overview', title: '服务器概况' },
+    '#game/players': { page: 'game', view: 'players', title: '玩家管理' },
+    '#saves': { page: 'saves', view: 'native', title: '官方备份' },
+    '#saves/archives': { page: 'saves', view: 'archives', title: '手动备份' },
+    '#game/saves': { page: 'saves', view: 'native', title: '官方备份' },
+    '#configuration': { page: 'configuration', view: 'editor', mode: 'form', title: '配置编辑' },
+    '#configuration/advanced': { page: 'configuration', view: 'editor', mode: 'advanced', title: '配置编辑' },
+    '#configuration/profiles': { page: 'configuration', view: 'profiles', title: '配置列表' }
+  };
+  const pages = [
+    { id: 'game', name: '游戏管理' },
+    { id: 'saves', name: '存档管理' },
+    { id: 'configuration', name: '配置管理' }
+  ];
   function closeSidebar() {
     $('sidebar').classList.remove('open');
     $('sidebar-scrim').hidden = true;
@@ -17,24 +32,18 @@ export function createNavigation({ dom, window, isDirty, onSave, onConfiguration
     $('main').focus();
   });
   function showPage({ focus = false } = {}) {
-    const game = !['#configuration', '#configuration/advanced', '#configuration/profiles'].includes(window.location.hash);
-    const gameRoutes = {
-      '#game/players': { view: 'players', title: '玩家管理' },
-      '#game/saves': { view: 'saves', title: '存档管理' }
-    };
-    const configurationRoutes = {
-      '#configuration/advanced': { view: 'editor', mode: 'advanced', title: '配置编辑' },
-      '#configuration/profiles': { view: 'profiles', title: '配置列表' }
-    };
-    const route = game
-      ? gameRoutes[window.location.hash] || { view: 'overview', title: '服务器概况' }
-      : configurationRoutes[window.location.hash] || { view: 'editor', mode: 'form', title: '配置编辑' };
-    const name = game ? '游戏管理' : '配置管理';
-    $('game-page').hidden = !game;
-    for (const [id, active] of [['game-navigation', game], ['configuration-navigation', !game]]) {
-      const links = [...$(id).querySelectorAll('a')];
+    const route = routes[window.location.hash] || routes['#game'];
+    const name = pages.find(page => page.id === route.page).name;
+    for (const page of pages) {
+      const active = page.id === route.page;
+      $(`${page.id}-page`).hidden = !active;
+      const parent = $(`nav-${page.id}`);
+      parent.classList.toggle('sidebar-active', active);
+      if (active) parent.setAttribute('aria-current', 'page');
+      else parent.removeAttribute('aria-current');
+      const links = [...$(`${page.id}-navigation`).querySelectorAll('a')];
       for (const link of links) {
-        const selected = active && (link.dataset.gameView || link.dataset.configurationView) === route.view;
+        const selected = active && link.dataset.view === route.view;
         if (selected) link.setAttribute('aria-current', 'page');
         else link.removeAttribute('aria-current');
       }
@@ -42,25 +51,20 @@ export function createNavigation({ dom, window, isDirty, onSave, onConfiguration
         $(target).hidden = !links.some(link => link.hasAttribute('aria-current') && link.getAttribute('aria-controls') === target);
       }
     }
-    $('configuration-page').hidden = game;
-    $('configuration-actions').hidden = game;
-    $('configuration-apply').hidden = game || route.view === 'profiles';
-    if (!game && route.view !== 'profiles') onConfigurationView(route.mode || 'form');
+    const configuring = route.page === 'configuration';
+    $('configuration-actions').hidden = !configuring;
+    $('configuration-apply').hidden = !configuring || route.view === 'profiles';
+    if (configuring && route.view !== 'profiles') onConfigurationView(route.mode || 'form');
     $('current-page').textContent = name;
     $('current-section').hidden = false;
     $('current-section').textContent = route.title;
     $('main').setAttribute('aria-label', route.title);
     document.title = `Palbox · ${name} · ${route.title}`;
-    for (const [id, active] of [['nav-game', game], ['nav-configuration', !game]]) {
-      $(id).classList.toggle('sidebar-active', active);
-      if (active) $(id).setAttribute('aria-current', 'page');
-      else $(id).removeAttribute('aria-current');
-    }
     closeSidebar();
     if (focus) { window.scrollTo(0, 0); $('main').focus({ preventScroll: true }); }
   }
   window.addEventListener('hashchange', () => {
-    if (['', '#game', '#game/players', '#game/saves', '#configuration', '#configuration/advanced', '#configuration/profiles'].includes(window.location.hash)) showPage({ focus: true });
+    if (!window.location.hash || Object.hasOwn(routes, window.location.hash)) showPage({ focus: true });
   });
   for (const link of document.querySelectorAll('.workspace-nav a')) link.addEventListener('click', closeSidebar);
   showPage();
