@@ -56,7 +56,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   bannedPanel.id = 'banned-management';
   bannedPanel.className = 'management-panel';
   bannedPanel.setAttribute('aria-label', '已封禁玩家');
-  bannedPanel.innerHTML = `<div class="management-heading"><h2>已封禁玩家 <span id="banned-player-count" class="subtle-tag">—</span></h2><button class="button secondary" id="unban-player" disabled>按 ID 解封</button></div><p id="banned-player-note" class="management-note">本服封禁名单，游戏服务运行后可解封。</p><div id="banned-player-error" class="alert error" role="status" hidden></div><div id="manager-banned-list">正在读取封禁名单…</div>`;
+  bannedPanel.innerHTML = `<div class="management-heading"><h2>已封禁玩家 <span id="banned-player-count" class="subtle-tag">—</span></h2><div class="management-actions"><button class="button secondary" id="ban-player" disabled>按 ID 封禁</button><button class="button secondary" id="unban-player" disabled>按 ID 解封</button></div></div><p id="banned-player-note" class="management-note">本服封禁名单，游戏服务运行后可封禁或解封。</p><div id="banned-player-error" class="alert error" role="status" hidden></div><div id="manager-banned-list">正在读取封禁名单…</div>`;
   $('game-players-view').append(playerPanel, bannedPanel);
   const saves = document.createElement('section');
   saves.id = 'save-management';
@@ -385,7 +385,9 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       $('complete-backup-note').textContent = !value.hasWorldSave && !value.running
         ? '尚无可备份的世界存档，请先启动游戏并生成存档。已有备份仍可下载或恢复。'
         : '包含世界、玩家存档和游戏配置。手动创建完整备份时会先存档并停服，完成后按原状态启动；恢复任何备份前都会先备份当前数据。';
-      $('unban-player').disabled = Boolean(value.task) || !value.running || !value.ready;
+      const playerActionDisabled = Boolean(value.task) || !value.running || !value.ready;
+      $('ban-player').disabled = playerActionDisabled;
+      $('unban-player').disabled = playerActionDisabled;
       if (bannedCache) renderBans(bannedCache);
       renderHistory(value.tasks);
       const task = value.task || value.tasks[0];
@@ -453,6 +455,11 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     catch (caught) { error(caught.message); }
   });
   $('manager-announce').addEventListener('submit', event => { event.preventDefault(); action('announce', { message: $('announce-message').value }, false); });
+  $('ban-player').addEventListener('click', async () => {
+    const userid = await ask({ title: '按 ID 封禁玩家', description: '输入要封禁的玩家 UserID（通常以 steam_ 开头）；可直接粘贴 banlist.txt 中的整行，面板会取逗号前的 ID。默认理由为“管理员已将你封禁”。', name: '', nameLabel: '玩家 UserID', namePlaceholder: 'steam_...', nameMaxLength: 200, required: true, confirm: '封禁', symbol: 'user' });
+    if (userid === null) return;
+    action('ban', { userid, name: '', message: '' }, false);
+  });
   $('unban-player').addEventListener('click', async () => {
     const userid = await ask({ title: '解封玩家', description: '输入要解封的玩家 UserID（通常以 steam_ 开头）。', name: '', nameLabel: '玩家 UserID', namePlaceholder: 'steam_...', nameMaxLength: 200, required: true, confirm: '解封', symbol: 'user' });
     if (userid === null) return;

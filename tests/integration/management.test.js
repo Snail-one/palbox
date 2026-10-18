@@ -112,7 +112,7 @@ test('玩家封禁、踢人理由、强制停止与更新检查', { skip: proces
   f.runtime.rest = async (endpoint, body) => { calls.push({ endpoint, body }); return rest(endpoint, body); };
   assert.equal((await f.task('kick', { userid: 'steam_test', message: '刷屏' })).state, 'succeeded');
   assert.deepEqual(calls.at(-1), { endpoint: 'kick', body: { userid: 'steam_test', message: '刷屏' } });
-  assert.equal((await f.task('ban', { userid: 'steam_test', name: '测试玩家', message: '作弊' })).state, 'succeeded');
+  assert.equal((await f.task('ban', { userid: 'steam_test,4F9368D8000000000000000000000000', name: '测试玩家', message: '作弊' })).state, 'succeeded');
   assert.deepEqual(calls.at(-1), { endpoint: 'ban', body: { userid: 'steam_test', message: '作弊' } });
   let banned = await (await f.request('/api/banned-players')).json();
   assert.equal(banned.players[0].userId, 'steam_test');
@@ -129,7 +129,7 @@ test('玩家封禁、踢人理由、强制停止与更新检查', { skip: proces
   assert.equal(banned.players[0].name, '测试玩家');
   assert.equal((await f.task('ban', { userid: 'steam_rejected' })).state, 'failed');
   assert.equal((await (await f.request('/api/banned-players')).json()).players.length, 1);
-  assert.equal((await f.task('unban', { userid: 'steam_test' })).state, 'succeeded');
+  assert.equal((await f.task('unban', { userid: 'steam_test,4F9368D8000000000000000000000000' })).state, 'succeeded');
   assert.deepEqual(calls.at(-1), { endpoint: 'unban', body: { userid: 'steam_test' } });
   assert.equal(f.manager.tasks.find(task => task.action === 'unban' && task.state === 'succeeded').player.userId, 'steam_test');
   assert.equal((await (await f.request('/api/banned-players')).json()).players.length, 0);

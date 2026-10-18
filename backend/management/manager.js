@@ -27,6 +27,15 @@ const MAX_GAME_ARGS_BYTES = 1800;
 const PORT_ARGUMENT = /(?:^|\s)-port(?:=|\s|$)/i;
 const DEFAULT_INSTALL_ARGS = Object.freeze(['+force_install_dir', '{server}', '+login', 'anonymous', '+app_update', '2394010', 'validate', '+quit']);
 
+// Accept a raw banlist line such as "steam_<ID>,<PlayerUID>" or a bare
+// 17-digit SteamID64 and reduce it to the UserID used by the REST API.
+function normalizeActionUserId(value) {
+  let userId = value.trim().split(',', 1)[0].trim();
+  if (/^\d{17}$/.test(userId)) userId = `steam_${userId}`;
+  if (!userId) throw failure('玩家 ID 无效。');
+  return userId;
+}
+
 function gameArgsError(value) {
   if (!Array.isArray(value)) return '启动参数必须是字符串数组。';
   if (value.length > MAX_GAME_ARGS) return `启动参数不能超过 ${MAX_GAME_ARGS} 项。`;
@@ -269,17 +278,18 @@ export class Manager {
       case 'ban': {
         await this.requireRunning();
         if (typeof payload.userid !== 'string' || !payload.userid.trim() || payload.userid.length > 200 || /[\p{Cc}\p{Cf}]/u.test(payload.userid)) throw failure('玩家 ID 无效。');
+        const userId = normalizeActionUserId(payload.userid);
         const fallback = action === 'kick' ? '管理员已将你移出服务器' : '管理员已将你封禁';
         const message = payload.message === undefined || payload.message === null || payload.message === '' ? fallback : payload.message;
         if (typeof message !== 'string' || !message.trim() || message.length > 500) throw failure('操作理由须为 1 到 500 个字符。');
-        await this.runtime.rest(action, { userid: payload.userid.trim(), message: message.trim() });
-        if (action === 'ban') task.player = { userId: payload.userid.trim(), name: typeof payload.name === 'string' ? payload.name.slice(0, 100) : '', reason: message.trim(), bannedAt: new Date().toISOString() };
+        await this.runtime.rest(action, { userid: userId, message: message.trim() });
+        if (action === 'ban') task.player = { userId, name: typeof payload.name === 'string' ? payload.name.slice(0, 100) : '', reason: message.trim(), bannedAt: new Date().toISOString() };
         break;
       }
       case 'unban': {
         await this.requireRunning();
         if (typeof payload.userid !== 'string' || !payload.userid.trim() || payload.userid.length > 200 || /[\p{Cc}\p{Cf}]/u.test(payload.userid)) throw failure('玩家 ID 无效。');
-        const userId = payload.userid.trim();
+        const userId = normalizeActionUserId(payload.userid);
         await this.runtime.rest('unban', { userid: userId });
         task.player = { userId };
         break;

@@ -92,7 +92,7 @@ main:has(#game-page:not([hidden])) { display: flex; flex-direction: column; }
 #game-overview:not([hidden]) { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 #game-logs { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 300px; margin-bottom: 0; }
 #game-logs > .management-heading, #game-logs > #manager-log-status { flex: 0 0 auto; }
-#manager-logs { flex: 1 1 auto; height: auto; min-height: 200px; min-width: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 14px; border-radius: 6px; background: #202124; color: #f4f4f5; font: 11px/1.7 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; margin: 10px 0 0; }
+#manager-logs { flex: 1 1 auto; height: auto; min-height: 200px; max-height: max(220px, calc(100dvh - 520px)); min-width: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 14px; border-radius: 6px; background: #202124; color: #f4f4f5; font: 11px/1.7 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; margin: 10px 0 0; }
 .log-heading { flex-wrap: wrap; }
 .log-type-buttons button.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: none; }
 @media (max-width: 1400px) {
