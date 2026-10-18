@@ -46,12 +46,14 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
       } else summary.render();
     } catch (error) { notifications.storage(error.message); notifications.toast(error.message, true); }
   }
-  async function copy() {
-    if (!ready()) return;
+  function copy() {
+    if (ready()) return copyOutput();
+  }
+  async function copyOutput() {
     try {
       await clipboard.write(editor.toIni());
       notifications.toast('完整 INI 配置已复制到剪贴板');
-    } catch { notifications.toast('复制失败，请允许剪贴板访问，或在「高级编辑 → INI 源码」中手动复制。', true); }
+    } catch { notifications.toast('复制失败，请允许剪贴板访问，或在「高级编辑 → 输出源码」中手动复制。', true); }
   }
   const navigation = createNavigation({ dom, window, isDirty, onSave: save });
   const panel = createEditorPanel({ dom, editor, catalog, ask, notify: notifications.toast, onChanged: () => summary.render(), ready });
@@ -85,6 +87,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
   } });
   dom.$('header-save-button').addEventListener('click', save);
   dom.$('header-copy-button').addEventListener('click', copy);
+  dom.$('copy-output').addEventListener('click', copyOutput);
   function render() { profiles.render(); panel.render(); summary.render(); }
   render();
   notifications.storage(workspace.message);

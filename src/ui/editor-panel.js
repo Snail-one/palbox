@@ -26,7 +26,8 @@ export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged
     }
     $('table-container').hidden = view.advanced !== 'table';
     $('source-container').hidden = view.advanced !== 'source';
-    for (const mode of ['table', 'source']) {
+    $('output-container').hidden = view.advanced !== 'output';
+    for (const mode of ['table', 'source', 'output']) {
       $('mode-' + mode).classList.toggle('selected', mode === view.advanced);
       $('mode-' + mode).setAttribute('aria-pressed', String(mode === view.advanced));
     }
@@ -48,8 +49,10 @@ export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged
     $('tab-' + mode).click();
     $('tab-' + view.mode).focus();
   });
-  for (const mode of ['table', 'source']) $('mode-' + mode).addEventListener('click', () => {
-    if (view.advanced === mode || !ready()) return;
+  for (const mode of ['table', 'source', 'output']) $('mode-' + mode).addEventListener('click', () => {
+    if (view.advanced === mode) return;
+    // Reading the effective output and returning to the input preserves its draft.
+    if (mode === 'table' && !ready()) return;
     view.advanced = mode;
     render();
   });

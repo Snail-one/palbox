@@ -32,6 +32,7 @@ export function createSourceEditor({ dom, editor, ask, notify, onChanged }) {
   return {
     render() {
       $('source-editor').value = editor.sourceDraft ?? editor.source();
+      $('source-output').value = editor.toIni();
       if (editor.sourceDraft === null) $('source-error').hidden = true;
     }
   };
