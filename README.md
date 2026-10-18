@@ -58,7 +58,7 @@ HOST=127.0.0.1 PORT=8090 API_PORT=8091 npm start
 
 适用于需要从面板管理游戏服务端的场景。准备可运行 Docker Compose 的 **Linux amd64** 主机，并为游戏预留足够的 CPU、内存和磁盘空间。
 
-所有 Docker 配置都直接写在 `compose.yaml` 里。首次启动前按需修改网页绑定地址、游戏端口和宿主机数据目录；修改 `PALBOX_GAME_PORT` 时，`ports` 里的 UDP 映射要一起改。
+本地构建使用 `compose.yaml`，在线镜像部署使用独立的 `compose.ghcr.yaml`。首次启动前按需修改所用文件的网页绑定地址、游戏端口和宿主机数据目录；修改 `PALBOX_GAME_PORT` 时，`ports` 里的 UDP 映射要一起改。
 
 随后启动：
 
@@ -86,11 +86,12 @@ docker compose logs -f frontend palbox
 
 普通提交和 PR 运行测试及容器启动检查，确认通过后再打 Git tag。推送 tag 时直接构建并发布前后端镜像到 GHCR，同时标记原始 Git tag 和 `latest`，不重复测试；也支持手动指定已有 tag 发布。Dependabot 每周提交 npm、Docker 和 GitHub Actions 的依赖更新 PR。
 
-发布后的镜像可直接启动：
+只需下载 [compose.ghcr.yaml](compose.ghcr.yaml)，放到部署目录，无需源码或 Dockerfile。使用已发布镜像启动：
 
 ```sh
-docker compose -f compose.yaml -f compose.ghcr.yaml pull
-docker compose -f compose.yaml -f compose.ghcr.yaml up -d --no-build
+docker compose -f compose.ghcr.yaml pull
+docker compose -f compose.ghcr.yaml up -d
+docker compose -f compose.ghcr.yaml logs -f frontend palbox
 ```
 
 具体镜像地址、发布步骤和手动运行方式见 [GitHub CI/CD](docs/ci-cd.md)。
@@ -185,7 +186,7 @@ palbox/
 ├── docs/               使用、部署与架构文档
 ├── Dockerfile          frontend / backend 两个镜像目标
 ├── compose.yaml        前后端独立容器配置
-└── compose.ghcr.yaml   使用 GHCR 发布镜像的叠加配置
+└── compose.ghcr.yaml   独立的 GHCR 在线镜像部署配置
 ```
 
 前端使用原生 ES Modules，服务端使用 Node.js 内置模块，无构建步骤。模块职责、依赖边界和扩展方式见 [架构说明](docs/architecture.md)。

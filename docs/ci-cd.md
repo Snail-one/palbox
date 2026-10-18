@@ -47,14 +47,15 @@ git push origin v1.0.0
 
 ## 使用发布镜像
 
-`compose.yaml` 保留本地构建方式。叠加 `compose.ghcr.yaml` 可直接拉取已发布镜像：
+`compose.yaml` 用于本地构建。在线部署只需把独立的 `compose.ghcr.yaml` 放到部署目录，即可拉取已发布镜像，无需下载源码、Dockerfile 或其他 Compose 文件：
 
 ```sh
-docker compose -f compose.yaml -f compose.ghcr.yaml pull
-docker compose -f compose.yaml -f compose.ghcr.yaml up -d --no-build
+docker compose -f compose.ghcr.yaml pull
+docker compose -f compose.ghcr.yaml up -d
+docker compose -f compose.ghcr.yaml logs -f frontend palbox
 ```
 
-需要指定版本时，把 `compose.ghcr.yaml` 中两个镜像的 `latest` 一起改为相同的 Git tag。端口、启动参数和数据目录继续在 `compose.yaml` 中修改；数据仍挂载到原来的 `./data`。
+需要指定版本时，把 `compose.ghcr.yaml` 中两个镜像的 `latest` 一起改为相同的 Git tag。端口、环境变量和数据目录直接在这个文件中修改；数据默认保存在该文件旁的 `./data`。默认网页绑定 `127.0.0.1:8080`，远程访问需改为服务器内网 IP 或 `0.0.0.0`。更新镜像时重新执行上面的 `pull` 和 `up -d`，保留原数据目录。
 
 ## 依赖更新机器人
 

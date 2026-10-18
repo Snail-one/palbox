@@ -1,7 +1,41 @@
-# Overlay for published images; use with compose.yaml and --no-build.
-# Change both tags together to deploy a specific release, for example v1.0.0.
+# 在线镜像部署：只需此文件，无需源码或 Dockerfile。
+# 启动：docker compose -f compose.ghcr.yaml up -d
+# 更新：docker compose -f compose.ghcr.yaml pull，再执行启动命令。
+# 固定版本时，将两个镜像的 latest 一起改为同一个 Git tag，例如 v1.0.0。
 services:
   frontend:
     image: ghcr.io/snail-one/palbox-frontend:latest
+    platform: linux/amd64
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    ports:
+      # 远程访问时改成服务器内网 IP 或 0.0.0.0。
+      - "127.0.0.1:8080:8080/tcp"
+    environment:
+      PALBOX_API_URL: "http://palbox:8081"
+    depends_on:
+      palbox:
+        condition: service_healthy
   palbox:
     image: ghcr.io/snail-one/palbox:latest
+    platform: linux/amd64
+    restart: unless-stopped
+    stop_grace_period: 120s
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      # 修改 PALBOX_GAME_PORT 时，同时修改这里的 UDP 端口映射。
+      - "8211:8211/udp"
+    expose:
+      # 后端管理 API 只在容器网络内开放。
+      - "8081"
+    environment:
+      # 首次打开网页时创建面板管理员，无需在此配置登录密码。
+      PALBOX_GAME_PORT: "8211"
+      PALBOX_SECURE_COOKIE: "false"
+    volumes:
+      # 数据保存在此 Compose 文件旁的 data 目录。
+      - "./data:/data"
