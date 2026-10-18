@@ -73,7 +73,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   document.querySelector('.bottom-note > span:last-child').textContent = '配置自动保存 · 应用后在游戏中生效';
   const actionButtons = [...section.querySelectorAll('[data-action]'), ...saves.querySelectorAll('[data-action]'), ...configurationApply.querySelectorAll('[data-action]')];
   actionButtons.forEach(button => { button.disabled = true; });
-  const names = { install: '安装服务端', start: '启动', stop: '停止', 'force-stop': '强制停止', restart: '重启', update: '更新服务端', apply: '应用配置', backup: '创建备份', restore: '恢复备份', 'restore-native': '恢复官方备份', 'import-save': '导入存档', 'save-world': '保存世界', announce: '发送广播', kick: '移出玩家', ban: '封禁玩家', unban: '解封玩家' };
+  const names = { install: '安装服务端', start: '启动', stop: '停止', 'force-stop': '强制停止', restart: '重启', update: '更新服务端', apply: '应用配置', backup: '创建备份', 'delete-backup': '删除备份', restore: '恢复备份', 'restore-native': '恢复官方备份', 'import-save': '导入存档', 'save-world': '保存世界', announce: '发送广播', kick: '移出玩家', ban: '封禁玩家', unban: '解封玩家' };
   let polling = false;
   let stopped = false;
   let lastTask;
@@ -158,13 +158,18 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     $('manager-backups').replaceChildren();
     if (!backups.length) $('manager-backups').textContent = '暂无完整备份。手动创建后，可在这里下载或恢复。';
     for (const backup of backups) {
-      const row = document.createElement('div'); row.className = 'backup-row';
+      const row = document.createElement('div'); row.className = 'backup-row'; row.dataset.backupId = backup.id;
       const label = document.createElement('span');
       const category = { manual: '手动', scheduled: '旧定时归档', 'before-update': '更新前' }[backup.category];
       label.textContent = `${new Date(backup.createdAt).toLocaleString()} · ${category} · ${(backup.bytes / 1024 / 1024).toFixed(1)} MB`;
       const download = document.createElement('a'); download.className = 'button secondary'; download.textContent = '下载'; download.href = `/api/backup?id=${encodeURIComponent(backup.id)}`; download.setAttribute('download', '');
       const restore = document.createElement('button'); restore.className = 'button secondary'; restore.textContent = '恢复'; restore.disabled = Boolean(lastStatus?.task); restore.addEventListener('click', () => action('restore', { id: backup.id }));
-      row.append(label, download, restore); $('manager-backups').append(row);
+      const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'button secondary danger-hover'; remove.textContent = '删除'; remove.disabled = Boolean(lastStatus?.task);
+      remove.addEventListener('click', async () => {
+        const confirmed = await ask({ title: '删除这份完整备份？', description: `${new Date(backup.createdAt).toLocaleString()} · ${category} · ${(backup.bytes / 1024 / 1024).toFixed(1)} MB。确认后永久删除这份归档，无法撤销。当前游戏存档保持不变。`, confirm: '删除备份', danger: true, symbol: 'trash' });
+        if (confirmed) await action('delete-backup', { id: backup.id }, false);
+      });
+      row.append(label, download, restore, remove); $('manager-backups').append(row);
     }
   }
   async function loadNativeBackups() {

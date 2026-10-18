@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { readFile, mkdir, readdir, stat, rename, rm, rmdir, lstat } from 'node:fs/promises';
+import { readFile, mkdir, readdir, stat, rename, rm, rmdir, lstat, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -164,12 +164,16 @@ export class Manager {
   }
   saveTasks() { return jsonWrite(this.tasksFile, this.tasks.slice(0, 40)); }
   async submit(action, payload = {}) {
-    const allowed = ['install', 'update', 'start', 'stop', 'force-stop', 'restart', 'apply', 'backup', 'restore', 'restore-native', 'import-save', 'save-world', 'announce', 'kick', 'ban', 'unban'];
+    const allowed = ['install', 'update', 'start', 'stop', 'force-stop', 'restart', 'apply', 'backup', 'delete-backup', 'restore', 'restore-native', 'import-save', 'save-world', 'announce', 'kick', 'ban', 'unban'];
     if (!allowed.includes(action)) throw failure('管理操作不存在。', 404);
     if (action === 'backup' && payload.category && payload.category !== 'manual') throw failure('定时备份已交由游戏官方机制，面板仅支持手动完整备份。');
     if (this.closing) throw failure('管理服务正在关闭。', 503);
     if (this.busy) throw failure('已有任务正在执行，请稍后再试。', 409);
-    if (action === 'backup' && !this.runtime.game) await this.requireWorldSave();
+    if (action === 'backup' && !this.runtime.game) {
+      await this.requireWorldSave();
+      if (this.closing) throw failure('管理服务正在关闭。', 503);
+      if (this.busy) throw failure('已有任务正在执行，请稍后再试。', 409);
+    }
     const task = { id: randomUUID(), action, state: 'running', message: '任务已开始', createdAt: new Date().toISOString() };
     this.busy = task;
     this.tasks.unshift(task); this.tasks = this.tasks.slice(0, 40);
@@ -244,6 +248,7 @@ export class Manager {
         finally { if (running && !this.closing) await this.runtime.start(); }
         break;
       }
+      case 'delete-backup': await this.deleteBackup(payload.id); break;
       case 'restore': await this.restore(payload.id); break;
       case 'restore-native': {
         const running = Boolean(this.runtime.game);
@@ -375,6 +380,19 @@ export class Manager {
     const [category, name, extra] = id.split('/');
     if (!categories.includes(category) || !backupId.test(name || '') || extra !== undefined) throw failure('备份路径无效。', 400);
     return path.join(this.directory, 'backups', category, name);
+  }
+  async deleteBackup(id) {
+    const file = this.backupFile(id);
+    try {
+      for (const directory of [path.join(this.directory, 'backups'), path.dirname(file)]) {
+        if (!(await lstat(directory)).isDirectory()) throw failure('备份目录无效，不允许删除。');
+      }
+      if (!(await lstat(file)).isFile()) throw failure('只允许删除完整备份归档文件。');
+      await unlink(file);
+    } catch (error) {
+      if (error.code === 'ENOENT') throw failure('备份不存在或已被删除，请刷新列表。', 404);
+      throw error;
+    }
   }
   async backups() {
     const entries = [];
