@@ -1,4 +1,4 @@
-name: Publish containers
+name: Build and publish containers
 
 on:
   push:
@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing Git tag to publish (for example v1.0.0)
+        description: Optional Git tag to build; leave blank for selected branch (never pushes)
         type: string
-        required: true
+        required: false
 
 permissions:
   contents: read
@@ -20,36 +20,59 @@ concurrency:
 
 jobs:
   release:
-    name: Resolve release tag
+    name: Resolve build source
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       sha: ${{ steps.release.outputs.sha }}
       image: ${{ steps.release.outputs.image }}
+      publish: ${{ steps.release.outputs.publish }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Validate tag and resolve commit
+      - name: Resolve commit and publishing mode
         id: release
         env:
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          REQUESTED_TAG: ${{ inputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          SOURCE_SHA: ${{ github.sha }}
           REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! "$RELEASE_TAG" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$ ]]; then
-            echo 'Git tag must also be a valid Docker tag (1–128 letters, digits, underscores, dots or hyphens).' >&2
+          publish=false
+          release_tag="$REQUESTED_TAG"
+          if [[ "$EVENT_NAME" = push ]]; then
+            if [[ "$REF_TYPE" != tag ]]; then
+              echo 'Automatic publishing requires a Git tag push.' >&2
+              exit 1
+            fi
+            release_tag="$REF_NAME"
+            publish=true
+          fi
+          if [[ -n "$release_tag" ]]; then
+            if [[ ! "$release_tag" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$ ]]; then
+              echo 'Git tag must also be a valid Docker tag (1–128 letters, digits, underscores, dots or hyphens).' >&2
+              exit 1
+            fi
+            git check-ref-format "refs/tags/${release_tag}"
+            sha=$(git rev-parse --verify "refs/tags/${release_tag}^{commit}")
+          else
+            sha=$(git rev-parse --verify "${SOURCE_SHA}^{commit}")
+          fi
+          if [[ "$publish" = true && "$sha" != "$(git rev-parse --verify "${SOURCE_SHA}^{commit}")" ]]; then
+            echo 'The Git tag no longer matches the triggering commit.' >&2
             exit 1
           fi
-          git check-ref-format "refs/tags/${RELEASE_TAG}"
-          sha=$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")
-          printf 'tag=%s\nsha=%s\nimage=ghcr.io/%s\n' "$RELEASE_TAG" "$sha" "${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          printf 'tag=%s\nsha=%s\nimage=ghcr.io/%s\npublish=%s\n' "$release_tag" "$sha" "${REPOSITORY,,}" "$publish" >> "$GITHUB_OUTPUT"
 
-  publish:
-    name: Publish ${{ matrix.target }}
+  build:
+    name: Build ${{ matrix.target }}
     needs: release
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -71,32 +94,53 @@ jobs:
           persist-credentials: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - name: Log in to GitHub Container Registry
+        if: needs.release.outputs.publish == 'true'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and publish Git tag and latest
+      - name: Prepare image tags
+        id: tags
+        env:
+          IMAGE: ${{ needs.release.outputs.image }}${{ matrix.suffix }}
+          TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          tags="${IMAGE}:latest"
+          if [[ -n "$TAG" && "$TAG" != latest ]]; then
+            tags="${IMAGE}:${TAG},${tags}"
+          fi
+          printf 'tags=%s\n' "$tags" >> "$GITHUB_OUTPUT"
+      - name: Build images (publish only on Git tag push)
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           target: ${{ matrix.target }}
           platforms: linux/amd64
-          push: true
-          tags: |
-            ${{ needs.release.outputs.image }}${{ matrix.suffix }}:${{ needs.release.outputs.tag }}
-            ${{ needs.release.outputs.image }}${{ matrix.suffix }}:latest
+          push: ${{ needs.release.outputs.publish == 'true' }}
+          load: ${{ needs.release.outputs.publish != 'true' }}
+          tags: ${{ steps.tags.outputs.tags }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ needs.release.outputs.sha }}
-            org.opencontainers.image.version=${{ needs.release.outputs.tag }}
+            org.opencontainers.image.version=${{ needs.release.outputs.tag || needs.release.outputs.sha }}
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
-      - name: Summarize published image
+      - name: Summarize image build
         env:
-          IMAGE: ${{ needs.release.outputs.image }}${{ matrix.suffix }}
-          TAG: ${{ needs.release.outputs.tag }}
+          TAGS: ${{ steps.tags.outputs.tags }}
+          PUBLISH: ${{ needs.release.outputs.publish }}
+          SOURCE_SHA: ${{ needs.release.outputs.sha }}
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
-          printf '### Published image\n\n- `%s:%s`\n- `%s:latest`\n- Digest: `%s`\n' "$IMAGE" "$TAG" "$IMAGE" "$DIGEST" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$PUBLISH" = true ]]; then
+            printf '### Published image\n\n' >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf '### Build only — image was not pushed\n\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          IFS=',' read -r -a references <<< "$TAGS"
+          for reference in "${references[@]}"; do
+            printf -- '- `%s`\n' "$reference" >> "$GITHUB_STEP_SUMMARY"
+          done
+          printf -- '- Commit: `%s`\n- Digest: `%s`\n' "$SOURCE_SHA" "$DIGEST" >> "$GITHUB_STEP_SUMMARY"

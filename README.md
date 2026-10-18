@@ -84,7 +84,7 @@ docker compose logs -f frontend palbox
 
 ### 使用 GitHub 发布镜像
 
-普通提交和 PR 运行测试及容器启动检查，确认通过后再打 Git tag。推送 tag 时直接构建并发布前后端镜像到 GHCR，同时标记原始 Git tag 和 `latest`，不重复测试；也支持手动指定已有 tag 发布。Dependabot 每周提交 npm、Docker 和 GitHub Actions 的依赖更新 PR。
+普通提交和 PR 运行测试及容器启动检查，确认通过后再打 Git tag。只有推送 tag 时才构建并发布前后端镜像到 GHCR，同时标记原始 Git tag 和 `latest`，不重复测试。手动触发仅构建验证，可选择分支或填写已有 tag，不推送镜像、不更新仓库中的 `latest`。Dependabot 每周提交 npm、Docker 和 GitHub Actions 的依赖更新 PR。
 
 只需下载 [compose.ghcr.yaml](compose.ghcr.yaml)，放到部署目录，无需源码或 Dockerfile。使用已发布镜像启动：
 
