@@ -24,10 +24,15 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
         <button class="button primary" data-action="install" hidden>安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop" hidden>停止</button><button class="button secondary" data-action="restart" hidden>重启</button>
         <button class="button secondary" id="check-update" disabled>检查更新</button><button class="button secondary" data-action="update" title="更新前会自动备份，运行中的游戏服务将短暂停服。">更新服务端</button><button class="button secondary" id="edit-game-args" disabled>启动参数</button><button class="button secondary" id="edit-install-args" disabled>安装参数</button><button class="button secondary" data-action="force-stop" title="仅在正常停止无效时使用，可能丢失最近一次未保存的进度。">强制停止</button>
       </div>
-      <div class="server-meta"><span>游戏版本 <strong id="game-version">读取中</strong></span><span id="game-build-meta" hidden>Steam Build <strong id="game-build">—</strong></span><span>游戏端口 <strong id="game-port">8211</strong> UDP</span></div>
     </div>
     <p id="update-status" class="management-note" role="status" hidden></p>
-    <dl class="management-metrics" aria-label="服务器运行信息"><div class="server-metric"><dt>在线玩家</dt><dd id="game-players" class="metric-value">—</dd></div><div class="server-metric"><dt>服务器 FPS</dt><dd id="game-fps" class="metric-value">—</dd></div><div class="server-metric"><dt>运行时间</dt><dd id="game-uptime" class="metric-value">—</dd></div></dl>`;
+    <dl class="management-metrics" aria-label="服务器运行信息">
+      <div class="server-metric"><dt>游戏版本</dt><dd id="game-version" class="metric-value metric-text">读取中</dd><dd id="game-build-meta" class="server-metric-note" hidden>Steam Build <span id="game-build">—</span></dd></div>
+      <div class="server-metric"><dt>在线玩家</dt><dd id="game-players" class="metric-value">—</dd></div>
+      <div class="server-metric"><dt>服务器 FPS</dt><dd id="game-fps" class="metric-value">—</dd></div>
+      <div class="server-metric"><dt>游戏端口</dt><dd class="metric-value"><span id="game-port">8211</span><span class="metric-unit">UDP</span></dd></div>
+      <div class="server-metric"><dt>运行时间</dt><dd id="game-uptime" class="metric-value">—</dd></div>
+    </dl>`;
   $('game-overview').append(section);
   const logs = document.createElement('section');
   logs.id = 'game-logs';
