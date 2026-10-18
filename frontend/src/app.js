@@ -88,7 +88,13 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
       workspace.select(id);
       changedProfile();
     },
-    create(name) { workspace.add(name); changedProfile('新配置已创建'); },
+    async create(name) {
+      try {
+        const { source } = await management.request('default-configuration');
+        workspace.add(name, source);
+        changedProfile('已从官方默认配置创建');
+      } catch (error) { notifications.toast(error.message, true); }
+    },
     duplicate(name, id = workspace.active.id, { fromList = false } = {}) {
       const source = id === workspace.active.id ? editor.source() : workspace.profiles.find(profile => profile.id === id).source;
       workspace.add(name, source, { select: !fromList });
@@ -104,9 +110,14 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
       profiles.render();
       summary.render();
     },
-    remove(id = workspace.active.id, { fromList = false } = {}) {
+    async remove(id = workspace.active.id, { fromList = false } = {}) {
+      let fallbackSource;
+      if (workspace.profiles.length === 1) {
+        try { ({ source: fallbackSource } = await management.request('default-configuration')); }
+        catch (error) { notifications.toast(error.message, true); return; }
+      }
       const activeRemoved = id === workspace.active.id;
-      workspace.remove(id);
+      workspace.remove(id, { fallbackSource });
       if (!fromList) { changedProfile('配置已删除'); return; }
       if (activeRemoved) editor.reset(workspace.active.source);
       const success = persist();
@@ -134,7 +145,10 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
   function render() { profiles.render(); panel.render(); summary.render(); }
   render();
   notifications.storage(workspace.message);
-  const managementPanel = createManagementPanel({ dom, api: management, ask, notify: notifications.toast, async getConfiguration() {
+  const managementPanel = createManagementPanel({ dom, api: management, ask, notify: notifications.toast, onDefaultsImported() {
+    if (!isDirty() && !document.querySelector('dialog[open]')) window.location.reload();
+    else notifications.toast('官方默认配置已导入，请复制当前草稿后刷新页面。');
+  }, async getConfiguration() {
     if (!ready()) throw new Error(editor.blockReason);
     if (!(await repository.flush())) throw new Error(repository.error || '请等待自动保存完成。');
     return { profileId: workspace.active.id, revision: repository.revision };

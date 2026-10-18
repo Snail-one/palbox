@@ -169,6 +169,7 @@ export class Manager {
     if (action === 'backup' && payload.category && payload.category !== 'manual') throw failure('定时备份已交由游戏官方机制，面板仅支持手动完整备份。');
     if (this.closing) throw failure('管理服务正在关闭。', 503);
     if (this.busy) throw failure('已有任务正在执行，请稍后再试。', 409);
+    if (action === 'backup' && !this.runtime.game) await this.requireWorldSave();
     const task = { id: randomUUID(), action, state: 'running', message: '任务已开始', createdAt: new Date().toISOString() };
     this.busy = task;
     this.tasks.unshift(task); this.tasks = this.tasks.slice(0, 40);
@@ -196,7 +197,9 @@ export class Manager {
     switch (action) {
       case 'install':
         task.message = '正在通过 SteamCMD 下载服务端，请查看安装日志';
-        await this.runtime.install(); await this.ensureConfig();
+        await this.runtime.install();
+        task.defaultsImported = await this.store.importDefaultIfPending();
+        await this.ensureConfig();
         this.updateCache = null;
         this.versionCache = null;
         if (payload.start) await this.runtime.start();
@@ -233,7 +236,11 @@ export class Manager {
       case 'backup': {
         const running = Boolean(this.runtime.game);
         if (running) { task.message = '保存世界并停服，准备一致性备份'; await this.runtime.stop({ requireSave: true }); }
-        try { task.backup = await this.backup('manual'); }
+        try {
+          await this.requireWorldSave();
+          task.backup = await this.backup('manual');
+          if (!task.backup) throw failure('存档目录已不存在，未创建备份。', 409);
+        }
         finally { if (running && !this.closing) await this.runtime.start(); }
         break;
       }
@@ -325,10 +332,33 @@ export class Manager {
       catch (error) { throw failure(`存档已导入，但游戏服启动失败：${error.message}`, 500); }
     }
   }
+  async hasWorldSave() {
+    for (const world of await this.native.worlds()) {
+      try {
+        const info = await lstat(path.join(this.runtime.saved, 'SaveGames', '0', world, 'Level.sav'));
+        if (info.isFile() && info.size > 0) return true;
+      } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
+    return false;
+  }
+  async requireWorldSave() {
+    if (!(await this.hasWorldSave())) throw failure('尚无可备份的世界存档，请先启动游戏并生成存档。', 409);
+  }
+  async hasBackupFiles(directory = this.runtime.saved) {
+    let entries;
+    try { entries = await readdir(directory, { withFileTypes: true }); }
+    catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+    for (const entry of entries) {
+      const file = path.join(directory, entry.name);
+      if (entry.isDirectory() && await this.hasBackupFiles(file)) return true;
+      if (entry.isFile() && (await lstat(file)).size > 0) return true;
+    }
+    return false;
+  }
   async backup(category, protectedId = null) {
     // Stop the process before archiving so world/player files belong to one save.
     if (this.runtime.game) throw failure('创建备份前需要停止游戏服。', 409);
-    try { await stat(this.runtime.saved); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+    if (!(await this.hasBackupFiles())) return null;
     const id = `${category}/${Date.now()}-${randomUUID()}.tar.gz`;
     const file = path.join(this.directory, 'backups', id);
     const temporary = file + '.partial';
@@ -399,7 +429,7 @@ export class Manager {
     const desired = output(this.store.active().source);
     let configuration = disk && output(disk) === desired ? 'applied' : 'pending';
     if (this.runtime.game && (!this.runtime.runningSource || output(this.runtime.runningSource) !== desired)) configuration = 'pending';
-    const status = { installed, installedBuild, version: this.versionCache?.version || null, running: Boolean(this.runtime.game), ready: this.runtime.ready, configuration, startedAt: this.runtime.startedAt, lastExit: this.runtime.lastExit, task: this.busy, tasks: this.tasks, revision: this.store.revision, port: this.runtime.port, metrics: null, info: null, players: [] };
+    const status = { installed, installedBuild, version: this.versionCache?.version || null, hasWorldSave: await this.hasWorldSave(), running: Boolean(this.runtime.game), ready: this.runtime.ready, configuration, startedAt: this.runtime.startedAt, lastExit: this.runtime.lastExit, task: this.busy, tasks: this.tasks, revision: this.store.revision, port: this.runtime.port, metrics: null, info: null, players: [] };
     if (this.runtime.game) {
       const results = await Promise.allSettled([this.runtime.rest('info'), this.runtime.rest('metrics'), this.runtime.rest('players')]);
       if (results[0].status === 'fulfilled') {

@@ -10,11 +10,14 @@ import { createManagementApi } from '../../backend/management/api.js';
 import { createServer } from '../../backend/http-server.js';
 import { createServer as createFrontendServer } from '../../frontend/http-server.js';
 import { serialize, parse } from '../../shared/domain/config.js';
+import template from '../../shared/domain/template.js';
 
 const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
 
 export async function managementFixture({ setup = true, username = 'admin', password = 'test-management-password-123', importLimits } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'palbox-manager-'));
+  await mkdir(path.join(directory, 'server'), { recursive: true });
+  await writeFile(path.join(directory, 'server/DefaultPalWorldSettings.ini'), template);
   const portServer = createNetServer(); portServer.listen(0, '127.0.0.1'); await once(portServer, 'listening');
   const restPort = portServer.address().port;
   await new Promise(resolve => portServer.close(resolve));

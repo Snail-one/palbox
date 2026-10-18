@@ -18,6 +18,9 @@ test('管理 API 登录、权限、并发保存与路径边界', { skip: process
   assert.ok(session.cookie.includes('palbox_session='));
   const bootstrap = await (await f.request('/api/bootstrap')).json();
   assert.equal(bootstrap.authenticated, true);
+  const defaults = await (await f.request('/api/default-configuration')).json();
+  assert.equal(value(defaults.source, 'ServerName'), '"Default Palworld Server"');
+  assert.equal(value(defaults.source, 'RESTAPIEnabled'), 'True');
   assert.equal((await f.request('/api/tasks', { method: 'POST', body: { action: 'install' }, headers: { 'X-Palbox-CSRF': 'bad' } })).status, 403);
   assert.equal((await f.request('/api/workspace', { method: 'PUT', body: null })).status, 400);
   const snapshot = await (await f.request('/api/workspace')).json();

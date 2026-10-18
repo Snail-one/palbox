@@ -68,6 +68,7 @@
 
 .category-button {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
   gap: 7px;
@@ -77,6 +78,9 @@
   border: 1px solid transparent;
   white-space: nowrap;
 }
+
+.category-button:first-child { margin-inline-start: auto; }
+.category-button:last-child { margin-inline-end: auto; }
 
 .category-button>.icon {
   width: 14px;

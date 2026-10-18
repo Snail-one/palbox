@@ -2,7 +2,6 @@ import { open } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { Authentication } from './auth.js';
 import { failure } from './files.js';
-import { managedTemplate } from './store.js';
 import { streamLogs } from './logs.js';
 
 async function body(request, limit = 8 * 1024 * 1024) {
@@ -27,7 +26,12 @@ export function createManagementApi(manager, options = {}) {
     try {
       if (pathname === '/api/bootstrap' && request.method === 'GET') {
         const session = auth.session(request);
-        json(200, { mode: 'managed', authenticated: Boolean(session), ...(manager.needsSetup() ? { setupRequired: true } : {}), csrf: session?.csrf, template: session ? managedTemplate(manager.runtime.port) : undefined }); return;
+        let template;
+        if (session) {
+          try { template = await manager.store.defaultTemplate({ optional: true }); }
+          catch { template = null; }
+        }
+        json(200, { mode: 'managed', authenticated: Boolean(session), ...(manager.needsSetup() ? { setupRequired: true } : {}), csrf: session?.csrf, template }); return;
       }
       if (pathname === '/api/setup' && request.method === 'POST') {
         auth.verifyOrigin(request);
@@ -41,6 +45,9 @@ export function createManagementApi(manager, options = {}) {
         json(200, auth.login(request, input.username, input.password, response)); return;
       }
       auth.require(request, !['GET', 'HEAD'].includes(request.method));
+      if (pathname === '/api/default-configuration' && request.method === 'GET') {
+        json(200, { source: await manager.store.defaultTemplate() }); return;
+      }
       if (pathname === '/api/save-import' && request.method === 'POST') {
         if (manager.closing) throw failure('管理服务正在关闭。', 503);
         if (manager.busy) throw failure('已有任务正在执行，请稍后再试。', 409);

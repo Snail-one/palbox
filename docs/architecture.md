@@ -49,7 +49,7 @@ flowchart TD
 ## 扩展位置
 
 - 添加参数说明：官方字段在 `shared/domain/schema.js` 中维护，社区字段在 `shared/domain/community-fields.js` 中维护。元数据提供中文名称、用途、控件及 `verification` 状态和来源；社区字段仅在模板包含该字段且有说明来源时进入目录，以“未验证”铭牌呈现状态。来源为当前用户补充时使用 `user-provided`，不冒充外部文档。`catalog.js` 统一控制表单、验证、搜索与三种状态统计，未知新字段不会因模板出现而自动识别。界面通过 `parameter-evidence.js` 统一呈现状态铭牌与悬浮提示说明，来源仅在元数据和文档保留。详见 [参数明细](parameters.md)。
-- 更新默认参数：修改 `shared/domain/template.js` 的参数列表。模板只定义新建配置的默认值与原始顺序，不参与识别判定；没有官方或社区用途说明的新字段仍然属于未识别参数。已有配置不自动覆盖。
+- 更新默认参数：管理后端从游戏目录的 `DefaultPalWorldSettings.ini` 读取当前版本默认值，新建配置通过认证接口 `/api/default-configuration` 获取，删除最后一套时也使用该来源。安装前的最少管理项通过配置库中的待初始化标记跟踪，安装后仅替换尚未编辑的占位配置，并更新恢复基准和版本号。`shared/domain/template.js` 保留为参数目录和测试的参考快照，不作为管理模式中新建配置的游戏参数来源。未知新字段仍然属于未识别参数，已有用户配置不自动覆盖。
 - 更换存储：实现 `{ load(), save(workspace) }` 仓库接口，在入口替换适配器。工作空间服务不需要更改。
 - 更换剪贴板或文件实现：提供 `{ write(text) }` 或 `{ read(file), validate(source) }`，在入口注入；组件不访问具体实现。
 - 调整外观：修改 `frontend/public/styles/tokens.css` 的设计变量，或对应的样式模块；`index.css` 明确控制加载顺序。

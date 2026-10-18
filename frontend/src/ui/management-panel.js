@@ -10,7 +10,7 @@ function uptimeLabel(seconds) {
   return `${Math.floor(hours / 24)}天${hours % 24 ? `${hours % 24}小时` : ''}`;
 }
 
-export function createManagementPanel({ dom, api, ask, notify, getConfiguration }) {
+export function createManagementPanel({ dom, api, ask, notify, getConfiguration, onDefaultsImported }) {
   const { $, document } = dom;
   const section = document.createElement('section');
   section.className = 'management-panel';
@@ -19,9 +19,15 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   section.innerHTML = `
     <div class="management-heading server-heading"><div><h2>游戏服务 <span id="game-state" class="save-status" data-state="pending">连接中</span></h2><p id="server-state-note" class="management-note">正在获取服务器状态…</p></div><div class="management-actions server-heading-actions"><button type="button" id="show-task-history" class="button secondary" aria-haspopup="dialog" aria-controls="task-history">任务记录</button><a class="button secondary" href="#configuration">管理配置 →</a></div></div>
     <div class="management-feedback"><div id="management-error" class="alert error" role="alert" hidden></div><p id="management-task" class="management-task" role="status" hidden></p></div>
-    <div class="server-controls"><div class="management-actions server-primary-actions"><button class="button primary" data-action="install" hidden>安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop" hidden>停止</button><button class="button secondary" data-action="restart" hidden>重启</button></div><div class="server-meta"><span>游戏版本 <strong id="game-version">读取中</strong></span><span id="game-build-meta" hidden>Steam Build <strong id="game-build">—</strong></span><span>游戏端口 <strong id="game-port">8211</strong> UDP</span></div></div>
-    <dl class="management-metrics" aria-label="服务器运行信息"><div class="server-metric"><dt>在线玩家</dt><dd id="game-players" class="metric-value">—</dd></div><div class="server-metric"><dt>服务器 FPS</dt><dd id="game-fps" class="metric-value">—</dd></div><div class="server-metric"><dt>运行时间</dt><dd id="game-uptime" class="metric-value">—</dd></div></dl>
-    <details id="server-maintenance" class="server-maintenance"><summary>维护与设置</summary><div class="server-maintenance-body"><div class="management-actions"><button class="button secondary" id="check-update" disabled>检查更新</button><button class="button secondary" data-action="update">更新服务端</button><button class="button secondary" id="edit-game-args" disabled>启动参数</button><button class="button secondary" id="edit-install-args" disabled>安装参数</button></div><p id="update-status" class="management-note">更新前会自动备份，运行中的游戏服务将短暂停服。</p><div class="server-force-stop"><span>正常停止无效时使用</span><button class="button secondary" data-action="force-stop">强制停止</button></div></div></details>`;
+    <div class="server-controls">
+      <div class="management-actions server-primary-actions">
+        <button class="button primary" data-action="install" hidden>安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop" hidden>停止</button><button class="button secondary" data-action="restart" hidden>重启</button>
+        <button class="button secondary" id="check-update" disabled>检查更新</button><button class="button secondary" data-action="update" title="更新前会自动备份，运行中的游戏服务将短暂停服。">更新服务端</button><button class="button secondary" id="edit-game-args" disabled>启动参数</button><button class="button secondary" id="edit-install-args" disabled>安装参数</button><button class="button secondary" data-action="force-stop" title="仅在正常停止无效时使用，可能丢失最近一次未保存的进度。">强制停止</button>
+      </div>
+      <div class="server-meta"><span>游戏版本 <strong id="game-version">读取中</strong></span><span id="game-build-meta" hidden>Steam Build <strong id="game-build">—</strong></span><span>游戏端口 <strong id="game-port">8211</strong> UDP</span></div>
+    </div>
+    <p id="update-status" class="management-note" role="status" hidden></p>
+    <dl class="management-metrics" aria-label="服务器运行信息"><div class="server-metric"><dt>在线玩家</dt><dd id="game-players" class="metric-value">—</dd></div><div class="server-metric"><dt>服务器 FPS</dt><dd id="game-fps" class="metric-value">—</dd></div><div class="server-metric"><dt>运行时间</dt><dd id="game-uptime" class="metric-value">—</dd></div></dl>`;
   $('game-overview').append(section);
   const logs = document.createElement('section');
   logs.id = 'game-logs';
@@ -54,13 +60,15 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   saves.innerHTML = `
     <div class="management-heading"><div><h2 id="save-management-title">存档管理</h2><p class="management-note">官方自动备份与手动完整备份分开管理。</p></div><div class="management-actions"><button class="button secondary" data-action="import-save" disabled><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg>导入存档</button><button class="button secondary" data-action="backup" disabled>创建完整备份</button><button class="button primary" data-action="save-world" disabled>保存世界</button></div></div>
     <div class="save-backup-plan"><div class="management-heading"><h3>官方自动备份 <span id="native-backup-state" class="save-status" data-state="pending">读取中</span></h3><a class="button secondary" href="#configuration">管理备份配置 →</a></div><p class="management-note">由游戏在运行中生成，无需停服。保留档位：30 秒 5 份、10 分钟 6 份、1 小时 12 份、1 天 7 份。修改「自动备份世界」后需应用配置。</p><p id="native-backup-note" class="management-note"></p><div class="save-backup-heading"><h3>官方存档备份</h3><span id="native-backup-summary" role="status">正在读取…</span></div><div id="native-backups">正在读取官方备份…</div></div>
-    <div class="save-backup-heading"><h3>完整备份归档</h3><span id="save-backup-summary" role="status">正在读取…</span></div><p class="management-note">包含世界、玩家存档和游戏配置。手动创建完整备份时会先存档并停服，完成后重新启动；恢复任何备份前都会先备份当前数据。</p>
+    <div class="save-backup-heading"><h3>完整备份归档</h3><span id="save-backup-summary" role="status">正在读取…</span></div><p id="complete-backup-note" class="management-note">包含世界、玩家存档和游戏配置。手动创建完整备份时会先存档并停服，完成后重新启动；恢复任何备份前都会先备份当前数据。</p>
     <form id="backup-settings"><label>每类完整备份保留数量<input id="backup-retention" disabled type="number" min="1" max="100" required></label><button class="button secondary" type="submit" disabled>保存设置</button></form>
     <div id="manager-backups">正在读取完整备份…</div>`;
   $('game-saves').append(saves);
   const configurationApply = $('configuration-apply');
   const logout = document.createElement('button');
-  logout.id = 'manager-logout'; logout.className = 'button secondary'; logout.textContent = '退出登录';
+  logout.id = 'manager-logout'; logout.className = 'button secondary'; logout.type = 'button';
+  logout.setAttribute('aria-label', '退出登录'); logout.title = '退出当前登录';
+  logout.append(dom.icon('logout'), document.createTextNode('退出'));
   document.querySelector('.topbar-session').append(logout);
   document.querySelector('.bottom-note > span:last-child').textContent = '配置自动保存 · 应用后在游戏中生效';
   const actionButtons = [...section.querySelectorAll('[data-action]'), ...saves.querySelectorAll('[data-action]'), ...configurationApply.querySelectorAll('[data-action]')];
@@ -98,7 +106,10 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
     if (task.state === 'running') activeTaskId = task.id;
     const completed = task.state !== 'running' && activeTaskId === task.id;
     if ((submitted || completed) && !overviewVisible() && task.state !== 'failed') notify(message, task.state === 'interrupted');
-    if (completed) activeTaskId = null;
+    if (completed) {
+      activeTaskId = null;
+      if (task.defaultsImported && task.state === 'succeeded') onDefaultsImported?.();
+    }
   }
   async function action(name, payload = {}, confirm = true) {
     if (confirm && ['stop', 'force-stop', 'restart', 'update', 'apply', 'backup', 'restore', 'restore-native', 'kick'].includes(name)) {
@@ -314,7 +325,12 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
       $('server-state-note').textContent = !value.installed ? '先安装服务端，再启动你的帕鲁世界。' : !value.running ? '服务端已就绪，可以启动。' : value.ready ? '服务运行正常' : '游戏进程运行中，管理接口暂未就绪';
       const config = $('game-config-state');
       config.textContent = value.configuration === 'pending' ? '待生效' : value.running && value.ready ? '已生效' : '已写入';
-      config.dataset.state = value.configuration === 'pending' ? 'pending' : 'saved';
+      config.dataset.state = value.configuration === 'pending' ? 'pending' : value.running && value.ready ? 'saved' : 'written';
+      config.title = value.configuration === 'pending' ? '当前面板配置尚未应用到游戏，点击应用配置后生效。'
+        : value.running && value.ready ? '游戏服务已使用当前配置运行。'
+        : value.running ? '配置已写入，正在等待游戏管理接口就绪。'
+        : '配置已写入游戏文件，启动服务器后生效。';
+      config.setAttribute('aria-label', `游戏配置：${config.textContent}。${config.title}`);
       $('game-version').textContent = value.version || value.info?.version || (value.installed ? '启动后获取' : '未安装');
       $('game-build').textContent = value.installedBuild || '—';
       $('game-build-meta').hidden = !value.installedBuild;
@@ -328,9 +344,17 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
         if (name === 'start') button.hidden = !value.installed || value.running;
         if (name === 'stop' || name === 'restart') button.hidden = !value.running;
         button.disabled = Boolean(value.task) || (name === 'install' && value.installed) || (['start', 'update', 'restart', 'import-save'].includes(name) && !value.installed) || (name === 'start' && value.running) || (['stop', 'force-stop', 'restart', 'save-world'].includes(name) && !value.running);
+        if (name === 'backup') {
+          const noSave = !value.hasWorldSave && !value.running;
+          button.disabled ||= noSave;
+          button.title = noSave ? '尚无可备份的世界存档，请先启动游戏并生成存档。' : '';
+        }
         if (name === 'apply') button.textContent = value.running ? '应用并重启' : '应用配置';
       }
       $('check-update').disabled = checkingUpdate || !value.installed || Boolean(value.task);
+      $('complete-backup-note').textContent = !value.hasWorldSave && !value.running
+        ? '尚无可备份的世界存档，请先启动游戏并生成存档。已有备份仍可下载或恢复。'
+        : '包含世界、玩家存档和游戏配置。手动创建完整备份时会先存档并停服，完成后按原状态启动；恢复任何备份前都会先备份当前数据。';
       $('unban-player').disabled = Boolean(value.task) || !value.running || !value.ready;
       if (bannedCache) renderBans(bannedCache);
       renderHistory(value.tasks);
@@ -378,6 +402,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
     if (checkingUpdate) return;
     checkingUpdate = true;
     const status = $('update-status');
+    status.hidden = false;
     status.textContent = '正在检查 Steam 最新版本…';
     $('check-update').disabled = true;
     try {

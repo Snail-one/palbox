@@ -2,7 +2,7 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
   const { $, el, icon, empty } = dom;
   $('new-profile').addEventListener('click', async () => {
     if (!(await beforeLeave())) return;
-    const name = await ask({ title: '创建一个新的世界', description: '使用你提供的完整模板，开始一套独立配置。', name: '新的帕鲁世界', confirm: '创建配置', symbol: 'plus' });
+    const name = await ask({ title: '创建一个新的世界', description: '读取游戏目录中的官方 DefaultPalWorldSettings.ini，创建一套独立配置。', name: '新的帕鲁世界', confirm: '创建配置', symbol: 'plus' });
     if (name) actions.create(name);
   });
   async function rename(profile) {

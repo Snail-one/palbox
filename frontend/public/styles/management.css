@@ -9,16 +9,30 @@
 .management-heading h2 { font-size: 17px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .topbar:has(#configuration-actions:not([hidden])) { height: auto; min-height: 73px; flex-wrap: wrap; padding-top: 12px; padding-bottom: 12px; }
 .topbar .page-actions { align-items: center; }
-.configuration-apply { display: flex; align-items: center; gap: 10px; border-left: 1px solid var(--line); padding-left: 12px; }
+.configuration-apply { display: flex; align-items: center; gap: 10px; border-right: 1px solid var(--line); padding-right: 12px; }
 .configuration-apply .save-status, .configuration-apply .button { white-space: nowrap; }
+.configuration-apply .button { min-height: 38px; }
+.configuration-state { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 74px; }
+.configuration-state-label { font-size: 9px; line-height: 1.2; color: var(--muted); }
+#game-config-state { padding: 3px 9px; border-radius: 999px; font-size: 10px; font-weight: 600; }
+#game-config-state[data-state="written"] { background: #eef4ff; border-color: #cddcf5; color: #365f97; }
+.configuration-tools { display: flex; align-items: center; padding: 3px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.configuration-tools .button { min-height: 30px; padding: 6px 10px; border: 0; border-radius: 5px; background: transparent; box-shadow: none; gap: 6px; }
+.configuration-tools .button + .button { border-left: 1px solid var(--line); border-radius: 0; }
+.configuration-tools .button:hover { background: var(--accent-soft); color: var(--accent); }
+.configuration-tools .icon { width: 14px; height: 14px; flex-shrink: 0; }
 .management-feedback:has(> :not([hidden])) { margin-top: 12px; }
 .management-feedback .management-task { margin: 0; }
 .management-feedback .alert { margin: 0 0 8px; }
-#manager-logout { flex-shrink: 0; }
+#manager-logout { flex-shrink: 0; min-height: 38px; padding: 7px 10px; border-color: transparent; background: transparent; box-shadow: none; color: var(--muted); }
+#manager-logout:hover { color: var(--red); background: #fcf0ef; border-color: #f2d9d6; }
+.topbar:has(#configuration-actions:not([hidden])) .topbar-session { border-left: 1px solid var(--line); padding-left: 12px; }
 .server-heading { flex-wrap: wrap; }
 .server-heading-actions { flex-shrink: 0; }
 .server-heading .management-note { margin: 6px 0 0; }
 .server-controls { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.server-primary-actions { width: 100%; }
+.server-primary-actions [data-action="force-stop"] { color: var(--red); }
 .server-meta { display: flex; flex-wrap: wrap; gap: 14px; color: var(--muted); font-size: 11px; }
 .server-meta strong { font-weight: 500; color: var(--text); margin-left: 4px; overflow-wrap: anywhere; }
 .management-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 18px 0 0; padding-top: 16px; border-top: 1px solid var(--line); }
@@ -27,11 +41,6 @@
 .server-metric dt { font-size: 11px; color: var(--muted); }
 .server-metric dd { margin: 0; }
 .server-metric .metric-value { margin-top: 8px; font-size: 23px; font-weight: 650; line-height: 1.3; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.server-maintenance { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
-.server-maintenance summary { cursor: pointer; font-size: 12px; font-weight: 500; }
-.server-maintenance-body { margin-top: 14px; }
-.server-force-stop { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 11px; color: var(--muted); }
-.server-force-stop .button { color: var(--red); }
 @media (max-width: 600px) {
   .management-metrics { gap: 10px; }
   .server-metric + .server-metric { padding-left: 10px; }
@@ -84,10 +93,14 @@ main:has(#game-page:not([hidden]) #game-overview:not([hidden])) { display: flex;
 @media (max-width: 1400px) {
   .topbar { height: auto; min-height: 65px; flex-wrap: wrap; padding-top: 12px; padding-bottom: 12px; }
   .topbar .page-actions { order: 3; width: 100%; justify-content: flex-end; margin: 0; }
+  .topbar:has(#configuration-actions:not([hidden])) .topbar-session { border-left: 0; padding-left: 0; }
 }
 @media (max-width: 760px) {
-  .topbar .configuration-apply { grid-column: 1 / -1; justify-content: flex-end; border-left: 0; border-top: 1px solid var(--line); padding: 10px 0 0; }
+  .topbar .page-actions { grid-template-columns: minmax(0, 1fr); }
+  .topbar .configuration-apply { grid-column: 1 / -1; justify-content: flex-start; border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 10px; }
   .configuration-apply .button { flex: 1; }
+  .configuration-tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
+  .configuration-tools .button { min-width: 0; padding: 7px 5px; font-size: 10px; }
 }
 .backup-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 11px; }
 .backup-row > span { flex: 1; min-width: 150px; overflow-wrap: anywhere; }

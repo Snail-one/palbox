@@ -78,11 +78,11 @@ export class WorkspaceService {
     this.#persisted = false;
   }
 
-  remove(id = this.active.id) {
+  remove(id = this.active.id, { fallbackSource = this.#template } = {}) {
     if (!this.profiles.some(profile => profile.id === id)) throw new Error('配置不存在。');
     const activeRemoved = id === this.active.id;
     const remaining = this.profiles.filter(profile => profile.id !== id);
-    if (!remaining.length) remaining.push(this.#profile('我的帕鲁世界', this.#template));
+    if (!remaining.length) { parse(fallbackSource); remaining.push(this.#profile('我的帕鲁世界', fallbackSource)); }
     this.#workspace.profiles = remaining;
     if (activeRemoved) this.select(remaining[0].id);
     this.#persisted = false;

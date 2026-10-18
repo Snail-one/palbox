@@ -65,6 +65,18 @@ test('保存失败回滚已保存源文件，不影响可供复制的编辑结�
   assert.match(service.message, /复制/);
 });
 
+test('删除最后一套配置时使用后端提供的官方默认内容作为新恢复基准', () => {
+  const { service } = setup();
+  const source = 'OptionSettings=(ServerName="Official File",NewOption=5)';
+  service.remove(service.active.id, { fallbackSource: source });
+  assert.equal(service.profiles.length, 1);
+  assert.equal(service.active.source, source);
+  assert.equal(service.initialSource, source);
+  const id = service.active.id;
+  assert.throws(() => service.remove(id, { fallbackSource: 'OptionSettings=(A="broken)' }));
+  assert.equal(service.active.id, id);
+});
+
 test('列表可按 ID 管理其他配置，复制、重命名和删除均保留当前选择', () => {
   const { service, data } = setup();
   const current = service.active;
