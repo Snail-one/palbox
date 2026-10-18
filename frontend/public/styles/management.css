@@ -86,12 +86,8 @@
 .player-actions { display: flex; gap: 8px; }
 #manager-banned-list, #manager-players-list { font-size: 12px; }
 #banned-management .management-heading { flex-wrap: wrap; }
-.main-shell:has(#game-page:not([hidden]) #game-overview:not([hidden])) { display: grid; grid-template-rows: auto minmax(min-content, 1fr); height: 100dvh; }
-main:has(#game-page:not([hidden]) #game-overview:not([hidden])) { display: flex; flex-direction: column; width: 100%; margin: 0 auto; }
-#game-page, #game-overview { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-#game-overview > .management-panel { flex-shrink: 0; }
-#game-logs { display: flex; flex-direction: column; flex: 1; margin-bottom: 0; min-width: 0; }
-#manager-logs { flex: 1; height: 0; min-height: clamp(160px, 25dvh, 240px); min-width: 0; overflow: auto; padding: 14px; border-radius: 6px; background: #202124; color: #f4f4f5; font: 11px/1.7 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; margin: 10px 0 0; }
+#game-logs { margin-bottom: 0; min-width: 0; }
+#manager-logs { height: clamp(180px, 30dvh, 320px); min-width: 0; overflow: auto; padding: 14px; border-radius: 6px; background: #202124; color: #f4f4f5; font: 11px/1.7 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; margin: 10px 0 0; }
 .log-heading { flex-wrap: wrap; }
 .log-type-buttons button.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: none; }
 @media (max-width: 1400px) {
