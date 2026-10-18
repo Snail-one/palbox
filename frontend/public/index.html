@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f3f4f6">
   <meta name="description" content="幻兽帕鲁管理面板：独立管理游戏服务、世界存档与 PalWorldSettings.ini 配置。">
-  <title>Palbox · 幻兽帕鲁管理</title>
+  <title>PalBox · 幻兽帕鲁管理</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles/index.css">
   <script type="module" src="src/main.js"></script>
@@ -39,7 +39,7 @@
   <a href="#main" class="skip-link">跳到主要内容</a>
   <div class="app-shell">
     <aside class="sidebar" id="sidebar" aria-label="工作空间导航">
-      <a class="brand" href="./" aria-label="Palbox 首页"><span class="brand-symbol"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M7 22 5 8l8 4 3-7 3 7 8-4-2 14-9 5z"/><path d="M11 18h1m8 0h1m-7 4h4"/></svg></span><span>palbox<span class="brand-dot">.</span></span><span class="version">v1.0</span></a>
+      <a class="brand" href="./" aria-label="PalBox 首页"><span class="brand-symbol"><img src="/assets/favicon.svg" width="40" height="40" alt=""></span><span>PalBox</span><span class="version">v1.0</span></a>
       <div class="workspace-label">你的工作空间</div>
       <nav class="workspace-nav" aria-label="管理模块">
         <a id="nav-game" class="workspace-link" href="#game" aria-controls="game-page"><svg class="icon"><use href="#i-server"/></svg>游戏管理</a>
@@ -82,7 +82,6 @@
             <button type="button" class="button secondary" id="header-copy-button" aria-label="复制配置" title="复制当前完整 INI 配置到剪贴板"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg>复制 INI</button>
           </div>
         </div>
-        <div class="topbar-session"></div>
       </header>
       <main id="main" tabindex="-1">
         <div id="storage-error" class="alert error" role="alert" hidden></div>

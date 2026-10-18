@@ -1,1 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" rx="12" fill="#c64a0c"/><path d="m10 27-2-17 9 5 3-8 3 8 9-5-2 17-10 5z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/><path d="M14 22h1m10 0h1m-8 5h4" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="logo-title">
+  <title id="logo-title">PalBox · 幻兽方盒</title>
+  <rect width="64" height="64" rx="18" fill="#c64a0c"/>
+  <path d="m12 21 4-3v-7l11 6 5-3 5 3 11-6v7l4 3-20 12z" fill="#fff4e8"/>
+  <path d="m12 25 18 10v18L14 44a4 4 0 0 1-2-3.5z" fill="#fff"/>
+  <path d="M52 25 34 35v18l16-9a4 4 0 0 0 2-3.5z" fill="#ffd5ad"/>
+  <path d="M22 34v5m20-5v5" stroke="#a53c07" stroke-width="3.5" stroke-linecap="round"/>
+</svg>

@@ -92,7 +92,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   logout.id = 'manager-logout'; logout.className = 'button secondary'; logout.type = 'button';
   logout.setAttribute('aria-label', '退出登录'); logout.title = '退出当前登录';
   logout.append(dom.icon('logout'), document.createTextNode('退出'));
-  document.querySelector('.topbar-session').append(logout);
+  document.querySelector('.sidebar-bottom .docs-link').before(logout);
   document.querySelector('.bottom-note > span:last-child').textContent = '配置自动保存 · 应用后在游戏中生效';
   const actionButtons = [...section.querySelectorAll('[data-action]'), ...nativeSaves.querySelectorAll('[data-action]'), ...saves.querySelectorAll('[data-action]'), ...configurationApply.querySelectorAll('[data-action]')];
   actionButtons.forEach(button => { button.disabled = true; });

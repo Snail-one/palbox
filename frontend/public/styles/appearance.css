@@ -69,12 +69,7 @@ select:focus {
 }
 
 .brand-symbol {
-  background: var(--accent);
   box-shadow: 0 4px 12px #c64a0c25;
-}
-
-.brand-dot {
-  color: var(--accent);
 }
 
 .version {

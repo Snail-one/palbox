@@ -28,7 +28,7 @@ test('Node.js 静态服务', async t => {
       assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'none'/);
       assert.equal(response.headers.get('x-frame-options'), 'DENY');
       assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
-      assert.match(await response.text(), /<title>Palbox · 幻兽帕鲁管理<\/title>/);
+      assert.match(await response.text(), /<title>PalBox · 幻兽帕鲁管理<\/title>/);
     }
   });
   await t.test('样式、脚本、图标和浏览器测试页面可访问', async () => {

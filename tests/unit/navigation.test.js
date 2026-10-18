@@ -77,7 +77,7 @@ test('官方与手动备份可独立进入，切换时仅显示对应页面并�
   assert.equal(app.$('configuration-actions').hidden, true);
   assert.equal(app.$('nav-saves').getAttribute('aria-current'), 'page');
   assert.equal(app.$('saves-navigation').links[0].getAttribute('aria-current'), 'page');
-  assert.equal(app.document.title, 'Palbox · 存档管理 · 官方备份');
+  assert.equal(app.document.title, 'PalBox · 存档管理 · 官方备份');
   assert.equal(app.$('main').getAttribute('aria-label'), '官方备份');
   assert.equal(app.$('game-actions').hidden, false);
   app.go('#saves/archives');
@@ -85,7 +85,7 @@ test('官方与手动备份可独立进入，切换时仅显示对应页面并�
   assert.equal(app.$('saves-archives').hidden, false);
   assert.equal(app.$('saves-navigation').links[0].hasAttribute('aria-current'), false);
   assert.equal(app.$('saves-navigation').links[1].getAttribute('aria-current'), 'page');
-  assert.equal(app.document.title, 'Palbox · 存档管理 · 手动备份');
+  assert.equal(app.document.title, 'PalBox · 存档管理 · 手动备份');
   app.go('#saves');
   assert.equal(app.$('saves-native').hidden, false);
   assert.equal(app.$('saves-archives').hidden, true);
@@ -132,7 +132,7 @@ test('存档页面与游戏、配置页面互不混用，保存快捷键只作�
 
 test('登录日志有独立导航，直接进入和前后切换不混用游戏或配置页面', () => {
   const app = setup('#login-logs');
-  assert.equal(app.document.title, 'Palbox · 登录日志');
+  assert.equal(app.document.title, 'PalBox · 登录日志');
   assert.equal(app.$('login-logs-page').hidden, false);
   assert.equal(app.$('main').getAttribute('aria-label'), '登录日志');
   for (const page of ['game', 'saves', 'configuration']) assert.equal(app.$(`${page}-page`).hidden, true);

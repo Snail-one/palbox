@@ -13,6 +13,8 @@
   background: #ffffff;
   border-right: 1px solid var(--line);
   padding: 29px 19px 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .brand {
@@ -33,16 +35,13 @@
   height: 37px;
   display: grid;
   place-items: center;
+  flex-shrink: 0;
 }
 
-.brand-symbol svg {
-  width: 28px;
-  height: 28px;
-  fill: none;
-  stroke: #ffffff;
-  stroke-width: 1.7;
-  stroke-linejoin: round;
-  stroke-linecap: round;
+.brand-symbol img {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .version {
@@ -252,9 +251,6 @@
   padding: 0 44px;
   gap: 16px;
 }
-
-.topbar-session { display: flex; align-items: center; gap: 16px; margin-left: auto; flex-shrink: 0; }
-.topbar .page-actions:not([hidden]) + .topbar-session { margin-left: 0; }
 
 main {
   flex: 1;

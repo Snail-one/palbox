@@ -14,7 +14,6 @@
 .game-service-toolbar { --service-gap: 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px var(--service-gap); min-width: 0; }
 .game-service-toolbar h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; line-height: 1.5; white-space: nowrap; }
 .game-service-toolbar .button, .configuration-apply .button { min-height: 32px; padding: 6px 10px; }
-.topbar:has(#game-actions:not([hidden])) .topbar-session { margin: 0; }
 .configuration-apply { display: flex; align-items: center; gap: 10px; border-right: 1px solid var(--line); padding-right: 12px; }
 .configuration-apply .save-status, .configuration-apply .button { white-space: nowrap; }
 .configuration-state { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 74px; }
@@ -25,9 +24,9 @@
 .configuration-tools .button + .button { border-left: 1px solid var(--line); border-radius: 0; }
 .configuration-tools .button:hover { background: var(--accent-soft); color: var(--accent); }
 .configuration-tools .icon { width: 14px; height: 14px; flex-shrink: 0; }
-#manager-logout { flex-shrink: 0; min-height: 38px; padding: 7px 10px; border-color: transparent; background: transparent; box-shadow: none; color: var(--muted); }
+#manager-logout { width: 100%; justify-content: flex-start; gap: 9px; min-height: 38px; margin-top: 14px; padding: 8px 4px; border-color: transparent; background: transparent; box-shadow: none; color: var(--muted); font-size: 11px; }
+#manager-logout .icon { width: 14px; height: 14px; }
 #manager-logout:hover { color: var(--red); background: #fcf0ef; border-color: #f2d9d6; }
-.topbar:has(#configuration-actions:not([hidden])) .topbar-session { border-left: 1px solid var(--line); padding-left: 12px; }
 .server-heading-actions { flex-shrink: 0; }
 .server-primary-actions { display: contents; }
 .server-primary-actions [data-action="stop"] { background: var(--red); border-color: var(--red); color: #fff; }
@@ -147,11 +146,9 @@ main:has(#game-page:not([hidden])), main:has(#login-logs-page:not([hidden])) { d
 .log-type-buttons button.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: none; }
 @media (max-width: 1400px) {
   .topbar { height: auto; min-height: 65px; flex-wrap: wrap; padding-top: 12px; padding-bottom: 12px; }
-  .topbar:has(#configuration-actions:not([hidden])) .topbar-session { border-left: 0; padding-left: 0; }
 }
 @media (max-width: 760px) {
   .topbar:has(#game-actions:not([hidden])) { flex-wrap: wrap; }
-  .topbar:has(#game-actions:not([hidden])) .topbar-session { margin-left: auto; }
   .game-topbar-actions { order: 3; flex: 1 0 100%; width: 100%; }
   .topbar .page-actions { order: 4; grid-template-columns: minmax(0, 1fr); }
   .topbar .configuration-apply { grid-column: 1 / -1; justify-content: flex-start; border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 10px; }
@@ -163,6 +160,7 @@ main:has(#game-page:not([hidden])), main:has(#login-logs-page:not([hidden])) { d
 .backup-row > span { flex: 1; min-width: 150px; overflow-wrap: anywhere; }
 .login-page { min-height: 100dvh; display: grid; place-items: center; padding: 20px; }
 .login-card { width: min(420px, 100%); margin: 0; border: 1px solid var(--line); border-radius: var(--radius); background: white; padding: 32px; }
+.login-card .brand { width: max-content; padding: 0; margin: 0 0 24px; font-size: 28px; }
 .login-card h1 { font-size: 23px; }
 .login-card > p { font-size: 12px; margin: 10px 0 24px; }
 .login-card form { display: grid; gap: 12px; }
@@ -171,9 +169,7 @@ main:has(#game-page:not([hidden])), main:has(#login-logs-page:not([hidden])) { d
 @media (max-width: 480px) {
   .log-type-buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .log-type-buttons button { padding: 8px 6px; }
-  .topbar-session { gap: 10px; }
   .save-management .management-heading > .management-actions { width: 100%; }
-  #manager-logout { font-size: 10px; padding: 7px; }
   .management-panel { padding: 15px; }
   .management-heading { align-items: start; }
   .management-heading h2 { font-size: 15px; }

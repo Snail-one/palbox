@@ -58,7 +58,7 @@ export function createNavigation({ dom, window, isDirty, onSave, onConfiguration
     $('configuration-apply').hidden = !configuring || route.view === 'profiles';
     if (configuring && route.view !== 'profiles') onConfigurationView(route.mode || 'form');
     $('main').setAttribute('aria-label', route.title);
-    document.title = name === route.title ? `Palbox · ${name}` : `Palbox · ${name} · ${route.title}`;
+    document.title = name === route.title ? `PalBox · ${name}` : `PalBox · ${name} · ${route.title}`;
     closeSidebar();
     if (focus) { window.scrollTo(0, 0); $('main').focus({ preventScroll: true }); }
   }
