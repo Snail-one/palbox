@@ -65,6 +65,35 @@ test('保存失败回滚已保存源文件，不影响可供复制的编辑结�
   assert.match(service.message, /复制/);
 });
 
+test('列表可按 ID 管理其他配置，复制、重命名和删除均保留当前选择', () => {
+  const { service, data } = setup();
+  const current = service.active;
+  const source = 'OptionSettings=(ServerName="Other",ExpRate=3)';
+  const other = service.add('其他配置', source, { select: false });
+  assert.equal(service.active.id, current.id);
+  service.rename('列表重命名', other.id);
+  assert.equal(other.name, '列表重命名');
+  assert.equal(current.name, '我的帕鲁世界');
+  const copy = service.add('其他配置副本', other.source, { select: false });
+  assert.equal(copy.source, source);
+  assert.equal(copy.initialSource, source);
+  service.remove(other.id);
+  assert.equal(service.active.id, current.id);
+  assert.equal(service.active.source, current.source);
+  assert.deepEqual(service.profiles.map(profile => profile.id), [current.id, copy.id]);
+  assert.equal(service.persist(), true);
+  const saved = JSON.parse(data.get(KEY));
+  assert.equal(saved.activeId, current.id);
+  assert.equal(saved.profiles[1].source, source);
+  assert.throws(() => service.rename('不存在', 'missing'), /不存在/);
+  assert.throws(() => service.remove('missing'), /不存在/);
+  service.remove(current.id);
+  assert.equal(service.active.id, copy.id);
+  service.remove(copy.id);
+  assert.equal(service.profiles.length, 1);
+  assert.equal(service.active.source, template);
+});
+
 test('损坏的仓库记录进入临时空间，禁止后续操作覆盖原始数据', () => {
   const data = new Map([[KEY, '{broken']]);
   const repository = createRepository(() => ({ getItem: key => data.get(key), setItem: (key, value) => data.set(key, value) }));

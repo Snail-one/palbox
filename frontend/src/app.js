@@ -89,14 +89,32 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
       changedProfile();
     },
     create(name) { workspace.add(name); changedProfile('新配置已创建'); },
-    duplicate(name) { workspace.add(name, editor.source()); changedProfile('已创建独立副本'); },
-    rename(name) {
-      workspace.rename(name);
+    duplicate(name, id = workspace.active.id, { fromList = false } = {}) {
+      const source = id === workspace.active.id ? editor.source() : workspace.profiles.find(profile => profile.id === id).source;
+      workspace.add(name, source, { select: !fromList });
+      if (!fromList) { changedProfile('已创建独立副本'); return; }
+      const success = persist();
+      profiles.render();
+      summary.render();
+      if (success) notifications.toast('已创建独立副本');
+    },
+    rename(name, id = workspace.active.id) {
+      workspace.rename(name, id);
       if (persist()) notifications.toast('配置名称已提交');
       profiles.render();
       summary.render();
     },
-    remove() { workspace.removeActive(); changedProfile('配置已删除'); }
+    remove(id = workspace.active.id, { fromList = false } = {}) {
+      const activeRemoved = id === workspace.active.id;
+      workspace.remove(id);
+      if (!fromList) { changedProfile('配置已删除'); return; }
+      if (activeRemoved) editor.reset(workspace.active.source);
+      const success = persist();
+      profiles.render();
+      if (activeRemoved) panel.render();
+      summary.render();
+      if (success) notifications.toast('配置已删除');
+    }
   } });
   createImportDialog({ dom, readFile: files.read, validate: files.validate, beforeOpen: beforeLeave, onOpened: navigation.closeSidebar, onImport(name, source) {
     workspace.add(name, source);

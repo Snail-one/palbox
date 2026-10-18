@@ -109,7 +109,6 @@ select:focus {
 }
 
 .tiny-dot,
-.profile-overview:before,
 .field-label .modified-dot {
   background: var(--accent);
 }
@@ -180,13 +179,6 @@ h1 {
   background: #fff;
   border-color: #e9ded2;
   box-shadow: 0 3px 14px #68401204;
-}
-
-.profile-emblem {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-  box-shadow: 0 3px 9px #c64a0c20;
 }
 
 .tag {
@@ -344,11 +336,25 @@ h1 {
 }
 
 .summary-grid {
-  grid-template-columns: repeat(4,minmax(0,1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(240px, 1.65fr) repeat(2, minmax(0, 1fr));
+  align-items: stretch;
 }
 
+.summary-grid > .profile-overview { max-width: none; min-width: 0; margin: 0; padding: 16px; gap: 12px; justify-content: center; }
+.summary-grid > .profile-overview .profile-title-row { gap: 6px; }
+.summary-grid > .profile-overview h2 { font-size: 14px; }
+.summary-grid > .profile-overview .profile-details { flex-direction: column; gap: 3px; }
+.summary-grid > .profile-overview .detail-separator { display: none; }
+.summary-grid > .profile-overview .profile-tools { padding-top: 8px; gap: 6px; }
+.summary-grid > .profile-overview .profile-tools .button { padding: 5px 6px; gap: 5px; font-size: 10px; }
+.summary-grid > .profile-overview .profile-tools .icon { width: 12px; height: 12px; }
+.summary-grid > .summary-card { min-width: 0; align-items: center; }
+.summary-grid > .summary-card > div { width: 100%; min-width: 0; }
+.summary-grid > .summary-card .summary-icon { margin: 0; }
+.summary-grid > .summary-card .summary-caption { padding-left: 0; margin-top: 0; white-space: normal; }
+
 .summary-link {
-  text-align: left;
+  text-align: center;
   width: 100%;
   font: inherit;
   transition: border-color .15s,background .15s;
@@ -421,7 +427,10 @@ h1 {
   .summary-grid {
     grid-template-columns: repeat(2,minmax(0,1fr));
   }
+  .summary-grid > .profile-overview { grid-column: 1 / -1; }
 }
+
+#configuration-page:has(#configuration-editor[hidden]) .summary-grid { display: none; }
 
 @media(max-width:480px) {
   .parameter-filter {

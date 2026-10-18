@@ -62,24 +62,33 @@ export class WorkspaceService {
     this.#workspace.activeId = id;
   }
 
-  add(name, source = this.#template) {
+  add(name, source = this.#template, { select = true } = {}) {
     parse(source);
     const profile = this.#profile(name, source);
     this.profiles.push(profile);
-    this.select(profile.id);
+    if (select) this.select(profile.id);
     this.#persisted = false;
     return profile;
   }
 
-  rename(name) { this.active.name = name; this.#persisted = false; }
-
-  removeActive() {
-    const remaining = this.profiles.filter(profile => profile.id !== this.active.id);
-    if (!remaining.length) remaining.push(this.#profile('我的帕鲁世界', this.#template));
-    this.#workspace.profiles = remaining;
-    this.select(remaining[0].id);
+  rename(name, id = this.active.id) {
+    const profile = this.profiles.find(profile => profile.id === id);
+    if (!profile) throw new Error('配置不存在。');
+    profile.name = name;
     this.#persisted = false;
   }
+
+  remove(id = this.active.id) {
+    if (!this.profiles.some(profile => profile.id === id)) throw new Error('配置不存在。');
+    const activeRemoved = id === this.active.id;
+    const remaining = this.profiles.filter(profile => profile.id !== id);
+    if (!remaining.length) remaining.push(this.#profile('我的帕鲁世界', this.#template));
+    this.#workspace.profiles = remaining;
+    if (activeRemoved) this.select(remaining[0].id);
+    this.#persisted = false;
+  }
+
+  removeActive() { this.remove(); }
 
   saveSource(source) {
     parse(source);
