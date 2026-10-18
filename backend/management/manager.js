@@ -276,10 +276,14 @@ export class Manager {
         if (action === 'ban') task.player = { userId: payload.userid.trim(), name: typeof payload.name === 'string' ? payload.name.slice(0, 100) : '', reason: message.trim(), bannedAt: new Date().toISOString() };
         break;
       }
-      case 'unban':
+      case 'unban': {
         await this.requireRunning();
         if (typeof payload.userid !== 'string' || !payload.userid.trim() || payload.userid.length > 200 || /[\p{Cc}\p{Cf}]/u.test(payload.userid)) throw failure('玩家 ID 无效。');
-        await this.runtime.rest('unban', { userid: payload.userid.trim() }); break;
+        const userId = payload.userid.trim();
+        await this.runtime.rest('unban', { userid: userId });
+        task.player = { userId };
+        break;
+      }
       case 'force-stop':
         await this.requireRunning();
         await this.runtime.forceStop();
@@ -433,10 +437,26 @@ export class Manager {
   }
   async bannedPlayers() {
     const value = await readBanList(this.runtime.saved);
-    return { ...value, players: value.players.map(player => {
-      const task = this.tasks.find(task => task.action === 'ban' && task.state === 'succeeded' && task.player?.userId === player.userId);
-      return { ...player, ...(task?.player || {}) };
-    }) };
+    const snapshotAt = value.updatedAt ? Date.parse(value.updatedAt) : 0;
+    const players = new Map(value.players.map(player => [player.userId, { ...player }]));
+    // Newer server builds write the local ban list on shutdown. Merge the
+    // latest successful panel action so bans made while the server is running
+    // are immediately visible and can be undone.
+    const latest = new Map();
+    for (const task of this.tasks) {
+      const userId = task.player?.userId;
+      if (!userId || task.state !== 'succeeded' || !['ban', 'unban'].includes(task.action) || latest.has(userId)) continue;
+      latest.set(userId, { task, at: Date.parse(task.finishedAt || task.createdAt) || 0 });
+    }
+    for (const [userId, { task, at }] of latest) {
+      if (task.action === 'ban') {
+        if (players.has(userId)) players.set(userId, { ...players.get(userId), ...task.player });
+        else if (at > snapshotAt) players.set(userId, { ...task.player });
+      } else if (at > snapshotAt) {
+        players.delete(userId);
+      }
+    }
+    return { players: [...players.values()], skipped: value.skipped };
   }
   async status() {
     const installed = await this.runtime.installed();

@@ -83,6 +83,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   let stopped = false;
   let lastTask;
   let activeTaskId;
+  let taskHideTimer;
   let lastStatus;
   let settingsRequest = null;
   let settingsCache = null;
@@ -103,13 +104,30 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     if (message && changed && !overviewVisible()) notify(message, true);
   }
   function showTask(task, submitted = false) {
+    const running = task.state === 'running';
+    const completed = !running && activeTaskId === task.id;
+    // Historical tasks from /api/status must not keep the status line visible;
+    // only show a task that is running, was just submitted, or just completed.
+    if (!running && !completed && !submitted) return;
     const label = names[task.action] || task.action;
     const state = { running: '执行中', succeeded: '已完成', failed: '失败', interrupted: '已中断' }[task.state] || task.state;
-    const message = task.state === 'running' ? `${label}：${task.message}` : `${label} · ${state}`;
+    const message = running ? `${label}：${task.message}` : `${label} · ${state}`;
+    clearTimeout(taskHideTimer);
+    taskHideTimer = null;
     $('management-task').textContent = message;
-    $('management-task').hidden = false;
-    if (task.state === 'running') activeTaskId = task.id;
-    const completed = task.state !== 'running' && activeTaskId === task.id;
+    if (running) {
+      activeTaskId = task.id;
+      $('management-task').hidden = false;
+    } else if (task.state === 'succeeded') {
+      // 正常完成不占用状态栏：服务状态、按钮和任务记录已反映结果。
+      $('management-task').hidden = true;
+    } else {
+      $('management-task').hidden = false;
+      taskHideTimer = setTimeout(() => {
+        $('management-task').hidden = true;
+        taskHideTimer = null;
+      }, 6000);
+    }
     if ((submitted || completed) && !overviewVisible() && task.state !== 'failed') notify(message, task.state === 'interrupted');
     if (completed) {
       activeTaskId = null;
@@ -282,7 +300,9 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     if (key === bannedRenderKey) return;
     bannedRenderKey = key;
     $('banned-player-count').textContent = String(value.players.length);
-    $('banned-player-note').textContent = value.skipped ? `有 ${value.skipped} 条名单记录无法识别；游戏服务运行后可解封。` : disabled ? '本服封禁名单，游戏服务就绪且无任务执行时可解封。' : '解封后允许玩家重新加入服务器。';
+    $('banned-player-note').textContent = value.skipped
+      ? `有 ${value.skipped} 条名单记录格式无法识别，已跳过；游戏服务运行后可按 UserID 解封已识别记录。`
+      : disabled ? '本服封禁名单，游戏服务就绪且无任务执行时可解封。' : '解封后允许玩家重新加入服务器。';
     const list = $('manager-banned-list');
     list.replaceChildren();
     if (!value.players.length) list.textContent = '暂无已封禁玩家';

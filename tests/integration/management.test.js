@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdir, access, symlink } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, access, symlink, utimes } from 'node:fs/promises';
 import path from 'node:path';
 import { managementFixture } from '../helpers/management-fixture.js';
 import { parse } from '../../shared/domain/config.js';
@@ -120,10 +120,18 @@ test('玩家封禁、踢人理由、强制停止与更新检查', { skip: proces
   assert.equal(banned.players[0].reason, '作弊');
   assert.ok(banned.players[0].bannedAt);
   assert.equal(JSON.parse(await readFile(f.manager.tasksFile, 'utf8'))[0].player.name, '测试玩家');
+  // 新版游戏在停服时才写入名单；运行中刚封禁的玩家也必须立即显示并可解封。
+  const legacyBanFile = path.join(f.runtime.saved, 'SaveGames/banlist.txt');
+  await writeFile(legacyBanFile, '');
+  await utimes(legacyBanFile, new Date(0), new Date(0));
+  banned = await (await f.request('/api/banned-players')).json();
+  assert.equal(banned.players[0].userId, 'steam_test');
+  assert.equal(banned.players[0].name, '测试玩家');
   assert.equal((await f.task('ban', { userid: 'steam_rejected' })).state, 'failed');
   assert.equal((await (await f.request('/api/banned-players')).json()).players.length, 1);
   assert.equal((await f.task('unban', { userid: 'steam_test' })).state, 'succeeded');
   assert.deepEqual(calls.at(-1), { endpoint: 'unban', body: { userid: 'steam_test' } });
+  assert.equal(f.manager.tasks.find(task => task.action === 'unban' && task.state === 'succeeded').player.userId, 'steam_test');
   assert.equal((await (await f.request('/api/banned-players')).json()).players.length, 0);
   await writeFile(path.join(f.runtime.saved, 'SaveGames/banlist.txt'), 'ps5_external\n');
   assert.equal((await f.task('kick', { userid: 'steam_test' })).state, 'succeeded');
