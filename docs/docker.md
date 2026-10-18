@@ -2,6 +2,8 @@
 
 一个容器运行 Palbox、SteamCMD 和一个帕鲁专用服务器，支持 Linux amd64。管理服务在游戏停服时继续运行，不需要 Docker socket。游戏文件首次运行时由 SteamCMD 下载，镜像本身不打包游戏文件。
 
+镜像基于 `debian:13-slim`，从官方 `node:22-trixie-slim` 镜像复制 Node.js 22 运行时。SteamCMD 从 `client-update.steamstatic.com` 下载，配置下载重试与连接超时；使用系统自带的 `C.UTF-8`，不额外生成语言环境。除 `curl`、`ca-certificates`、`lib32gcc-s1`、`procps` 外，仅补充入口脚本需要的 `tini`、`gosu`，Node.js 运行库 `libstdc++6`、`libatomic1`，以及支持 `TZ` 的 `tzdata`。`tar` 和用户管理命令由 Debian 基础镜像提供。
+
 ## 启动
 
 需要能运行 Docker Compose 的 Linux amd64 主机，以及帕鲁服务端需要的 CPU、内存和磁盘空间。官方列出推荐 4 核以上、16 GB 内存，较多玩家建议超过 32 GB，默认游戏端口为 UDP 8211：[官方运行要求](https://docs.palworldgame.com/getting-started/requirements/)。
@@ -22,6 +24,14 @@ docker compose logs -f palbox
 默认网页只绑定宿主机回环地址。需要从内网访问时，将 `PALBOX_WEB_BIND` 改成服务器内网 IP 或 `0.0.0.0`；公网使用 HTTPS 反向代理，并设置 `PALBOX_SECURE_COOKIE=true`。游戏 REST API 仅由管理后端通过容器内的回环地址访问，不映射到宿主机。
 
 已有 `settings.json` 时沿用其中的密码哈希，修改 `PALBOX_ADMIN_PASSWORD` 不会重置已有面板密码。镜像入口以 root 处理挂载目录归属后，通过 gosu 切换到 `PUID/PGID` 指定的普通用户，游戏和 Node 均以该用户运行。
+
+修改 Dockerfile 后，重新构建并更新容器：
+
+```sh
+docker compose up -d --build
+```
+
+此操作保留挂载的数据目录。安装日志若仍出现 `Missing configuration`，需继续排查 Steam 应用信息与网络访问；更换基础镜像或语言环境不能据此保证修复该错误。
 
 ## 目录
 
