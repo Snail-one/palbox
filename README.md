@@ -82,6 +82,19 @@ docker compose logs -f frontend palbox
 
 目录结构、全部环境变量、网络访问、已有存档迁入及备份操作见 [Docker 部署文档](docs/docker.md)。
 
+### 使用 GitHub 发布镜像
+
+普通提交和 PR 运行测试及容器启动检查，确认通过后再打 Git tag。推送 tag 时直接构建并发布前后端镜像到 GHCR，同时标记原始 Git tag 和 `latest`，不重复测试；也支持手动指定已有 tag 发布。Dependabot 每周提交 npm、Docker 和 GitHub Actions 的依赖更新 PR。
+
+发布后的镜像可直接启动：
+
+```sh
+docker compose -f compose.yaml -f compose.ghcr.yaml pull
+docker compose -f compose.yaml -f compose.ghcr.yaml up -d --no-build
+```
+
+具体镜像地址、发布步骤和手动运行方式见 [GitHub CI/CD](docs/ci-cd.md)。
+
 ## 开发与测试
 
 ### 开发服务
@@ -167,10 +180,12 @@ palbox/
 ├── shared/domain/      前后端共用的配置解析、参数目录、模板与编辑规则
 ├── scripts/start.js    本地双进程启动与退出协调
 ├── docker/             后端容器入口脚本
+├── .github/            CI、tag 镜像发布工作流和 Dependabot 配置
 ├── tests/              单元、集成与浏览器测试
 ├── docs/               使用、部署与架构文档
 ├── Dockerfile          frontend / backend 两个镜像目标
-└── compose.yaml        前后端独立容器配置
+├── compose.yaml        前后端独立容器配置
+└── compose.ghcr.yaml   使用 GHCR 发布镜像的叠加配置
 ```
 
 前端使用原生 ES Modules，服务端使用 Node.js 内置模块，无构建步骤。模块职责、依赖边界和扩展方式见 [架构说明](docs/architecture.md)。
@@ -179,6 +194,7 @@ palbox/
 
 - [使用指南](docs/usage.md)：配置编辑、保存与恢复、快捷键和游戏配置路径。
 - [Docker 部署](docs/docker.md)：安装部署、环境变量、游戏服务管理和备份恢复。
+- [GitHub CI/CD](docs/ci-cd.md)：tag 发布镜像、手动运行、CI 检查和依赖更新机器人。
 - [参数明细](docs/parameters.md)：参数用途、说明来源和验证状态。
 - [参数核对记录](docs/parameter-review.md)：参数与说明的核对依据。
 - [架构说明](docs/architecture.md)：模块职责、数据流、存储兼容和扩展位置。

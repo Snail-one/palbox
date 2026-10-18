@@ -6,6 +6,8 @@
 
 前端镜像基于 `node:22-trixie-slim`，仅包含浏览器资源、共享领域模块和静态代理服务。Dockerfile 提供 `frontend` / `backend` 两个独立构建目标；Compose 会分别构建。单独构建时使用 `docker build --target frontend -t palbox-frontend:local .` 和 `docker build --target backend -t palbox:local .`。
 
+GitHub Actions 在推送 Git tag 后发布两个 GHCR 镜像，同时保留原始 tag 和 `latest` 标签，也支持手动指定已有 tag 发布。可使用 `docker compose -f compose.yaml -f compose.ghcr.yaml pull` 拉取，再执行 `docker compose -f compose.yaml -f compose.ghcr.yaml up -d --no-build` 启动。固定版本时修改叠加文件中的两个镜像标签。完整步骤见 [GitHub CI/CD](ci-cd.md)。
+
 ## 启动
 
 需要能运行 Docker Compose 的 Linux amd64 主机，以及帕鲁服务端需要的 CPU、内存和磁盘空间。官方列出推荐 4 核以上、16 GB 内存，较多玩家建议超过 32 GB，默认游戏端口为 UDP 8211：[官方运行要求](https://docs.palworldgame.com/getting-started/requirements/)。

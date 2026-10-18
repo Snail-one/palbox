@@ -1,0 +1,7 @@
+# Overlay for published images; use with compose.yaml and --no-build.
+# Change both tags together to deploy a specific release, for example v1.0.0.
+services:
+  frontend:
+    image: ghcr.io/snail-one/palbox-frontend:latest
+  palbox:
+    image: ghcr.io/snail-one/palbox:latest
