@@ -79,7 +79,6 @@
 .workspace-subnav a { padding: 8px 12px; border-radius: 6px; font-size: 12px; }
 .workspace-subnav a:hover { background: #f6f6f6; }
 .workspace-subnav a[aria-current="page"] { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
-#configuration-profiles { min-height: 0; overflow: auto; }
 
 .tiny-dot {
   display: inline-block;

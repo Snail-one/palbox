@@ -48,6 +48,15 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
   };
   const save = () => page.keyboard.press('Control+s');
   const category = name => page.locator('#category-nav').getByRole('button', { name, exact: true }).click();
+  async function configurationPage(target, name) {
+    const menu = target.locator('#mobile-menu');
+    if (await menu.isVisible() && await menu.getAttribute('aria-expanded') !== 'true') await menu.click();
+    await target.locator('#nav-configuration-' + name).click();
+  }
+  async function selectProfile(name) {
+    await configurationPage(page, 'profiles');
+    await page.locator('#profile-list').getByRole('button', { name }).click();
+  }
   const scrollToFraction = (target, fraction) => target.evaluate(value => window.scrollTo(0, (document.documentElement.scrollHeight - innerHeight) * value), fraction);
   const checkPinnedActions = async target => {
     for (const fraction of [0, 0.5, 1]) {
@@ -332,21 +341,21 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
     await category('服务器');
     await page.locator('#field-ServerName').fill('副本独立修改');
     await save();
-    await page.locator('#profile-list').getByRole('button', { name: /二号世界/ }).click();
+    await selectProfile(/二号世界/);
     assert.equal(await page.locator('#field-ServerName').inputValue(), '朋友们的世界, "一号"');
     ok('配置重命名、复制与修改隔离');
 
     await page.locator('#field-ServerName').fill('自动保存的修改');
-    await page.locator('#profile-list').getByRole('button', { name: /三号世界/ }).click();
+    await selectProfile(/三号世界/);
     assert.equal(await page.locator('#action-dialog').isVisible(), false);
-    await page.locator('#profile-list').getByRole('button', { name: /二号世界/ }).click();
+    await selectProfile(/二号世界/);
     assert.equal(await page.locator('#field-ServerName').inputValue(), '自动保存的修改');
     await page.locator('#field-ServerPlayerMaxNum').fill('1.5');
-    await page.locator('#profile-list').getByRole('button', { name: /三号世界/ }).click();
+    await selectProfile(/三号世界/);
     await page.locator('#dialog-cancel').click();
     assert.equal(await text('#profile-title'), '二号世界');
     assert.equal(await page.locator('#field-ServerPlayerMaxNum').inputValue(), '1.5');
-    await page.locator('#profile-list').getByRole('button', { name: /三号世界/ }).click();
+    await selectProfile(/三号世界/);
     await confirm();
     assert.equal(await text('#profile-title'), '三号世界');
     ok('有效修改自动保存后直接切换，非法草稿仍可取消或放弃');
@@ -357,6 +366,7 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
     await page.locator('#delete-profile').click();
     await confirm();
     assert.equal(await text('#profile-count'), '2');
+    await configurationPage(page, 'profiles');
     await page.locator('#new-profile').click();
     await confirm('全新世界');
     assert.equal(await text('#parameter-count'), '122');
@@ -392,6 +402,7 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
     await scrollToFraction(mobile, 0);
     await mobile.locator('#mobile-menu').click();
     assert.equal(await mobile.locator('#mobile-menu').getAttribute('aria-expanded'), 'true');
+    await mobile.locator('#nav-configuration-profiles').click();
     await mobile.locator('#new-profile').click();
     await mobile.locator('#dialog-name').fill('手机配置');
     await mobile.locator('#dialog-confirm').click();
@@ -483,6 +494,7 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
     assert.deepEqual(restoredWorkspace.profiles.filter(p => p.id !== inputProfile.id), inputWorkspace.profiles.filter(p => p.id !== inputProfile.id));
     assert.equal(await imported.locator('#parameter-count').textContent(), '2');
     await imported.reload();
+    await imported.locator('#nav-configuration-form').click();
     assert.equal(await imported.locator('#field-ServerName').inputValue(), '粘贴世界');
     assert.equal((await readImportedWorkspace()).profiles.find(p => p.id === inputProfile.id).source, inputSource);
     await importContext.close();

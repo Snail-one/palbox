@@ -2,7 +2,7 @@ import { createFormView } from './components/form.js';
 import { createParameterView } from './components/parameters.js';
 import { createSourceEditor } from './components/source-editor.js';
 
-export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged, ready }) {
+export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged, ready, onViewChanged }) {
   const { $, document } = dom;
   // Navigation/filter state is local to the UI; it never enters saved profiles.
   const view = { group: 'server', mode: 'form', advanced: 'table', search: '', unknownOnly: false, unverifiedOnly: false };
@@ -41,6 +41,7 @@ export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged
     if (view.mode === mode || !ready()) return;
     view.mode = mode;
     render();
+    onViewChanged(mode);
   });
   document.querySelector('.view-tabs').addEventListener('keydown', event => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -71,6 +72,7 @@ export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged
     view.search = '';
     $('search').value = '';
     render();
+    onViewChanged('advanced');
     $('tab-advanced').focus({ preventScroll: true });
     $('view-advanced').scrollIntoView({ block: 'start' });
   });
@@ -81,5 +83,9 @@ export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged
       parameters.render();
     });
   }
-  return { render };
+  return { render, setMode(mode) {
+    if (view.mode === mode) return;
+    view.mode = mode;
+    render();
+  } };
 }

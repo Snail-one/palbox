@@ -49,11 +49,12 @@
           <a id="nav-game-saves" href="#game/saves" data-game-view="saves" aria-controls="game-saves">存档管理</a>
         </nav>
         <a id="nav-configuration" class="workspace-link sidebar-active" href="#configuration" aria-controls="configuration-page" aria-current="page"><svg class="icon"><use href="#i-grid"/></svg>配置管理</a>
+        <nav id="configuration-navigation" class="workspace-subnav" aria-label="配置管理二级菜单" hidden>
+          <a id="nav-configuration-form" href="#configuration" data-configuration-view="form" aria-controls="configuration-editor">可视化编辑</a>
+          <a id="nav-configuration-advanced" href="#configuration/advanced" data-configuration-view="advanced" aria-controls="configuration-editor">高级编辑</a>
+          <a id="nav-configuration-profiles" href="#configuration/profiles" data-configuration-view="profiles" aria-controls="configuration-profiles">配置列表</a>
+        </nav>
       </nav>
-      <div id="configuration-profiles">
-      <div class="list-heading"><span>我的配置 <span id="profile-count">0</span></span><button class="icon-button" id="new-profile" aria-label="新建配置" title="新建配置"><svg class="icon"><use href="#i-plus"/></svg></button></div>
-      <div id="profile-list" class="profile-list"></div>
-      </div>
       <div class="sidebar-bottom">
         <div class="server-card"><span class="server-card-icon"><svg class="icon"><use href="#i-shield"/></svg></span><strong>保存在你的服务器</strong><p>配置、存档与备份持久保存，换设备也能继续管理。</p></div>
         <a class="docs-link" href="https://docs.palworldgame.com/settings-and-operation/configuration/" target="_blank" rel="noreferrer"><svg class="icon"><use href="#i-file"/></svg>帕鲁官方配置文档<span>↗</span></a>
@@ -77,6 +78,11 @@
         </section>
         <section id="configuration-page" aria-label="配置管理">
         <section class="profile-overview" aria-labelledby="profile-title"><div class="profile-emblem"><svg class="icon"><use href="#i-server"/></svg></div><div class="profile-info"><div class="profile-title-row"><h2 id="profile-title"></h2><span class="tag">INI 配置</span></div><div class="profile-details"><span id="profile-server"></span><span class="detail-separator">·</span><span id="profile-updated"></span></div></div><div class="profile-tools"><button id="rename-profile" class="icon-button" aria-label="重命名配置" title="重命名"><svg class="icon"><use href="#i-edit"/></svg></button><button id="copy-profile" class="icon-button" aria-label="创建当前配置的副本" title="创建副本"><svg class="icon"><use href="#i-copy"/></svg></button><button id="delete-profile" class="icon-button danger-hover" aria-label="删除当前配置" title="删除"><svg class="icon"><use href="#i-trash"/></svg></button></div></section>
+        <section id="configuration-profiles" class="configuration-library" aria-labelledby="configuration-library-title" hidden>
+          <div class="configuration-library-heading"><div><h2 id="configuration-library-title">我的配置 <span id="profile-count" class="subtle-tag">0</span></h2><p>选择一套配置开始编辑，或新建自己的配置。</p></div><button class="button primary" id="new-profile"><svg class="icon"><use href="#i-plus"/></svg>新建配置</button></div>
+          <div id="profile-list" class="profile-list"></div>
+        </section>
+        <div id="configuration-editor">
         <div class="summary-grid"><div class="summary-card"><span class="summary-icon summary-neutral"><svg class="icon"><use href="#i-file"/></svg></span><div><span class="summary-label">配置参数</span><div><strong id="parameter-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption" id="recognition-summary">官方说明与社区解释分别标注</span></div><div class="summary-card"><span class="summary-icon summary-muted"><svg class="icon"><use href="#i-user"/></svg></span><div><span class="summary-label">最大在线人数</span><div><strong id="player-count">—</strong><span class="summary-unit">人</span></div></div><span class="summary-caption">一起探索这个世界</span></div><div class="summary-card"><span class="summary-icon summary-accent"><svg class="icon"><use href="#i-edit"/></svg></span><div><span class="summary-label">本次修改</span><div><strong id="change-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption"><span class="save-status" id="change-caption" role="status" data-state="saved" title="所有有效修改已自动保存到服务器。" aria-label="所有有效修改已自动保存到服务器。">已保存</span></span></div><button type="button" class="summary-card summary-link" id="unknown-summary" aria-label="查看和编辑未识别参数"><span class="summary-icon summary-neutral"><svg class="icon"><use href="#i-code"/></svg></span><div><span class="summary-label">未识别参数</span><div><strong id="unknown-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption">点击集中查看和编辑 →</span></button></div>
         <section class="editor-panel" aria-label="配置编辑器">
           <div class="editor-toolbar"><div class="view-tabs" role="tablist" aria-label="编辑方式"><button class="view-tab active" id="tab-form" role="tab" aria-selected="true" aria-controls="view-form" data-view="form"><svg class="icon"><use href="#i-grid"/></svg>可视化编辑</button><button class="view-tab" id="tab-advanced" role="tab" aria-selected="false" aria-controls="view-advanced" data-view="advanced"><svg class="icon"><use href="#i-code"/></svg>高级编辑</button></div><label class="search-box"><svg class="icon"><use href="#i-search"/></svg><input id="search" type="search" placeholder="搜索名称或参数…" aria-label="搜索配置参数"><kbd>/</kbd></label></div>
@@ -91,6 +97,7 @@
           </div>
         </section>
         <div class="bottom-note"><span><span class="tiny-dot"></span>准备好下一场冒险</span><span>PalWorldSettings.ini<span class="detail-separator">·</span>配置自动保存 · 应用后在游戏中生效</span></div>
+        </div>
         </section>
       </main>
     </div>

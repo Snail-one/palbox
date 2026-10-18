@@ -69,19 +69,22 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
       notifications.toast('完整 INI 配置已复制到剪贴板');
     } catch { notifications.toast('复制失败，请允许剪贴板访问，或在「高级编辑 → 输出源码」中手动复制。', true); }
   }
-  const navigation = createNavigation({ dom, window, isDirty, onSave: save });
-  const panel = createEditorPanel({ dom, editor, catalog, ask, notify: notifications.toast, onChanged: () => save({ automatic: true }), ready });
+  let panel;
+  const navigation = createNavigation({ dom, window, isDirty, onSave: save, onConfigurationView: mode => panel?.setMode(mode) });
+  panel = createEditorPanel({ dom, editor, catalog, ask, notify: notifications.toast, onChanged: () => save({ automatic: true }), ready, onViewChanged: navigation.openEditor });
+  navigation.refresh();
   function changedProfile(successMessage) {
     editor.reset(workspace.active.source);
     const success = persist();
     render();
     navigation.closeSidebar();
+    navigation.openEditor();
     if (success && successMessage) notifications.toast(successMessage);
   }
   const profiles = createProfilePanel({ dom, workspace, ask, beforeLeave, ready, isDirty, actions: {
     async select(id) {
-      if (id === workspace.active.id) { navigation.closeSidebar(); return; }
-      if (!(await beforeLeave())) return;
+      if (id === workspace.active.id) { navigation.closeSidebar(); navigation.openEditor(); return; }
+      if (!(await beforeLeave())) { navigation.openEditor(); return; }
       workspace.select(id);
       changedProfile();
     },

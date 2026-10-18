@@ -44,6 +44,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   const deployment = document.createElement('section');
   deployment.className = 'configuration-deployment';
   deployment.setAttribute('aria-label', '配置应用');
+  deployment.hidden = $('configuration-page').hidden || $('configuration-editor').hidden;
   deployment.innerHTML = `<div><h2>应用到游戏 <span id="game-config-state" class="save-status" data-state="pending">连接中</span></h2><p>有效修改自动保存到服务器。应用后写入游戏；运行中的服务器会先存档、停服、备份，再应用并重启。</p></div><button class="button primary" data-action="apply" disabled>应用配置</button>`;
   $('configuration-page').prepend(deployment);
   const feedback = document.createElement('div');
