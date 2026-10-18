@@ -28,8 +28,6 @@
 .topbar:has(#configuration-actions:not([hidden])) .topbar-session { border-left: 1px solid var(--line); padding-left: 12px; }
 .server-heading { flex-wrap: wrap; }
 .server-heading-actions { flex-shrink: 0; }
-.server-heading .management-note { margin: 6px 0 0; }
-#server-state-note .save-status { margin-right: 2px; }
 .server-controls { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
 .server-primary-actions { width: 100%; }
 .server-primary-actions [data-action="force-stop"] { color: var(--red); }

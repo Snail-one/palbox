@@ -167,7 +167,7 @@ export class Manager {
     }
   }
   needsSetup() { return this.setupRequired; }
-  get backupRetention() { return this.settings?.backupRetention ?? 10; }
+  get backupRetention() { return this.settings?.backupRetention ?? 5; }
   get autoStart() { return this.settings?.autoStart === true; }
   get gameArgs() { return this.settings?.gameArgs ?? []; }
   get installArgs() { return this.settings?.installArgs ?? DEFAULT_INSTALL_ARGS; }
@@ -184,7 +184,7 @@ export class Manager {
       if (!validUsername(name)) throw failure('管理员用户名须为 1 到 64 个字符，且不能包含控制字符。', 400);
       if (typeof password !== 'string' || password.length < 12) throw failure('管理密码至少需要 12 位。', 400);
       if (password.length > 1024) throw failure('管理密码不能超过 1024 位。', 400);
-      const next = { admin: { username: name, ...await passwordRecord(password) }, backupRetention: 10, autoStart: false, shutdownWait: 5, shutdownMessage: DEFAULT_SHUTDOWN_MESSAGE, gameArgs: [], installArgs: [...DEFAULT_INSTALL_ARGS] };
+      const next = { admin: { username: name, ...await passwordRecord(password) }, backupRetention: 5, autoStart: false, shutdownWait: 5, shutdownMessage: DEFAULT_SHUTDOWN_MESSAGE, gameArgs: [], installArgs: [...DEFAULT_INSTALL_ARGS] };
       await jsonWrite(this.settingsFile, next);
       this.settings = next;
       this.setupRequired = false;

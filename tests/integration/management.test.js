@@ -73,7 +73,7 @@ test('启动参数通过设置接口保存，并在启动和重启时生效', { 
   const settings = () => f.request('/api/settings');
   const put = body => f.request('/api/settings', { method: 'PUT', body });
   const installArgs = ['+force_install_dir', f.runtime.server, '+login', 'anonymous', '+app_update', '2394010', 'validate', '+quit'];
-  assert.deepEqual(await (await settings()).json(), { backupRetention: 10, autoStart: false, shutdownWait: 5, shutdownMessage: 'Palbox 正在维护服务器', gameArgs: [], installArgs });
+  assert.deepEqual(await (await settings()).json(), { backupRetention: 5, autoStart: false, shutdownWait: 5, shutdownMessage: 'Palbox 正在维护服务器', gameArgs: [], installArgs });
   assert.deepEqual(f.runtime.args, []);
   for (const body of [
     {}, { gameArgs: '-x' }, { gameArgs: [1] }, { gameArgs: [''] }, { gameArgs: ['   '] },
@@ -83,7 +83,7 @@ test('启动参数通过设置接口保存，并在启动和重启时生效', { 
     { gameArgs: Array.from({ length: 10 }, () => 'x'.repeat(200)) },
     { shutdownWait: -1 }, { shutdownWait: 301 }, { shutdownWait: 1.5 }, { shutdownWait: '5' }
   ]) assert.equal((await put(body)).status, 400, JSON.stringify(body).slice(0, 80));
-  assert.deepEqual(await (await settings()).json(), { backupRetention: 10, autoStart: false, shutdownWait: 5, shutdownMessage: 'Palbox 正在维护服务器', gameArgs: [], installArgs });
+  assert.deepEqual(await (await settings()).json(), { backupRetention: 5, autoStart: false, shutdownWait: 5, shutdownMessage: 'Palbox 正在维护服务器', gameArgs: [], installArgs });
   assert.deepEqual(f.runtime.args, []);
   assert.equal((await put({ autoStart: 'yes' })).status, 400);
   const auto = await put({ autoStart: true });
@@ -94,7 +94,7 @@ test('启动参数通过设置接口保存，并在启动和重启时生效', { 
   const args = ['-useperfthreads', '-NoAsyncLoadingThread', '--name=two words'];
   const saved = await put({ gameArgs: args });
   assert.equal(saved.status, 200);
-  assert.deepEqual(await saved.json(), { backupRetention: 10, autoStart: false, shutdownWait: 5, shutdownMessage: 'Palbox 正在维护服务器', gameArgs: args, installArgs });
+  assert.deepEqual(await saved.json(), { backupRetention: 5, autoStart: false, shutdownWait: 5, shutdownMessage: 'Palbox 正在维护服务器', gameArgs: args, installArgs });
   assert.deepEqual(f.runtime.args, args);
   assert.deepEqual(JSON.parse(await readFile(path.join(f.directory, 'palbox/settings.json'), 'utf8')).gameArgs, args);
   assert.equal((await put({ gameArgs: ['-portrait'] })).status, 200);
@@ -129,9 +129,9 @@ test('启动参数通过设置接口保存，并在启动和重启时生效', { 
   assert.equal(restarted.state, 'succeeded', restarted.message);
   assert.notEqual(f.runtime.game.pid, pid);
   assert.deepEqual(JSON.parse(await readFile(f.argvFile, 'utf8')), ['-port=8211', ...nextArgs]);
-  const retention = await put({ backupRetention: 5 });
+  const retention = await put({ backupRetention: 7 });
   assert.equal(retention.status, 200);
-  assert.deepEqual(await retention.json(), { backupRetention: 5, autoStart: false, shutdownWait: 5, shutdownMessage: 'Palbox 正在维护服务器', gameArgs: nextArgs, installArgs });
+  assert.deepEqual(await retention.json(), { backupRetention: 7, autoStart: false, shutdownWait: 5, shutdownMessage: 'Palbox 正在维护服务器', gameArgs: nextArgs, installArgs });
   assert.deepEqual(f.runtime.args, nextArgs);
   assert.equal((await put({ shutdownWait: 0 })).status, 200);
   assert.equal(f.runtime.shutdownWait, 0);

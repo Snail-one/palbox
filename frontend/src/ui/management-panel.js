@@ -20,7 +20,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   section.setAttribute('aria-label', '帕鲁服务管理');
   section.id = 'server-service';
   section.innerHTML = `
-    <div class="management-heading server-heading"><div><h2>游戏服务 <span id="game-state" class="save-status" data-state="pending">连接中</span></h2><p id="server-state-note" class="management-note">正在获取服务器状态…</p></div><div class="management-actions server-heading-actions"><label class="auto-start-switch" title="启用后，面板或容器重启并完成初始化时会自动创建启动任务；服务端未安装或尚未初始化时跳过"><input type="checkbox" role="switch" class="sr-only" id="auto-start" disabled><span class="toggle" aria-hidden="true"></span><span>自动启动</span></label><button type="button" id="show-task-history" class="button secondary" aria-haspopup="dialog" aria-controls="task-history">任务记录</button><a class="button secondary" href="#configuration">管理配置 →</a></div></div>
+    <div class="management-heading server-heading"><div><h2>游戏服务 <span id="game-state" class="save-status" data-state="pending">连接中</span></h2></div><div class="management-actions server-heading-actions"><label class="auto-start-switch" title="启用后，面板或容器重启并完成初始化时会自动创建启动任务；服务端未安装或尚未初始化时跳过"><input type="checkbox" role="switch" class="sr-only" id="auto-start" disabled><span class="toggle" aria-hidden="true"></span><span>自动启动</span></label><button type="button" id="show-task-history" class="button secondary" aria-haspopup="dialog" aria-controls="task-history">任务记录</button><a class="button secondary" href="#configuration">管理配置 →</a></div></div>
     <div class="management-feedback"><p id="management-task" class="management-task" role="status" hidden></p></div>
     <div class="server-controls">
       <div class="management-actions server-primary-actions">
@@ -462,16 +462,6 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       const game = $('game-state');
       game.textContent = !value.installed ? '未安装' : value.running ? (value.ready ? '运行中' : value.task?.action === 'start' || value.task?.action === 'install' || value.task?.action === 'apply' || value.task?.action === 'restart' ? '启动中' : '接口异常') : '已停止';
       game.dataset.state = value.running && value.ready ? 'saved' : 'pending';
-      const stateNote = $('server-state-note');
-      stateNote.replaceChildren();
-      if (!value.installed) stateNote.textContent = '先安装服务端，再启动你的帕鲁世界。';
-      else if (!value.running) {
-        const ready = document.createElement('span');
-        ready.className = 'save-status';
-        ready.dataset.state = 'saved';
-        ready.textContent = '服务端已就绪';
-        stateNote.append(ready, document.createTextNode(' 可以启动。'));
-      } else stateNote.textContent = value.ready ? '服务运行正常' : '游戏进程运行中，管理接口暂未就绪';
       const config = $('game-config-state');
       config.textContent = value.configuration === 'pending' ? '待生效' : value.running && value.ready ? '已生效' : '已写入';
       config.dataset.state = value.configuration === 'pending' ? 'pending' : value.running && value.ready ? 'saved' : 'written';
