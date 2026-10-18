@@ -45,7 +45,7 @@ test('启动参数通过设置接口保存，并在启动和重启时生效', { 
   const settings = () => f.request('/api/settings');
   const put = body => f.request('/api/settings', { method: 'PUT', body });
   const installArgs = ['+force_install_dir', f.runtime.server, '+login', 'anonymous', '+app_update', '2394010', 'validate', '+quit'];
-  assert.deepEqual(await (await settings()).json(), { backupRetention: 10, gameArgs: [], installArgs });
+  assert.deepEqual(await (await settings()).json(), { backupRetention: 10, autoStart: false, gameArgs: [], installArgs });
   assert.deepEqual(f.runtime.args, []);
   for (const body of [
     {}, { gameArgs: '-x' }, { gameArgs: [1] }, { gameArgs: [''] }, { gameArgs: ['   '] },
@@ -54,12 +54,18 @@ test('启动参数通过设置接口保存，并在启动和重启时生效', { 
     { gameArgs: Array.from({ length: 33 }, () => '-x') }, { gameArgs: ['x'.repeat(201)] },
     { gameArgs: Array.from({ length: 10 }, () => 'x'.repeat(200)) }
   ]) assert.equal((await put(body)).status, 400, JSON.stringify(body).slice(0, 80));
-  assert.deepEqual(await (await settings()).json(), { backupRetention: 10, gameArgs: [], installArgs });
+  assert.deepEqual(await (await settings()).json(), { backupRetention: 10, autoStart: false, gameArgs: [], installArgs });
   assert.deepEqual(f.runtime.args, []);
+  assert.equal((await put({ autoStart: 'yes' })).status, 400);
+  const auto = await put({ autoStart: true });
+  assert.equal(auto.status, 200);
+  assert.equal((await auto.json()).autoStart, true);
+  assert.equal(JSON.parse(await readFile(path.join(f.directory, 'palbox/settings.json'), 'utf8')).autoStart, true);
+  assert.equal((await put({ autoStart: false })).status, 200);
   const args = ['-useperfthreads', '-NoAsyncLoadingThread', '--name=two words'];
   const saved = await put({ gameArgs: args });
   assert.equal(saved.status, 200);
-  assert.deepEqual(await saved.json(), { backupRetention: 10, gameArgs: args, installArgs });
+  assert.deepEqual(await saved.json(), { backupRetention: 10, autoStart: false, gameArgs: args, installArgs });
   assert.deepEqual(f.runtime.args, args);
   assert.deepEqual(JSON.parse(await readFile(path.join(f.directory, 'palbox/settings.json'), 'utf8')).gameArgs, args);
   assert.equal((await put({ gameArgs: ['-portrait'] })).status, 200);
@@ -96,9 +102,22 @@ test('启动参数通过设置接口保存，并在启动和重启时生效', { 
   assert.deepEqual(JSON.parse(await readFile(f.argvFile, 'utf8')), ['-port=8211', ...nextArgs]);
   const retention = await put({ backupRetention: 5 });
   assert.equal(retention.status, 200);
-  assert.deepEqual(await retention.json(), { backupRetention: 5, gameArgs: nextArgs, installArgs });
+  assert.deepEqual(await retention.json(), { backupRetention: 5, autoStart: false, gameArgs: nextArgs, installArgs });
   assert.deepEqual(f.runtime.args, nextArgs);
   assert.equal((await f.task('stop')).state, 'succeeded');
+});
+
+test('自动启动设置会在面板启动后拉起游戏服务', { skip: process.platform !== 'linux' }, async t => {
+  const f = await managementFixture(); t.after(() => f.close()); await f.login();
+  assert.equal((await f.task('install')).state, 'succeeded');
+  await f.manager.updateSettings({ autoStart: true });
+  assert.equal(f.manager.autoStart, true);
+  await f.manager.autoStartServer();
+  await f.manager.operation;
+  assert.ok(f.runtime.game);
+  assert.equal(f.manager.tasks[0].action, 'start');
+  assert.equal(f.manager.tasks[0].state, 'succeeded');
+  assert.equal((await f.manager.status()).ready, true);
 });
 
 test('玩家封禁、踢人理由、强制停止与更新检查', { skip: process.platform !== 'linux' }, async t => {

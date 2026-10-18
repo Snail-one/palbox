@@ -36,6 +36,13 @@ function normalizeActionUserId(value) {
   return userId;
 }
 
+/** Extract the public branch build from a SteamCMD.net API response. */
+export function steamCmdApiBuild(value) {
+  const build = value?.data?.['2394010']?.depots?.branches?.public?.buildid;
+  const text = typeof build === 'number' ? String(build) : build;
+  return typeof text === 'string' && /^\d+$/.test(text) ? text : null;
+}
+
 function gameArgsError(value) {
   if (!Array.isArray(value)) return '启动参数必须是字符串数组。';
   if (value.length > MAX_GAME_ARGS) return `启动参数不能超过 ${MAX_GAME_ARGS} 项。`;
@@ -109,6 +116,7 @@ export class Manager {
     } else {
       this.validateSettings(settings);
       let write = false;
+      if (!Object.hasOwn(settings, 'autoStart')) { settings.autoStart = false; write = true; }
       if (!Object.hasOwn(settings, 'gameArgs')) { settings.gameArgs = []; write = true; }
       if (!Object.hasOwn(settings, 'installArgs')) { settings.installArgs = [...DEFAULT_INSTALL_ARGS]; write = true; }
       if (Object.hasOwn(settings, 'backupIntervalHours')) { delete settings.backupIntervalHours; write = true; }
@@ -140,6 +148,7 @@ export class Manager {
       || admin.username !== normalizeUsername(admin.username) || !validUsername(admin.username)
       || !/^[a-f0-9]{128}$(?![\s\S])/.test(admin.hash || '') || !/^[a-f0-9]+$(?![\s\S])/.test(admin.salt || '')) throw new Error(this.settingsError());
     if (!Number.isInteger(settings.backupRetention) || settings.backupRetention < 1 || settings.backupRetention > 100) throw new Error(this.settingsError());
+    if (Object.hasOwn(settings, 'autoStart') && typeof settings.autoStart !== 'boolean') throw new Error(this.settingsError());
     if (Object.hasOwn(settings, 'gameArgs')) {
       const message = gameArgsError(settings.gameArgs);
       if (message) throw new Error(`settings.json 中的启动参数无效：${message}请编辑 ${this.settingsFile} 修正 gameArgs 后重新启动。`);
@@ -151,6 +160,7 @@ export class Manager {
   }
   needsSetup() { return this.setupRequired; }
   get backupRetention() { return this.settings?.backupRetention ?? 10; }
+  get autoStart() { return this.settings?.autoStart === true; }
   get gameArgs() { return this.settings?.gameArgs ?? []; }
   get installArgs() { return this.settings?.installArgs ?? DEFAULT_INSTALL_ARGS; }
   syncRuntimeArgs() { this.runtime.args = [...this.gameArgs]; }
@@ -164,12 +174,33 @@ export class Manager {
       if (!validUsername(name)) throw failure('管理员用户名须为 1 到 64 个字符，且不能包含控制字符。', 400);
       if (typeof password !== 'string' || password.length < 12) throw failure('管理密码至少需要 12 位。', 400);
       if (password.length > 1024) throw failure('管理密码不能超过 1024 位。', 400);
-      const next = { admin: { username: name, ...await passwordRecord(password) }, backupRetention: 10, gameArgs: [], installArgs: [...DEFAULT_INSTALL_ARGS] };
+      const next = { admin: { username: name, ...await passwordRecord(password) }, backupRetention: 10, autoStart: false, gameArgs: [], installArgs: [...DEFAULT_INSTALL_ARGS] };
       await jsonWrite(this.settingsFile, next);
       this.settings = next;
       this.setupRequired = false;
       return next.admin;
     } finally { this.setupPending = false; }
+  }
+  /** Start the game once during panel boot when the persisted setting is on. */
+  async autoStartServer() {
+    if (!this.autoStart || this.setupRequired || this.closing) return;
+    if (this.runtime.game) return;
+    if (!(await this.runtime.installed())) {
+      this.runtime.log('palbox', '自动启动已启用，但服务端尚未安装，已跳过。\n');
+      return;
+    }
+    try {
+      // A panel-only restart can leave the previous detached game process alive.
+      await this.runtime.rest('info');
+      this.runtime.log('palbox', '自动启动：检测到游戏服务已在运行，已跳过。\n');
+      return;
+    } catch { /* REST not reachable: continue with a normal start. */ }
+    try {
+      this.runtime.log('palbox', '自动启动已启用，正在启动游戏服务。\n');
+      await this.submit('start');
+    } catch (error) {
+      this.runtime.log('palbox', `自动启动失败：${error.message}\n`);
+    }
   }
   saveTasks() { return jsonWrite(this.tasksFile, this.tasks.slice(0, 40)); }
   async submit(action, payload = {}) {
@@ -504,6 +535,18 @@ export class Manager {
   }
   async latestBuild() {
     if (this.busy) throw failure('已有任务正在执行，请稍后再试。', 409);
+    // SteamCMD.net is much faster than launching SteamCMD; use it first and
+    // fall back to the local client when the API is unavailable.
+    try {
+      const response = await fetch('https://api.steamcmd.net/v1/info/2394010', {
+        headers: { accept: 'application/json' },
+        signal: AbortSignal.timeout(10000)
+      });
+      if (response.ok) {
+        const build = steamCmdApiBuild(await response.json());
+        if (build) return build;
+      }
+    } catch { /* fall through to SteamCMD */ }
     const args = ['+login', 'anonymous', '+app_info_update', '1', '+app_info_print', '2394010', '+quit'];
     const options = { timeout: 60000, maxBuffer: 8 * 1024 * 1024, env: this.runtime.childEnvironment() };
     const parse = value => value.match(/"public"\s*\{[\s\S]{0,4000}?"buildid"\s*"(\d+)"/)?.[1] || null;
@@ -555,6 +598,7 @@ export class Manager {
   publicSettings() {
     return {
       backupRetention: this.backupRetention,
+      autoStart: this.autoStart,
       gameArgs: [...this.gameArgs],
       installArgs: this.installArgs.map(arg => arg === '{server}' ? this.runtime.server : arg)
     };
@@ -569,13 +613,18 @@ export class Manager {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw failure('设置格式不正确。');
     if (Object.hasOwn(value, 'backupIntervalHours')) throw failure('面板定时备份已移除，请使用游戏官方自动备份。');
     const hasRetention = Object.hasOwn(value, 'backupRetention');
+    const hasAutoStart = Object.hasOwn(value, 'autoStart');
     const hasArgs = Object.hasOwn(value, 'gameArgs');
     const hasInstallArgs = Object.hasOwn(value, 'installArgs');
-    if (!hasRetention && !hasArgs && !hasInstallArgs) throw failure('请提供要保存的设置。');
+    if (!hasRetention && !hasAutoStart && !hasArgs && !hasInstallArgs) throw failure('请提供要保存的设置。');
     const next = { ...this.settings, gameArgs: [...this.gameArgs], installArgs: [...this.installArgs] };
     if (hasRetention) {
       if (!Number.isInteger(value.backupRetention) || value.backupRetention < 1 || value.backupRetention > 100) throw failure('完整备份保留数量须为 1 到 100。');
       next.backupRetention = value.backupRetention;
+    }
+    if (hasAutoStart) {
+      if (typeof value.autoStart !== 'boolean') throw failure('自动启动设置必须为布尔值。');
+      next.autoStart = value.autoStart;
     }
     if (hasArgs) {
       const message = gameArgsError(value.gameArgs);

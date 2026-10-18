@@ -23,6 +23,7 @@ try {
     if (!secureCookie && !['127.0.0.1', '::1', 'localhost'].includes(host)) {
       console.warn('提示：未启用 Secure Cookie；若通过 HTTPS 反向代理访问面板，请设置 PALBOX_SECURE_COOKIE=true。');
     }
+    manager.autoStartServer().catch(error => console.error(`自动启动失败：${error.message}`));
   });
   let closing = false;
   async function close() {

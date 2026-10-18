@@ -18,7 +18,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   section.setAttribute('aria-label', '帕鲁服务管理');
   section.id = 'server-service';
   section.innerHTML = `
-    <div class="management-heading server-heading"><div><h2>游戏服务 <span id="game-state" class="save-status" data-state="pending">连接中</span></h2><p id="server-state-note" class="management-note">正在获取服务器状态…</p></div><div class="management-actions server-heading-actions"><button type="button" id="show-task-history" class="button secondary" aria-haspopup="dialog" aria-controls="task-history">任务记录</button><a class="button secondary" href="#configuration">管理配置 →</a></div></div>
+    <div class="management-heading server-heading"><div><h2>游戏服务 <span id="game-state" class="save-status" data-state="pending">连接中</span></h2><p id="server-state-note" class="management-note">正在获取服务器状态…</p></div><div class="management-actions server-heading-actions"><label class="auto-start-switch" title="启用后，面板或容器重启并完成初始化时会自动创建启动任务；服务端未安装或尚未初始化时跳过"><input type="checkbox" role="switch" class="sr-only" id="auto-start" disabled><span class="toggle" aria-hidden="true"></span><span>自动启动</span></label><button type="button" id="show-task-history" class="button secondary" aria-haspopup="dialog" aria-controls="task-history">任务记录</button><a class="button secondary" href="#configuration">管理配置 →</a></div></div>
     <div class="management-feedback"><p id="management-task" class="management-task" role="status" hidden></p></div>
     <div class="server-controls">
       <div class="management-actions server-primary-actions">
@@ -27,7 +27,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       </div>
     </div>
     <dl class="management-metrics" aria-label="服务器运行信息">
-      <div class="server-metric"><dt>游戏版本</dt><dd id="game-version" class="metric-value metric-text">读取中</dd><dd id="game-build-meta" class="server-metric-note" hidden>Steam Build <span id="game-build">—</span></dd><dd class="server-metric-update"><span class="update-check"><button class="button secondary" id="check-update" disabled>检查更新</button><span id="update-status" class="update-bubble" hidden><span id="update-status-text" role="status"></span><button type="button" id="update-status-close" class="update-bubble-close" aria-label="关闭提示">×</button></span></span></dd></div>
+      <div class="server-metric server-version-metric"><dt>游戏版本</dt><dd id="game-version" class="metric-value metric-text">读取中</dd><dd id="game-build-meta" class="server-metric-note" hidden>Steam Build <span id="game-build">—</span></dd><dd class="server-metric-update"><span class="update-check"><button class="button secondary" id="check-update" disabled>检查更新</button><span id="update-status" class="update-bubble" hidden><span id="update-status-text" role="status"></span><button type="button" id="update-status-close" class="update-bubble-close" aria-label="关闭提示">×</button></span></span></dd></div>
       <div class="server-metric"><dt>在线玩家</dt><dd id="game-players" class="metric-value">—</dd></div>
       <div class="server-metric"><dt>服务器 FPS</dt><dd id="game-fps" class="metric-value">—</dd></div>
       <div class="server-metric"><dt>游戏端口</dt><dd class="metric-value"><span id="game-port">8211</span><span class="metric-unit">UDP</span></dd></div>
@@ -424,6 +424,8 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   function loadSettings() {
     settingsRequest ??= api.request('settings').then(settings => {
       $('backup-retention').value = settings.backupRetention;
+      $('auto-start').checked = Boolean(settings.autoStart);
+      $('auto-start').disabled = false;
       settingsCache = settings;
       $('backup-settings').querySelectorAll('input, button').forEach(control => { control.disabled = false; });
       $('edit-game-args').disabled = false;
@@ -476,6 +478,18 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     event.preventDefault();
     try { await api.request('settings', { method: 'PUT', body: { backupRetention: Number($('backup-retention').value) } }); notify('完整备份保留设置已保存'); }
     catch (caught) { error(caught.message); }
+  });
+  $('auto-start').addEventListener('change', async event => {
+    const control = event.currentTarget;
+    const checked = control.checked;
+    control.disabled = true;
+    try {
+      settingsCache = await api.request('settings', { method: 'PUT', body: { autoStart: checked } });
+      notify(checked ? '已启用自动启动：面板或容器重启后将启动游戏服务' : '已关闭自动启动');
+    } catch (caught) {
+      control.checked = !checked;
+      error(caught.message);
+    } finally { control.disabled = false; }
   });
   $('manager-announce').addEventListener('submit', event => { event.preventDefault(); action('announce', { message: $('announce-message').value }, false); });
   $('ban-player').addEventListener('click', async () => {

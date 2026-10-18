@@ -53,8 +53,21 @@
 .server-metric .metric-value.metric-text { font-size: 16px; line-height: 1.6; }
 .server-metric .server-metric-note { margin-top: 6px; font-size: 10px; color: var(--muted); overflow-wrap: anywhere; }
 .server-metric .metric-unit { margin-left: 6px; font-size: 10px; font-weight: 400; color: var(--muted); }
-.server-metric-update { margin-top: 8px; }
+.server-version-metric { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; align-items: center; }
+.server-version-metric > dt { grid-column: 1 / -1; grid-row: 1; }
+.server-version-metric > #game-version { grid-column: 1; grid-row: 2; }
+.server-version-metric > .server-metric-update { grid-column: 2; grid-row: 2; justify-self: end; margin: 0; }
+.server-version-metric > #game-build-meta { grid-column: 1 / -1; grid-row: 3; }
 .server-metric-update .button { min-height: 30px; padding: 5px 10px; font-size: 10px; }
+.server-version-metric .update-bubble { left: auto; right: 0; }
+.server-version-metric .update-bubble::before { left: auto; right: 16px; }
+@media (max-width: 760px) {
+  .server-version-metric .update-bubble { left: 50%; right: auto; }
+}
+.auto-start-switch { display: inline-flex; align-items: center; gap: 7px; padding: 0 2px; font-size: 11px; color: var(--muted); white-space: nowrap; cursor: pointer; }
+.auto-start-switch input:checked + .toggle { background: var(--accent); }
+.auto-start-switch input:checked + .toggle:after { transform: translateX(14px); }
+.auto-start-switch input:focus-visible + .toggle { outline: 3px solid #e68b50; outline-offset: 3px; }
 @media (max-width: 1000px) {
   .management-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .management-metrics .server-metric:first-child { grid-column: span 2; }

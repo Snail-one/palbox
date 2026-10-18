@@ -59,7 +59,7 @@ docker compose up -d --build
 │       └── Logs/
 ├── palbox/
 │   ├── workspace.json                 配置库、输入基准与保存版本
-│   ├── settings.json                  管理员用户名、密码哈希、完整备份保留设置、启动参数
+│   ├── settings.json                  管理员用户名、密码哈希、完整备份保留设置、自动启动、启动参数
 │   ├── tasks.json                     最近 40 个任务
 │   └── imports/                       导入存档的临时暂存（1 小时后清理）
 ├── backups/
@@ -96,7 +96,8 @@ docker compose up -d --build
 ## 服务与备份
 
 - 启动、停止、重启：管理游戏进程。停止优先调用官方 API 存档和关服，API 不可用时尝试 SIGTERM；未成功退出不会继续改写文件。正常停止失败时可使用「强制停止」，优先调用官方 `/stop`，必要时发送 SIGKILL。
-- 更新：先正常停服并创建更新前备份，再执行 SteamCMD `app_update 2394010 validate`；原先运行的游戏服会重新启动。「检查更新」通过 SteamCMD 查询最新 build 并与本地 `appmanifest_2394010.acf` 对比。
+- 自动启动：在「服务器概况」标题栏的「任务记录」前切换「自动启动」滑块。启用后，后端启动并监听端口时会自动创建「启动」任务；服务端未安装、尚未完成管理员初始化或检测到游戏已在运行时跳过。设置保存在 `palbox/settings.json` 的 `autoStart`，默认关闭；执行 `docker compose restart palbox`、`up -d` 或宿主机重启后生效。
+- 更新：先正常停服并创建更新前备份，再执行 SteamCMD `app_update 2394010 validate`；原先运行的游戏服会重新启动。「检查更新」优先通过 [SteamCMD.net API](https://api.steamcmd.net/v1/info/2394010) 查询最新 build，失败时回退 SteamCMD，并与本地 `appmanifest_2394010.acf` 对比，结果以「游戏版本」卡片旁的气泡显示。
 - 官方自动备份：由 `bIsUseBackupSaveData=True` 启用，游戏运行中自行生成，无需面板停服。面板展示 `SaveGames/0/<世界 ID>/backup/world/<时间>/` 中完整的世界和玩家备份，支持在线下载。官方保留档位为每 30 秒 5 份、每 10 分钟 6 份、每 1 小时 12 份、每 1 天 7 份：[官方说明](https://docs.palworldgame.com/settings-and-operation/configuration/#about-bisusebackupsavedata)。
 - 恢复官方备份：确认备份属于当前世界，复制并验证后保存、停服，先创建完整备份再替换世界和玩家存档。保留当前配置与官方备份历史，原先运行的游戏会重新启动。
 - 导入存档：上传 `.tar.gz` / `.tgz` 官方存档（最大 1 GB，只能包含一个世界），支持快照根目录、`SaveGames/0/<世界 ID>` 和 `Pal/Saved/SaveGames/0/<世界 ID>` 布局。确认后立即保存世界、停服、创建完整备份并替换世界/玩家存档，完成后按原状态启动；`PalWorldSettings.ini`、`WorldOption.sav` 和官方备份历史保持不变。暂存文件位于 `palbox/imports/`，成功后删除，超过 1 小时自动清理。
