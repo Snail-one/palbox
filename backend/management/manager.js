@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { Runtime } from './runtime.js';
 import { NativeBackups } from './native-backups.js';
 import { SaveImports } from './save-imports.js';
+import { readBanList } from './banned-players.js';
 import { ManagementStore } from './store.js';
 import { atomicWrite, readJson, jsonWrite, failure } from './files.js';
 import { normalizeUsername, passwordRecord, validUsername } from './auth.js';
@@ -252,16 +253,18 @@ export class Manager {
       case 'kick':
       case 'ban': {
         await this.requireRunning();
-        if (typeof payload.userid !== 'string' || !payload.userid || payload.userid.length > 200) throw failure('玩家 ID 无效。');
+        if (typeof payload.userid !== 'string' || !payload.userid.trim() || payload.userid.length > 200 || /[\p{Cc}\p{Cf}]/u.test(payload.userid)) throw failure('玩家 ID 无效。');
         const fallback = action === 'kick' ? '管理员已将你移出服务器' : '管理员已将你封禁';
         const message = payload.message === undefined || payload.message === null || payload.message === '' ? fallback : payload.message;
         if (typeof message !== 'string' || !message.trim() || message.length > 500) throw failure('操作理由须为 1 到 500 个字符。');
-        await this.runtime.rest(action, { userid: payload.userid, message: message.trim() }); break;
+        await this.runtime.rest(action, { userid: payload.userid.trim(), message: message.trim() });
+        if (action === 'ban') task.player = { userId: payload.userid.trim(), name: typeof payload.name === 'string' ? payload.name.slice(0, 100) : '', reason: message.trim(), bannedAt: new Date().toISOString() };
+        break;
       }
       case 'unban':
         await this.requireRunning();
-        if (typeof payload.userid !== 'string' || !payload.userid || payload.userid.length > 200) throw failure('玩家 ID 无效。');
-        await this.runtime.rest('unban', { userid: payload.userid }); break;
+        if (typeof payload.userid !== 'string' || !payload.userid.trim() || payload.userid.length > 200 || /[\p{Cc}\p{Cf}]/u.test(payload.userid)) throw failure('玩家 ID 无效。');
+        await this.runtime.rest('unban', { userid: payload.userid.trim() }); break;
       case 'force-stop':
         await this.requireRunning();
         await this.runtime.forceStop();
@@ -376,6 +379,13 @@ export class Manager {
       if (moved) await rm(previous, { recursive: true });
     } finally { await rm(stage, { recursive: true, force: true }); }
     if (running) await this.runtime.start();
+  }
+  async bannedPlayers() {
+    const value = await readBanList(this.runtime.saved);
+    return { ...value, players: value.players.map(player => {
+      const task = this.tasks.find(task => task.action === 'ban' && task.state === 'succeeded' && task.player?.userId === player.userId);
+      return { ...player, ...(task?.player || {}) };
+    }) };
   }
   async status() {
     const installed = await this.runtime.installed();

@@ -55,6 +55,7 @@ export function createManagementApi(manager, options = {}) {
         if (request.method === 'PUT') { const input = await body(request); json(200, await manager.store.update(input.workspace, input.revision)); return; }
       }
       if (pathname === '/api/status' && request.method === 'GET') { json(200, await manager.status()); return; }
+      if (pathname === '/api/banned-players' && request.method === 'GET') { json(200, await manager.bannedPlayers()); return; }
       if (pathname === '/api/update-check' && request.method === 'GET') { json(200, await manager.updateInfo()); return; }
       if (pathname === '/api/tasks' && request.method === 'POST') {
         const input = await body(request, 8192);

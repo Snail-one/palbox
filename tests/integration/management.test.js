@@ -100,6 +100,8 @@ test('启动参数通过设置接口保存，并在启动和重启时生效', { 
 
 test('玩家封禁、踢人理由、强制停止与更新检查', { skip: process.platform !== 'linux' }, async t => {
   const f = await managementFixture(); t.after(() => f.close()); await f.login();
+  assert.equal((await f.request('/api/banned-players', { authenticated: false })).status, 401);
+  assert.deepEqual(await (await f.request('/api/banned-players')).json(), { players: [], skipped: 0 });
   assert.equal((await f.task('install')).state, 'succeeded');
   assert.equal((await f.task('start')).state, 'succeeded');
   const calls = [];
@@ -107,16 +109,28 @@ test('玩家封禁、踢人理由、强制停止与更新检查', { skip: proces
   f.runtime.rest = async (endpoint, body) => { calls.push({ endpoint, body }); return rest(endpoint, body); };
   assert.equal((await f.task('kick', { userid: 'steam_test', message: '刷屏' })).state, 'succeeded');
   assert.deepEqual(calls.at(-1), { endpoint: 'kick', body: { userid: 'steam_test', message: '刷屏' } });
-  assert.equal((await f.task('ban', { userid: 'steam_test', message: '作弊' })).state, 'succeeded');
+  assert.equal((await f.task('ban', { userid: 'steam_test', name: '测试玩家', message: '作弊' })).state, 'succeeded');
   assert.deepEqual(calls.at(-1), { endpoint: 'ban', body: { userid: 'steam_test', message: '作弊' } });
+  let banned = await (await f.request('/api/banned-players')).json();
+  assert.equal(banned.players[0].userId, 'steam_test');
+  assert.equal(banned.players[0].name, '测试玩家');
+  assert.equal(banned.players[0].reason, '作弊');
+  assert.ok(banned.players[0].bannedAt);
+  assert.equal(JSON.parse(await readFile(f.manager.tasksFile, 'utf8'))[0].player.name, '测试玩家');
+  assert.equal((await f.task('ban', { userid: 'steam_rejected' })).state, 'failed');
+  assert.equal((await (await f.request('/api/banned-players')).json()).players.length, 1);
   assert.equal((await f.task('unban', { userid: 'steam_test' })).state, 'succeeded');
   assert.deepEqual(calls.at(-1), { endpoint: 'unban', body: { userid: 'steam_test' } });
+  assert.equal((await (await f.request('/api/banned-players')).json()).players.length, 0);
+  await writeFile(path.join(f.runtime.saved, 'SaveGames/banlist.txt'), 'ps5_external\n');
   assert.equal((await f.task('kick', { userid: 'steam_test' })).state, 'succeeded');
   assert.deepEqual(calls.at(-1).body, { userid: 'steam_test', message: '管理员已将你移出服务器' });
   assert.equal((await f.task('ban', { userid: '', message: 'x' })).state, 'failed');
   assert.equal((await f.task('kick', { userid: 'steam_test', message: 'x'.repeat(501) })).state, 'failed');
   assert.equal((await f.task('force-stop')).state, 'succeeded');
   assert.equal(f.runtime.game, null);
+  banned = await (await f.request('/api/banned-players')).json();
+  assert.deepEqual(banned.players, [{ userId: 'ps5_external' }], '停服仍可查看游戏外已有的封禁');
   await mkdir(path.join(f.runtime.server, 'steamapps'), { recursive: true });
   await writeFile(path.join(f.runtime.server, 'steamapps/appmanifest_2394010.acf'), '"buildid" "100"\n');
   assert.equal(await f.manager.installedBuild(), '100');
