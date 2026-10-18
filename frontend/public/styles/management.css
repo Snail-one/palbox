@@ -30,7 +30,8 @@
 .topbar:has(#configuration-actions:not([hidden])) .topbar-session { border-left: 1px solid var(--line); padding-left: 12px; }
 .server-heading-actions { flex-shrink: 0; }
 .server-primary-actions { display: contents; }
-.server-primary-actions [data-action="force-stop"] { color: var(--red); }
+.server-primary-actions :is([data-action="stop"], [data-action="restart"]) { background: var(--red); border-color: var(--red); color: #fff; }
+.server-primary-actions :is([data-action="stop"], [data-action="restart"]):not(:disabled):hover { background: #a43c35; border-color: #a43c35; }
 .server-primary-actions #game-state, .server-primary-actions [data-action="update"], .server-primary-actions #show-running-config { margin-inline-start: 16px; }
 .game-service-toolbar :is(.server-heading-actions, [data-action="force-stop"], [data-action="update"]) { position: relative; }
 .game-service-toolbar :is(.server-heading-actions, [data-action="force-stop"], [data-action="update"])::after { content: ''; position: absolute; inset-inline-end: calc((var(--service-gap) + 16px) / -2 - 1px); top: 50%; transform: translateY(-50%); width: 1px; height: 16px; background: #ded6ce; pointer-events: none; }
