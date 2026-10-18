@@ -25,7 +25,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     <div class="server-controls">
       <div class="management-actions server-primary-actions">
         <button class="button primary" data-action="install" hidden>安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop" hidden>停止</button><button class="button secondary" data-action="restart" hidden>重启</button>
-        <button class="button secondary" data-action="update" title="更新前会自动备份，运行中的游戏服务将短暂停服。">更新服务端</button><button class="button secondary" id="edit-game-args" disabled>启动参数</button><button class="button secondary" id="edit-install-args" disabled>安装参数</button><button class="button secondary" id="edit-shutdown-wait" disabled>关服倒计时</button><button class="button secondary" data-action="force-stop" title="仅在正常停止无效时使用，可能丢失最近一次未保存的进度。">强制停止</button>
+        <button class="button secondary" data-action="update" title="更新前会自动备份，运行中的游戏服务将短暂停服。">更新服务端</button><button class="button secondary" data-action="force-stop" title="仅在正常停止无效时使用，可能丢失最近一次未保存的进度。">强制停止</button><button class="button secondary" id="edit-game-args" disabled>启动参数</button><button class="button secondary" id="edit-install-args" disabled>安装参数</button><button class="button secondary" id="edit-shutdown-wait" disabled>关服倒计时</button>
       </div>
     </div>
     <dl class="management-metrics" aria-label="服务器运行信息">
