@@ -11,7 +11,7 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
   });
   $('copy-profile').addEventListener('click', async () => {
     if (!ready()) return;
-    const name = await ask({ title: '复制这套配置', description: '副本包含当前编辑中的所有有效参数；原配置保留上一次保存的内容。', name: workspace.active.name + ' · 副本', confirm: '复制配置', symbol: 'copy' });
+    const name = await ask({ title: '复制这套配置', description: '副本包含当前所有有效参数，并将这些参数作为自己的恢复基准；后续编辑与原配置相互独立。', name: workspace.active.name + ' · 副本', confirm: '复制配置', symbol: 'copy' });
     if (name) actions.duplicate(name);
   });
   $('delete-profile').addEventListener('click', async () => {

@@ -1,10 +1,16 @@
 import template from './template.js';
 import { fields, groups, validate } from './schema.js';
 import { parse } from './config.js';
+import { padDecimal } from './number-format.js';
 
 export function createCatalog({ source = template, metadata = fields, categories = groups, validateField = validate } = {}) {
   const recognized = Object.create(null);
-  const templateKeys = new Set(parse(source).entries.map(entry => entry.key));
+  const templateEntries = parse(source).entries;
+  const templateKeys = new Set(templateEntries.map(entry => entry.key));
+  const decimalPlaces = new Map(templateEntries.flatMap(({ key, raw }) => {
+    const fraction = /^[+-]?\d+\.(\d+)$/.exec(raw)?.[1];
+    return fraction ? [[key, fraction.length]] : [];
+  }));
   for (const [key, field] of Object.entries(metadata)) {
     const eligible = field.verification?.status === 'verified' || (field.verification?.status === 'community' && templateKeys.has(key));
     if (eligible && field.verification.source && field.label?.trim() && field.description?.trim()) {
@@ -16,6 +22,12 @@ export function createCatalog({ source = template, metadata = fields, categories
     fields: recognized,
     groups: categories,
     validate: (key, raw) => Object.hasOwn(recognized, key) ? validateField(key, raw) : null,
+    formatOutput(key, raw) {
+      const field = recognized[key];
+      const places = decimalPlaces.get(key);
+      if (field?.type !== 'number' || field.integer || !places || validateField(key, raw)) return raw;
+      return padDecimal(raw, places);
+    },
     isUnknown: entry => !Object.hasOwn(recognized, entry.key),
     isCommunity: entry => recognized[entry.key]?.verification.status === 'community',
     summarize(entries) {

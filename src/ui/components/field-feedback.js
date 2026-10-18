@@ -14,6 +14,16 @@ export function createFieldFeedback({ dom, editor, onChanged }) {
     onChanged();
   }
   return {
+    formatOnBlur(key, control, errorNode) {
+      control.addEventListener('blur', () => {
+        if (editor.error(key)) return;
+        const formatted = editor.outputRaw(key);
+        if (control.value === formatted) return;
+        control.value = formatted;
+        editor.update(key, formatted);
+        show(key, control, errorNode);
+      });
+    },
     updateValue(key, raw, control, errorNode) {
       editor.update(key, raw, control.value);
       show(key, control, errorNode);

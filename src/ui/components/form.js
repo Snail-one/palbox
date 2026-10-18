@@ -7,7 +7,7 @@ export function createFormView({ dom, editor, catalog, view, onCategory, onChang
   const raw = key => editor.raw(key);
   const isModified = key => editor.isModified(key);
   const matches = entry => catalog.matches(entry, view.search);
-  const { updateValue, rejectValue } = createFieldFeedback({ dom, editor, onChanged });
+  const { updateValue, rejectValue, formatOnBlur } = createFieldFeedback({ dom, editor, onChanged });
   function renderCategories() {
     empty($('category-nav'));
     for (const group of catalog.groups) {
@@ -102,13 +102,14 @@ export function createFormView({ dom, editor, catalog, view, onCategory, onChang
           control.type = f.secret ? 'password' : 'text';
           control.autocomplete = 'off';
           if (f.type === 'number') control.inputMode = f.integer ? 'numeric' : 'decimal';
-          control.value = editor.draft(entry.key) !== undefined ? editor.draft(entry.key) : f.type === 'text' ? config.decodeString(value) : value;
+          control.value = editor.draft(entry.key) !== undefined ? editor.draft(entry.key) : f.type === 'text' ? config.decodeString(value) : editor.outputRaw(entry.key);
           control.addEventListener('input', () => {
             let next;
             try { next = f.type === 'text' ? config.encodeString(control.value) : control.value.trim(); }
             catch (error) { rejectValue(entry.key, error.message, control, errorNode); return; }
             updateValue(entry.key, next, control, errorNode);
           });
+          if (f.type === 'number') formatOnBlur(entry.key, control, errorNode);
           wrap.append(control);
           if (f.unit) wrap.append(el('span', 'input-unit', f.unit));
           if (f.secret) {

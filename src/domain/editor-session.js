@@ -3,6 +3,7 @@ import { parse, serialize, validateRaw } from './config.js';
 /** Config editing state. No DOM, browser storage or UI navigation dependencies. */
 export class EditorSession {
   #validate;
+  #formatOutput;
   #doc;
   #baseline;
   #changes = new Map();
@@ -10,8 +11,9 @@ export class EditorSession {
   #drafts = new Map();
   #sourceDraft = null;
 
-  constructor(source, { validate = () => null } = {}) {
+  constructor(source, { validate = () => null, formatOutput = (key, raw) => raw } = {}) {
     this.#validate = validate;
+    this.#formatOutput = formatOutput;
     this.reset(source);
   }
 
@@ -35,10 +37,14 @@ export class EditorSession {
   }
 
   raw(key) { return this.#changes.has(key) ? this.#changes.get(key) : this.entries.find(entry => entry.key === key)?.raw; }
+  outputRaw(key) { return this.#formatOutput(key, this.raw(key)); }
   error(key) { return this.#errors.get(key) || ''; }
   draft(key) { return this.#drafts.get(key); }
   source() { return serialize(this.#doc, this.#changes); }
-  toIni() { return serialize(this.#doc, this.#changes, { download: true }); }
+  toIni() {
+    const output = new Map(this.entries.map(({ key }) => [key, this.outputRaw(key)]));
+    return serialize(this.#doc, output, { download: true });
+  }
   isModified(key) { return this.#baseline.entries.find(entry => entry.key === key)?.raw !== this.raw(key); }
 
   changedKeys() {

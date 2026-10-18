@@ -135,3 +135,39 @@
   padding-left: 51px;
   margin-top: -6px;
 }
+
+.save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border: 1px solid #b8ddc8;
+  border-radius: 5px;
+  background: #eef8f2;
+  color: #23663e;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.save-status::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.save-status[data-state='pending'] {
+  border-color: #ebd5a0;
+  background: #fff8e8;
+  color: #805914;
+}
+
+.save-status[data-state='error'] {
+  border-color: #edc0bc;
+  background: #fdf0ef;
+  color: #a43c35;
+}

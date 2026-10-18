@@ -3,11 +3,11 @@ import { createParameterEvidence } from './parameter-evidence.js';
 
 export function createParameterView({ dom, editor, catalog, view, onChanged }) {
   const { $, el, icon, empty } = dom;
-  const raw = key => editor.raw(key);
+  const raw = key => editor.outputRaw(key);
   const isModified = key => editor.isModified(key);
   const isUnknown = entry => catalog.isUnknown(entry);
   const matches = entry => catalog.matches(entry, view.search);
-  const { updateValue } = createFieldFeedback({ dom, editor, onChanged });
+  const { updateValue, formatOnBlur } = createFieldFeedback({ dom, editor, onChanged });
   function renderTable() {
     empty($('parameter-rows'));
     const unknownCount = editor.entries.filter(isUnknown).length;
@@ -43,6 +43,7 @@ export function createParameterView({ dom, editor, catalog, view, onChanged }) {
       input.setAttribute('aria-describedby', errorNode.id);
       input.setAttribute('aria-invalid', String(Boolean(editor.error(entry.key))));
       input.addEventListener('input', () => updateValue(entry.key, input.value.trim(), input, errorNode));
+      if (field?.type === 'number') formatOnBlur(entry.key, input, errorNode);
       wrap.append(input);
       if (secret) {
         const reveal = el('button', 'icon-button reveal-button'); reveal.setAttribute('aria-label', `显示 ${entry.key}`); reveal.setAttribute('aria-pressed', 'false'); reveal.append(icon('eye'));

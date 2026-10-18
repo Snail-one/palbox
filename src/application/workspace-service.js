@@ -19,7 +19,10 @@ export class WorkspaceService {
       this.#workspace = repository.load();
       if (this.#workspace) {
         validateWorkspace(this.#workspace);
-        this.profiles.forEach(profile => parse(profile.source));
+        this.profiles.forEach(profile => {
+          parse(profile.source);
+          if (profile.initialSource !== undefined) parse(profile.initialSource);
+        });
       }
     } catch (error) {
       this.#workspace = null;
@@ -35,6 +38,7 @@ export class WorkspaceService {
 
   get profiles() { return this.#workspace.profiles; }
   get active() { return this.profiles.find(profile => profile.id === this.#workspace.activeId); }
+  get initialSource() { return this.active.initialSource ?? this.active.source; }
   get persisted() { return this.#persisted; }
   get message() { return this.#message; }
   #profile(name, source) { return createProfile(name, source, this.#identity); }
@@ -79,6 +83,8 @@ export class WorkspaceService {
 
   saveSource(source) {
     parse(source);
+    // Capture legacy profiles before their first edit; later saves keep this baseline.
+    this.active.initialSource ??= this.active.source;
     const previous = { ...this.active };
     this.active.source = source;
     this.active.updatedAt = this.#identity.now?.() ?? new Date().toISOString();

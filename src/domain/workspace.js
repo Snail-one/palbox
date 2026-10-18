@@ -6,7 +6,7 @@ export function validateWorkspace(workspace) {
   }
   const ids = new Set();
   for (const profile of workspace.profiles) {
-    if (!profile || typeof profile.id !== 'string' || !profile.id || ids.has(profile.id) || typeof profile.name !== 'string' || !profile.name.trim() || typeof profile.source !== 'string') {
+    if (!profile || typeof profile.id !== 'string' || !profile.id || ids.has(profile.id) || typeof profile.name !== 'string' || !profile.name.trim() || typeof profile.source !== 'string' || (profile.initialSource !== undefined && typeof profile.initialSource !== 'string')) {
       throw new Error('本地配置记录不完整。原始数据已保留，未覆盖。');
     }
     ids.add(profile.id);
@@ -20,6 +20,7 @@ export function createProfile(name, source, { id, now } = {}) {
     id: id?.() ?? globalThis.crypto.randomUUID(),
     name,
     source,
+    initialSource: source,
     updatedAt: now?.() ?? new Date().toISOString()
   };
 }

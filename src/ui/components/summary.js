@@ -14,11 +14,17 @@ export function createSummary({ dom, editor, workspace, catalog, isDirty }) {
       $('unknown-summary').setAttribute('aria-label', `查看和编辑 ${unknownCount} 项未识别参数`);
       $('player-count').textContent = editor.raw('ServerPlayerMaxNum') ?? '—';
       $('change-count').textContent = editor.changedKeys().length;
-      let message = isDirty() ? '有更改尚未保存' : '所有更改已保存';
-      if (editor.sourceDraft !== null) message = '源码待应用';
-      if (editor.errorCount) message = `${editor.errorCount} 项输入需要修正`;
-      if (!workspace.persisted) message = '更改尚未存入浏览器';
-      $('change-caption').textContent = message;
+      let status = isDirty()
+        ? { state: 'pending', label: '未保存', detail: '当前修改尚未保存到浏览器。' }
+        : { state: 'saved', label: '已保存', detail: '所有有效修改已自动保存到当前浏览器。' };
+      if (editor.sourceDraft !== null) status = { state: 'pending', label: '待应用', detail: '源码修改尚未应用，应用成功后会自动保存。' };
+      if (editor.errorCount) status = { state: 'error', label: '输入有误', detail: `${editor.errorCount} 项输入需要修正，已保留上一次有效值。` };
+      if (!workspace.persisted) status = { state: 'error', label: '保存失败', detail: '自动保存失败，请复制配置备份。' };
+      const badge = $('change-caption');
+      if (badge.textContent !== status.label) badge.textContent = status.label;
+      badge.dataset.state = status.state;
+      badge.title = status.detail;
+      badge.setAttribute('aria-label', status.detail);
       $('profile-title').textContent = profile.name;
       $('profile-server').textContent = decodeString(editor.raw('ServerName') || 'PalWorldSettings.ini');
       $('profile-updated').textContent = savedTime(profile.updatedAt);

@@ -80,3 +80,47 @@ test('仓库实现和身份生成可独立替换，无浏览器 API 依赖', () 
   assert.throws(() => service.add('broken', 'OptionSettings=("'));
   assert.equal(service.profiles.length, 1);
 });
+
+test('输入基准跨连续保存与重新加载保留，复制配置使用独立基准', () => {
+  const { service, storage } = setup();
+  const input = '; 原始配置\r\n[/Script/Pal.PalGameWorldSettings]\r\nOptionSettings=(ExpRate=2,Future=(A=1,B="中文"))\r\n';
+  const imported = service.add('导入', input);
+  service.persist();
+  service.saveSource(input.replace('ExpRate=2', 'ExpRate=3'));
+  service.saveSource('OptionSettings=(ExpRate=4,New=5)');
+  assert.equal(service.initialSource, input);
+  const restored = new WorkspaceService({ repository: createRepository(() => storage), template });
+  assert.equal(restored.initialSource, input);
+  assert.equal(restored.saveSource(restored.initialSource), true);
+  assert.equal(restored.active.source, input);
+  assert.equal(restored.active.id, imported.id);
+  const copy = service.add('副本', 'OptionSettings=(ExpRate=4,New=5)');
+  assert.equal(service.initialSource, copy.source);
+  service.select(imported.id);
+  assert.equal(service.initialSource, input);
+});
+
+test('旧配置首次保存前捕获输入基准，保存失败与重试不会覆盖基准', () => {
+  const old = { version: 1, activeId: 'old', profiles: [{ id: 'old', name: '旧配置', source: 'OptionSettings=(ExpRate=2)', updatedAt: '2026-01-01' }] };
+  const { service, data, fail } = setup(old);
+  assert.equal(service.initialSource, old.profiles[0].source);
+  assert.equal(data.get(KEY), JSON.stringify(old));
+  service.saveSource('OptionSettings=(ExpRate=3)');
+  assert.equal(service.initialSource, old.profiles[0].source);
+  fail();
+  assert.equal(service.saveSource('OptionSettings=(ExpRate=4)'), false);
+  assert.equal(service.active.source, 'OptionSettings=(ExpRate=3)');
+  assert.equal(service.initialSource, old.profiles[0].source);
+  const loaded = new WorkspaceService({ repository: { load: () => JSON.parse(data.get(KEY)) }, template });
+  assert.equal(loaded.initialSource, old.profiles[0].source);
+});
+
+test('损坏的输入基准不能用于覆盖本地记录', () => {
+  for (const initialSource of [7, 'OptionSettings=(A="broken)']) {
+    const initial = { version: 1, activeId: 'bad', profiles: [{ id: 'bad', name: '损坏', source: template, initialSource }] };
+    const { service, data } = setup(initial);
+    assert.equal(service.persisted, false);
+    assert.throws(() => service.persist());
+    assert.equal(data.get(KEY), JSON.stringify(initial));
+  }
+});
