@@ -54,6 +54,19 @@ test('新建、复制、重命名、切换与删除通过工作空间服务完�
   assert.equal(service.active.source, template);
 });
 
+test('最多添加 10 套配置，拒绝超限时不改变选择与内容，删除后可添加', () => {
+  const { service } = setup();
+  while (service.profiles.length < 10) service.add(`配置 ${service.profiles.length}`, template, { select: false });
+  const before = structuredClone(service.profiles);
+  const activeId = service.active.id;
+  assert.throws(() => service.add('超限配置'), /最多保留 10 套配置/);
+  assert.deepEqual(service.profiles, before);
+  assert.equal(service.active.id, activeId);
+  service.remove(service.profiles.at(-1).id);
+  service.add('恢复添加', template, { select: false });
+  assert.equal(service.profiles.length, 10);
+});
+
 test('可更新任意配置的源码并保留输入基准', () => {
   const { service } = setup();
   const active = service.active;

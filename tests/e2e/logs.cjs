@@ -11,7 +11,7 @@ const assert = require('node:assert/strict');
   let browser;
   try {
     browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, timezoneId: 'Asia/Shanghai' });
     await context.addInitScript(() => {
       const Original = window.EventSource;
       window.logSources = [];
@@ -84,10 +84,23 @@ const assert = require('node:assert/strict');
     await waitLog('统一窗口中的实时面板任务');
     combined = await page.locator('#manager-logs').textContent();
     assert.match(combined, /\[安装更新\] 统一窗口中的实时安装更新/);
+    await page.locator('#nav-login-logs').click();
+    const loginRecords = page.locator('#login-log-content');
+    await loginRecords.locator('.login-log-badge.success').waitFor();
+    f.runtime.log('login', '登录失败（2001:db8:85a3:0000:0000:8a2e:0370:7334，用户名 "<img src=x onerror=alert(1)>"）\n登录尝试过于频繁（192.0.2.1）\n');
+    await loginRecords.locator('.login-log-badge.limited').waitFor();
+    assert.equal(await loginRecords.locator('.login-log-badge').first().textContent(), '登录尝试过于频繁');
+    assert.match(await page.locator('#login-log-status').textContent(), /本地时间（Asia\/Shanghai）/);
+    assert.equal(await loginRecords.locator('.login-log-badge.failure').count(), 1);
+    assert.match((await loginRecords.locator('.login-log-detail').allTextContents()).join('\n'), /<img src=x onerror=alert\(1\)>/);
+    assert.equal(await loginRecords.locator('img').count(), 0);
+    assert.equal(await loginRecords.evaluate(el => getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)');
     await page.setViewportSize({ width: 390, height: 844 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    assert.equal(await loginRecords.evaluate(el => el.scrollWidth <= el.clientWidth), true);
     assert.deepEqual(errors, []);
     console.log('PASS 自动跟随底部、保留历史滚动位置、离开页面关闭连接并在返回时恢复');
+    console.log('PASS 登录日志浅色列表、实时结果标记、用户名安全显示和手机布局');
   } finally {
     for (const resolve of pendingStatus) resolve(baseline);
     await browser?.close();

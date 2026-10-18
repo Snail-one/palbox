@@ -16,18 +16,18 @@
 .configuration-library-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .configuration-library-heading h2 { display: flex; align-items: center; gap: 10px; font-size: 16px; }
 .configuration-library-heading p { margin-top: 6px; font-size: 11px; }
-.configuration-library .profile-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; max-height: none; overflow: visible; }
-.configuration-library .profile-item { min-width: 0; min-height: 78px; border-color: var(--line); padding: 16px; flex-direction: column; align-items: stretch; gap: 12px; }
+.configuration-library .profile-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 340px)); gap: 12px; align-items: start; max-height: none; overflow: visible; }
+.configuration-library .profile-item { min-width: 0; min-height: 78px; border-color: var(--line); padding: 14px; flex-direction: column; align-items: stretch; gap: 10px; }
 .configuration-library .profile-item.selected { border-color: #f0d9c5; }
 .profile-select { display: flex; align-items: center; gap: 11px; width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; }
 .profile-select > .icon { width: 18px; flex-shrink: 0; color: var(--muted); }
 .profile-item.selected .profile-select > .icon { color: var(--accent); }
 .profile-select > .icon:last-child { width: 12px; }
-.profile-item-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 6px; border-top: 1px solid var(--line); padding-top: 12px; }
-.profile-item-actions .button { padding: 7px 10px; font-size: 10px; }
+.profile-item-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
+.profile-item-actions .button { padding: 6px 8px; gap: 5px; font-size: 10px; }
+.profile-item-actions .icon { width: 14px; height: 14px; }
 @media (max-width: 760px) {
   .configuration-library { padding: 16px; }
-  .configuration-library .profile-list { grid-template-columns: 1fr; }
   .configuration-library-heading { align-items: start; flex-wrap: wrap; }
 }
 

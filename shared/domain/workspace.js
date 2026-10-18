@@ -1,4 +1,5 @@
 export const WORKSPACE_VERSION = 1;
+export const MAX_PROFILES = 10;
 
 export const GAME_DEFAULT_PROFILE_ID = 'palbox-game-default';
 export const GAME_DEFAULT_PROFILE_NAME = '游戏默认配置';

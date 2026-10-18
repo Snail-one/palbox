@@ -1,4 +1,4 @@
-import { OFFICIAL_DEFAULT_ORIGIN } from '../../../shared/domain/workspace.js';
+import { OFFICIAL_DEFAULT_ORIGIN, MAX_PROFILES } from '../../../shared/domain/workspace.js';
 
 export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, isDirty, clipboard, notify, onSaveSource, actions }) {
   const { $, el, icon, empty } = dom;
@@ -7,6 +7,12 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
   const sourceDescription = $('source-view-description');
   let editingProfile = null;
   let sourceReadOnly = false;
+  const limitMessage = `最多保留 ${MAX_PROFILES} 套配置（含游戏默认配置），请先删除不需要的配置。`;
+  function hasCapacity() {
+    if (workspace.profiles.length < MAX_PROFILES) return true;
+    notify(limitMessage, true);
+    return false;
+  }
   function closeSourceDialog() { sourceDialog.close(); }
   function openSourceDialog(profile = workspace.active) {
     const active = profile.id === workspace.active.id;
@@ -51,6 +57,7 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
     } finally { button.disabled = false; }
   });
   $('new-profile').addEventListener('click', async () => {
+    if (!hasCapacity()) return;
     if (!(await beforeLeave())) return;
     const name = await ask({ title: '创建一个新的世界', description: '读取游戏目录中的官方 DefaultPalWorldSettings.ini，创建一套独立配置。', name: '新的帕鲁世界', confirm: '创建配置', symbol: 'plus' });
     if (name) actions.create(name);
@@ -60,6 +67,7 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
     if (name && name !== profile.name) actions.rename(name, profile.id);
   }
   async function duplicate(profile, fromList = false) {
+    if (!hasCapacity()) return;
     if (profile.id === workspace.active.id && !ready()) return;
     const description = profile.locked && profile.source === profile.initialSource
       ? '副本读取当前官方默认配置并补入管理模式必需的 REST API 参数，作为自己的恢复基准；后续编辑与原条目相互独立。'
@@ -85,6 +93,12 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
     render() {
       empty($('profile-list'));
       $('profile-count').textContent = workspace.profiles.length;
+      const full = workspace.profiles.length >= MAX_PROFILES;
+      $('profile-count').title = `${workspace.profiles.length} / ${MAX_PROFILES} 套配置（含游戏默认配置）`;
+      for (const id of ['new-profile', 'copy-profile', 'import-button']) {
+        $(id).disabled = full;
+        $(id).title = full ? limitMessage : '';
+      }
       $('profile-origin').textContent = `来源：${workspace.active.origin || '已有配置'}`;
       $('profile-origin').title = workspace.active.origin || '已有配置';
       const activeLocked = workspace.active.locked === true;
@@ -131,6 +145,7 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
           const action = el('button', `button secondary${name === 'delete' ? ' danger-hover' : ''}`);
           action.type = 'button';
           action.dataset.profileAction = name;
+          if (name === 'duplicate' && full) { action.disabled = true; action.title = limitMessage; }
           action.append(icon(symbol), el('span', '', label));
           action.addEventListener('click', handler);
           tools.append(action);

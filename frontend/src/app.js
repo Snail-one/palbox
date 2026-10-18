@@ -125,7 +125,8 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
       } else {
         source = id === workspace.active.id ? editor.source() : sourceProfile.source;
       }
-      workspace.add(name, source, { select: !fromList, origin: `复制自「${sourceProfile.name}」` });
+      try { workspace.add(name, source, { select: !fromList, origin: `复制自「${sourceProfile.name}」` }); }
+      catch (error) { notifications.toast(error.message, true); return; }
       if (!fromList) { changedProfile('已创建独立副本'); return; }
       const success = persist();
       profiles.render();

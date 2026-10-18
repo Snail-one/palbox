@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { parse, serialize, encodeString, decodeString } from '../../shared/domain/config.js';
 import {
-  createProfile, createWorkspace, validateWorkspace,
+  createProfile, createWorkspace, validateWorkspace, MAX_PROFILES,
   GAME_DEFAULT_PROFILE_ID, GAME_DEFAULT_PROFILE_NAME, OFFICIAL_DEFAULT_ORIGIN, DERIVED_DEFAULT_ORIGIN
 } from '../../shared/domain/workspace.js';
 import { jsonWrite, readJson, failure } from './files.js';
@@ -25,10 +25,9 @@ function sourcePassword(source) {
   catch { return ''; }
 }
 
-export function validateConfigurationWorkspace(value) {
+export function validateConfigurationWorkspace(value, { maxProfiles = MAX_PROFILES } = {}) {
   try { validateWorkspace(value); } catch (error) { throw failure(error.message); }
-  // The server-owned default entry is additional to the user limit.
-  if (value.profiles.filter(profile => profile.locked !== true).length > 100) throw failure('最多保留 100 套配置。');
+  if (value.profiles.length > maxProfiles) throw failure(`最多保留 ${MAX_PROFILES} 套配置（含游戏默认配置），请先删除不需要的配置。`);
   for (const profile of value.profiles) {
     if (profile.source.length > 1024 * 1024 || (profile.initialSource?.length || 0) > 1024 * 1024 || profile.name.length > 100) throw failure('配置内容或名称过长。');
     try {
@@ -53,7 +52,8 @@ export class ManagementStore {
     const saved = await readJson(this.file, null);
     if (saved) {
       // Accept the original workspace shape for migration from a browser export.
-      this.workspace = validateConfigurationWorkspace(saved.workspace || saved);
+      // Existing libraries remain readable and can be reduced to the new limit.
+      this.workspace = validateConfigurationWorkspace(saved.workspace || saved, { maxProfiles: 101 });
       this.revision = saved.revision || 1;
       this.pendingDefault = saved.pendingDefault || null;
     } else {
@@ -201,7 +201,8 @@ export class ManagementStore {
   update(workspace, revision) {
     const operation = this.writes.then(async () => {
       if (revision !== this.revision) throw failure('配置已在其他页面修改，请刷新后再编辑。', 409);
-      validateConfigurationWorkspace(workspace);
+      const limits = { maxProfiles: Math.max(MAX_PROFILES, this.workspace.profiles.length) };
+      validateConfigurationWorkspace(workspace, limits);
       const candidate = structuredClone(workspace);
       const locked = this.workspace.profiles.find(profile => profile.locked === true);
       for (let index = 0; index < candidate.profiles.length; index++) {
@@ -222,7 +223,7 @@ export class ManagementStore {
         if (profile.origin === OFFICIAL_DEFAULT_ORIGIN) profile.origin = DERIVED_DEFAULT_ORIGIN;
       }
       if (locked && !candidate.profiles.some(profile => profile.id === locked.id)) candidate.profiles.push(structuredClone(locked));
-      validateConfigurationWorkspace(candidate);
+      validateConfigurationWorkspace(candidate, limits);
       const next = this.revision + 1;
       const pendingDefault = this.pendingDefault && candidate.profiles.some(profile => profile.id === this.pendingDefault.id && profile.source === this.pendingDefault.source) ? this.pendingDefault : null;
       await jsonWrite(this.file, { workspace: candidate, revision: next, ...(pendingDefault ? { pendingDefault } : {}) });

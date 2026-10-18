@@ -1,5 +1,5 @@
 import { parse } from '../../../shared/domain/config.js';
-import { createProfile, createWorkspace, validateWorkspace } from '../../../shared/domain/workspace.js';
+import { createProfile, createWorkspace, validateWorkspace, MAX_PROFILES } from '../../../shared/domain/workspace.js';
 
 /** Coordinates persistence through an injected { load, save } repository. */
 export class WorkspaceService {
@@ -63,6 +63,7 @@ export class WorkspaceService {
   }
 
   add(name, source = this.#template, { select = true, origin } = {}) {
+    if (this.profiles.length >= MAX_PROFILES) throw new Error(`最多保留 ${MAX_PROFILES} 套配置（含游戏默认配置），请先删除不需要的配置。`);
     parse(source);
     const profile = this.#profile(name, source, origin);
     this.profiles.push(profile);

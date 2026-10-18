@@ -36,7 +36,7 @@ const IDS = [
   'source-view-dialog', 'source-view-text', 'source-view-description', 'view-profile-source',
   'source-view-close', 'source-view-ok', 'source-view-copy', 'source-view-save', 'source-view-file', 'source-view-mode',
   'source-view-error', 'new-profile', 'rename-profile', 'copy-profile', 'delete-profile',
-  'profile-list', 'profile-count', 'profile-origin'
+  'profile-list', 'profile-count', 'profile-origin', 'import-button'
 ];
 
 function setup({ failSave = false } = {}) {
@@ -78,8 +78,24 @@ function setup({ failSave = false } = {}) {
     actions: {}
   });
   panel.render();
-  return { elements, rows: elements.get('profile-list').children, saves };
+  return { elements, rows: elements.get('profile-list').children, saves, workspace, panel };
 }
+
+test('达到 10 套配置后禁用新建、导入和副本，删除后恢复', () => {
+  const { elements, workspace, panel } = setup();
+  while (workspace.profiles.length < 10) workspace.profiles.push({ ...workspace.profiles[0], id: `extra-${workspace.profiles.length}` });
+  panel.render();
+  for (const id of ['new-profile', 'copy-profile', 'import-button']) {
+    assert.equal(elements.get(id).disabled, true);
+    assert.match(elements.get(id).title, /10 套配置/);
+  }
+  for (const row of elements.get('profile-list').children) {
+    assert.equal(row.children[1].children.find(button => button.dataset.profileAction === 'duplicate').disabled, true);
+  }
+  workspace.profiles.pop();
+  panel.render();
+  for (const id of ['new-profile', 'copy-profile', 'import-button']) assert.equal(elements.get(id).disabled, false);
+});
 
 test('点击配置名称弹出可编辑源码，保存调用回调并关闭弹窗', async () => {
   const { elements, rows, saves } = setup();

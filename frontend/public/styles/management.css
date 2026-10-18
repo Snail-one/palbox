@@ -104,8 +104,36 @@ main:has(#game-page:not([hidden])), main:has(#login-logs-page:not([hidden])) { d
 #game-overview:not([hidden]) { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 #game-logs, .login-logs-panel { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 300px; margin-bottom: 0; }
 #game-logs > .management-heading, #game-logs > #manager-log-status { flex: 0 0 auto; }
-#manager-logs, #login-log-content { flex: 1 1 auto; height: auto; min-height: 200px; max-height: max(220px, calc(100dvh - 520px)); min-width: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 14px; border-radius: 6px; background: #202124; color: #f4f4f5; font: 11px/1.7 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; margin: 10px 0 0; }
-#login-log-content { max-height: max(220px, calc(100dvh - 340px)); }
+#manager-logs { flex: 1 1 auto; height: auto; min-height: 200px; max-height: max(220px, calc(100dvh - 520px)); min-width: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 14px; border-radius: 6px; background: #202124; color: #f4f4f5; font: 11px/1.7 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; margin: 10px 0 0; }
+#login-log-content { flex: 1 1 auto; min-width: 0; min-height: 200px; max-height: max(220px, calc(100dvh - 340px)); overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; border-top: 1px solid var(--line); margin-top: 6px; }
+.login-log-table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 12px; line-height: 1.7; }
+.login-log-table th { position: sticky; top: 0; z-index: 1; background: #faf8f5; text-align: left; font-size: 11px; font-weight: 500; border-bottom: 1px solid var(--line); }
+.login-log-table th, .login-log-table td { padding: 13px 14px; overflow-wrap: anywhere; vertical-align: top; }
+.login-log-table th:first-child { width: 27%; }
+.login-log-table th:nth-child(2) { width: 20%; }
+.login-log-table th:nth-child(3) { width: 25%; }
+.login-log-table td { border-bottom: 1px solid var(--line); }
+.login-log-table tr:last-child td { border-bottom: 0; }
+.login-log-table tbody tr:hover { background: #fffcf8; }
+.login-log-time, .login-log-ip { font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; }
+.login-log-badge { display: inline-block; padding: 3px 9px; border-radius: 6px; background: #f0f1f3; font-size: 11px; }
+.login-log-badge.success { background: #edf6ef; color: #28633d; }
+.login-log-badge.failure { background: #fcefed; color: #a13c36; }
+.login-log-badge.limited { background: #fff3df; color: #8a570a; }
+.login-log-detail { white-space: pre-wrap; }
+.login-log-empty { padding: 64px 16px; text-align: center; font-size: 12px; }
+@media (max-width: 760px) {
+  .login-log-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .login-log-table, .login-log-table tbody { display: block; }
+  .login-log-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+  .login-log-table tr:last-child { border-bottom: 0; }
+  .login-log-table td { padding: 0; border: 0; }
+  .login-log-time { align-self: center; }
+  .login-log-result { text-align: right; }
+  .login-log-ip, .login-log-detail { grid-column: 1 / -1; }
+  .login-log-ip::before { content: '来源 IP：'; font-family: sans-serif; }
+  .login-log-detail::before { content: '详情：'; }
+}
 .log-heading { flex-wrap: wrap; }
 .log-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .log-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); white-space: nowrap; }
