@@ -125,7 +125,6 @@ Docker 部署的全部配置都在 `compose.yaml` 中，不再读取 `.env`。
 | `TZ`（可选） | 容器默认时区 | 需要指定时区时再在 `environment` 中添加，镜像已安装 `tzdata` |
 | `frontend.ports` | `127.0.0.1:8080:8080/tcp` | 网页绑定地址和宿主机端口 |
 | `frontend.environment.PALBOX_API_URL` | `http://palbox:8081` | 前端代理访问的后端地址 |
-| `palbox.expose` | `8081` | 后端 API，仅供容器内部网络访问 |
 | `palbox.ports` | `8211:8211/udp` | 游戏 UDP 端口映射 |
 | `volumes` | `./data:/data` | 宿主机数据目录 |
 

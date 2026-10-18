@@ -29,9 +29,6 @@ services:
     ports:
       # 修改 PALBOX_GAME_PORT 时，同时修改这里的 UDP 端口映射。
       - "8211:8211/udp"
-    expose:
-      # 后端管理 API 只在容器网络内开放。
-      - "8081"
     environment:
       # 首次打开网页时创建面板管理员，无需在此配置登录密码。
       PALBOX_GAME_PORT: "8211"

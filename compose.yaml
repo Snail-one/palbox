@@ -31,8 +31,6 @@ services:
     ports:
       # 游戏 UDP 端口：修改 PALBOX_GAME_PORT 时，这里的宿主机端口也要一起改。
       - "8211:8211/udp"
-    expose:
-      - "8081"
     environment:
       # 首次打开网页时创建管理员用户名和密码，无需在这里配置登录密码。
       PALBOX_GAME_PORT: "8211"
