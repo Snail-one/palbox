@@ -1,5 +1,5 @@
 # 从同一 Debian 系列的官方镜像取得 Node.js 22 运行时。
-FROM node:22-trixie-slim AS node-runtime
+FROM node:26-trixie-slim AS node-runtime
 
 # 固定 Debian 大版本，SteamCMD 和游戏文件在运行时安装。
 FROM debian:13-slim AS backend
