@@ -18,4 +18,4 @@ services:
       PALBOX_SECURE_COOKIE: "false"
     volumes:
       # 宿主机数据目录，存放服务端、存档、备份和日志。
-      - "/srv/palbox:/data"
+      - "./data:/data"
