@@ -1,6 +1,7 @@
 import * as config from '../../../../shared/domain/config.js';
 import { createFieldFeedback } from './field-feedback.js';
 import { createParameterEvidence } from './parameter-evidence.js';
+import { createAdminPasswordControl } from './admin-password.js';
 
 export function createFormView({ dom, editor, catalog, view, onCategory, onChanged }) {
   const { $, el, icon, empty, document } = dom;
@@ -122,7 +123,10 @@ export function createFormView({ dom, editor, catalog, view, onCategory, onChang
             wrap.append(reveal);
           }
         }
-        box.append(wrap, errorNode);
+        box.append(entry.key === 'AdminPassword' ? createAdminPasswordControl({ dom, input: control, wrap, onGenerate(password) {
+          control.value = password;
+          updateValue(entry.key, config.encodeString(password), control, errorNode);
+        } }) : wrap, errorNode);
       }
       control.id = `field-${entry.key}`;
       control.setAttribute('aria-describedby', `${descriptionId} ${errorNode.id}`);

@@ -1,5 +1,7 @@
 import { createFieldFeedback } from './field-feedback.js';
 import { createParameterEvidence } from './parameter-evidence.js';
+import { createAdminPasswordControl } from './admin-password.js';
+import { encodeString } from '../../../../shared/domain/config.js';
 
 export function createParameterView({ dom, editor, catalog, view, onChanged }) {
   const { $, el, icon, empty } = dom;
@@ -53,7 +55,11 @@ export function createParameterView({ dom, editor, catalog, view, onChanged }) {
         });
         wrap.append(reveal);
       }
-      cell.append(wrap, errorNode); row.append(name, cell); $('parameter-rows').append(row);
+      cell.append(entry.key === 'AdminPassword' ? createAdminPasswordControl({ dom, input, wrap, onGenerate(password) {
+        input.value = encodeString(password);
+        updateValue(entry.key, input.value, input, errorNode);
+      } }) : wrap, errorNode);
+      row.append(name, cell); $('parameter-rows').append(row);
     }
   }
   return { render: renderTable };

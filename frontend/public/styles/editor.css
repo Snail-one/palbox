@@ -237,6 +237,23 @@
   width: 14px;
 }
 
+.admin-password-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-password-controls .input-wrap {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.admin-password-controls > .button {
+  flex-shrink: 0;
+  padding: 8px 12px;
+}
+
 .field-error {
   font-size: 10px;
   margin-top: 5px;
