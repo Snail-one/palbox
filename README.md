@@ -31,10 +31,10 @@
 下载或克隆项目后，在项目根目录执行：
 
 ```sh
-npm start
+PALBOX_ADMIN_PASSWORD='你自己设置的至少12位密码' npm start
 ```
 
-打开 **<http://127.0.0.1:8080>**，按 `Ctrl+C` 停止服务。首次登录密码为 `local-debug-123456`，已有 `data/` 数据沿用原登录密码。
+打开 **<http://127.0.0.1:8080>**，使用自己设置的管理密码登录，按 `Ctrl+C` 停止服务。没有默认登录密码，首次启动必须通过 `PALBOX_ADMIN_PASSWORD` 或 `PALBOX_ADMIN_PASSWORD_FILE` 设置至少 12 位密码。已有 `data/` 数据沿用原登录密码，之后可直接执行 `npm start`，修改环境变量不会重置已有密码。
 
 默认仅监听本机。Linux / macOS 下可通过环境变量修改地址和端口：
 
@@ -91,10 +91,10 @@ docker compose logs -f palbox
 同时调试「游戏管理」和「配置管理」，可直接运行启动脚本：
 
 ```sh
-./dev.sh
+PALBOX_ADMIN_PASSWORD='你自己设置的至少12位密码' ./dev.sh
 ```
 
-也可执行 `npm run dev:managed`。脚本会查找 PATH、fnm 或 nvm 中的 Node.js 22 及以上版本，无需安装 npm 依赖即可启动。默认监听 `127.0.0.1:8080`，首次登录密码为 `local-debug-123456`，数据保存在项目的 `data/` 目录，默认不自动下载或启动游戏。已有数据沿用原登录密码。
+也可执行 `npm run dev:managed`。脚本会查找 PATH、fnm 或 nvm 中的 Node.js 22 及以上版本，无需安装 npm 依赖即可启动。默认监听 `127.0.0.1:8080`，首次启动需自行设置至少 12 位的管理密码，数据保存在项目的 `data/` 目录，默认不自动下载或启动游戏。已有数据沿用原登录密码，后续启动无需再次设置。
 
 可覆盖启动参数，例如：
 

@@ -30,17 +30,12 @@ fi
 export HOST="${HOST:-127.0.0.1}"
 export PORT="${PORT:-8080}"
 export PALBOX_DATA_DIR="${PALBOX_DATA_DIR:-$PWD/data}"
-export PALBOX_ADMIN_PASSWORD="${PALBOX_ADMIN_PASSWORD:-local-debug-123456}"
 export PALBOX_AUTO_INSTALL="${PALBOX_AUTO_INSTALL:-false}"
 export PALBOX_AUTO_START="${PALBOX_AUTO_START:-false}"
 
 echo "游戏管理：http://$HOST:$PORT/#game"
 echo "配置管理：http://$HOST:$PORT/#configuration"
-if [[ -n "${PALBOX_ADMIN_PASSWORD_FILE:-}" ]]; then
-  echo "首次登录密码读取自：$PALBOX_ADMIN_PASSWORD_FILE"
-else
-  echo "首次登录密码：$PALBOX_ADMIN_PASSWORD"
-fi
+echo '登录时使用首次初始化设置的管理密码。'
 echo "数据目录：$PALBOX_DATA_DIR（已有数据沿用原登录密码）"
 if [[ "$watch" == true ]]; then
   echo '后端修改自动重启，前端修改后刷新页面。按 Ctrl+C 停止。'

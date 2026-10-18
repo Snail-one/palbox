@@ -101,7 +101,7 @@ test('SteamCMD、进程、配置应用、备份恢复与故障状态真实联动
   assert.equal((await f.request('/api/status')).status, 200);
 });
 
-test('默认入口直接启动管理面板、可独立初始化并响应 SIGTERM，密码不以明文存盘', { skip: process.platform !== 'linux', timeout: 15000 }, async t => {
+test('启动脚本要求自设首次密码、重启沿用原密码，密码不以明文输出或存盘', { skip: process.platform !== 'linux', timeout: 15000 }, async t => {
   const { spawn } = await import('node:child_process');
   const { mkdtemp, rm, stat } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
@@ -112,23 +112,49 @@ test('默认入口直接启动管理面板、可独立初始化并响应 SIGTERM
   const probe = createServer(); probe.listen(0, '127.0.0.1'); await once(probe, 'listening');
   const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
   const password = 'index-test-password-123';
-  const child = spawn(process.execPath, [fileURLToPath(new URL('../../server/index.js', import.meta.url))], {
-    env: { ...process.env, HOST: '127.0.0.1', PORT: String(port), PALBOX_DATA_DIR: directory, PALBOX_ADMIN_PASSWORD: password, PALBOX_AUTO_INSTALL: 'false', PALBOX_AUTO_START: 'false' },
-    stdio: ['ignore', 'pipe', 'pipe']
-  });
-  let output = ''; child.stdout.on('data', data => { output += data; }); child.stderr.on('data', data => { output += data; });
+  const env = { ...process.env, PATH: path.dirname(process.execPath) + path.delimiter + process.env.PATH, HOST: '127.0.0.1', PORT: String(port), PALBOX_DATA_DIR: directory, PALBOX_AUTO_INSTALL: 'false', PALBOX_AUTO_START: 'false' };
+  delete env.PALBOX_ADMIN_PASSWORD;
+  delete env.PALBOX_ADMIN_PASSWORD_FILE;
+  const children = [];
   t.after(async () => {
-    if (child.exitCode === null && child.signalCode === null) { const done = once(child, 'exit'); child.kill('SIGKILL'); await done; }
+    for (const { child } of children) {
+      if (child.exitCode === null && child.signalCode === null) { const done = once(child, 'exit'); child.kill('SIGKILL'); await done; }
+    }
     await rm(directory, { recursive: true, force: true });
   });
-  const deadline = Date.now() + 5000;
-  while (!output.includes('已启动') && Date.now() < deadline && child.exitCode === null) await new Promise(resolve => setTimeout(resolve, 30));
-  assert.match(output, /已启动/);
+  function launch(overrides = {}) {
+    const child = spawn('bash', [fileURLToPath(new URL('../../dev.sh', import.meta.url)), '--no-watch'], {
+      env: { ...env, ...overrides }, stdio: ['ignore', 'pipe', 'pipe']
+    });
+    const run = { child, output: '', closed: once(child, 'close') };
+    child.stdout.on('data', data => { run.output += data; }); child.stderr.on('data', data => { run.output += data; });
+    children.push(run);
+    return run;
+  }
+  async function ready(run) {
+    const deadline = Date.now() + 5000;
+    while (!run.output.includes('已启动') && Date.now() < deadline && run.child.exitCode === null) await new Promise(resolve => setTimeout(resolve, 30));
+    assert.match(run.output, /已启动/);
+    assert.equal(run.output.includes(password), false);
+  }
+  const missing = launch();
+  assert.equal((await missing.closed)[0], 1);
+  assert.match(missing.output, /首次启动请设置至少 12 位的 PALBOX_ADMIN_PASSWORD/);
+  await assert.rejects(access(path.join(directory, 'palbox/settings.json')), { code: 'ENOENT' });
+  const initialized = launch({ PALBOX_ADMIN_PASSWORD: password });
+  await ready(initialized);
   assert.equal((await fetch(`http://127.0.0.1:${port}/healthz`)).status, 200);
   assert.equal((await (await fetch(`http://127.0.0.1:${port}/api/bootstrap`)).json()).mode, 'managed');
   const settings = await readFile(path.join(directory, 'palbox/settings.json'), 'utf8');
   assert.equal(settings.includes(password), false);
   assert.equal((await stat(path.join(directory, 'palbox/settings.json'))).mode & 0o777, 0o600);
-  const exited = once(child, 'exit'); child.kill('SIGTERM');
-  assert.equal((await exited)[0], 0);
+  initialized.child.kill('SIGTERM');
+  assert.equal((await initialized.closed)[0], 0);
+  const restarted = launch();
+  await ready(restarted);
+  const login = await fetch(`http://127.0.0.1:${port}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+  assert.equal(login.status, 200);
+  assert.equal(await readFile(path.join(directory, 'palbox/settings.json'), 'utf8'), settings);
+  restarted.child.kill('SIGTERM');
+  assert.equal((await restarted.closed)[0], 0);
 });

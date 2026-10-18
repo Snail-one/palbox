@@ -262,15 +262,6 @@ h1 {
   background: #fff;
 }
 
-.view-tab.active>.icon {
-  color: var(--accent);
-}
-
-.view-tab.active:after {
-  height: 3px;
-  background: var(--accent);
-}
-
 .search-box {
   background-color: var(--input-bg);
   border-color: #d5d7da;
@@ -518,8 +509,6 @@ legend,
 .summary-card:nth-child(3) strong,
 .summary-unit,
 .summary-caption,
-.view-tab,
-.view-tab.active,
 .category-button,
 .category-button:hover,
 .section-heading h3,

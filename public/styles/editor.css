@@ -15,38 +15,9 @@
   gap: 15px;
 }
 
-.view-tabs {
-  display: flex;
-  height: 100%;
-  gap: 25px;
-}
-
-.view-tab {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.editor-toolbar-title {
   font-size: 12px;
-  padding: 0 1px;
-  position: relative;
-  font-weight: 500;
-}
-
-.view-tab>.icon {
-  width: 15px;
-  height: 15px;
-}
-
-.view-tab.active {
   font-weight: 600;
-}
-
-.view-tab.active:after {
-  content: "";
-  position: absolute;
-  bottom: -1px;
-  left: 0;
-  right: 0;
-  border-radius: 2px;
 }
 
 .search-box {
