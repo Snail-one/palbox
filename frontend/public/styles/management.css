@@ -11,7 +11,7 @@
 .topbar .page-actions { align-items: center; justify-content: flex-end; }
 .topbar:has(#game-actions:not([hidden])) { height: auto; min-height: 73px; padding-top: 14px; padding-bottom: 14px; gap: 12px; }
 .game-topbar-actions { flex: 1 1 max-content; min-width: 0; }
-.game-service-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; min-width: 0; }
+.game-service-toolbar { --service-gap: 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px var(--service-gap); min-width: 0; }
 .game-service-toolbar h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; line-height: 1.5; white-space: nowrap; }
 .game-service-toolbar .button, .configuration-apply .button { min-height: 32px; padding: 6px 10px; }
 .topbar:has(#game-actions:not([hidden])) .topbar-session { margin: 0; }
@@ -31,7 +31,9 @@
 .server-heading-actions { flex-shrink: 0; }
 .server-primary-actions { display: contents; }
 .server-primary-actions [data-action="force-stop"] { color: var(--red); }
-.server-primary-actions #game-state, .server-primary-actions [data-action="update"] { margin-inline-start: 16px; }
+.server-primary-actions #game-state, .server-primary-actions [data-action="update"], .server-primary-actions #show-running-config { margin-inline-start: 16px; }
+.game-service-toolbar :is(.server-heading-actions, [data-action="force-stop"], [data-action="update"]) { position: relative; }
+.game-service-toolbar :is(.server-heading-actions, [data-action="force-stop"], [data-action="update"])::after { content: ''; position: absolute; inset-inline-end: calc((var(--service-gap) + 16px) / -2 - 1px); top: 50%; transform: translateY(-50%); width: 1px; height: 16px; background: #ded6ce; pointer-events: none; }
 .management-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; margin: 0; }
 .server-metric { min-width: 0; }
 .server-metric + .server-metric { padding-left: 16px; border-left: 1px solid var(--line); }
@@ -174,7 +176,7 @@ main:has(#game-page:not([hidden])), main:has(#login-logs-page:not([hidden])) { d
   .management-heading h2 { font-size: 15px; }
   .management-actions .button { flex: 1 0 40%; }
   .game-service-toolbar .server-heading-actions { width: auto; gap: 6px; }
-  .game-service-toolbar { gap: 6px; }
+  .game-service-toolbar { --service-gap: 6px; gap: 6px var(--service-gap); }
   .game-service-toolbar .server-primary-actions .button { flex: 1 1 auto; min-width: 80px; }
   .management-heading > .button { flex-shrink: 0; font-size: 10px; padding: 7px; }
 }
