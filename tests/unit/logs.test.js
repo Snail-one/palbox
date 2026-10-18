@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile, appendFile, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, appendFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { readableLog, readLogTail } from '../../backend/management/logs.js';
@@ -47,4 +47,46 @@ test('子进程 stdout 和 stderr 分别流式解码，跨数据块的中文和�
     assert.match(text, /独立错误流/);
     assert.doesNotMatch(text, /\ufffd/);
   }
+});
+
+test('全部日志按接收顺序合并来源，保留跨块文本并清理终端控制码', async t => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'palbox-combined-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const runtime = new Runtime(directory);
+  await runtime.initialize();
+  runtime.log('game', '\x1b[32m游戏中文🙂\x1b[0m\n');
+  runtime.log('steamcmd', '安装 10%\r安装 20%\n');
+  runtime.log('palbox', '任务完成\n');
+  runtime.log('game', '跨块');
+  runtime.log('palbox', '插入其他来源\n');
+  runtime.log('game', '消息\n');
+  const bytes = Buffer.from('分块中文🙂\n');
+  runtime.log('steamcmd', bytes.subarray(0, 1));
+  runtime.log('steamcmd', bytes.subarray(1));
+  const lines = (await runtime.logs('all')).trimEnd().split('\n').map(line => line.replace(/^\[[^\]]+\] /, ''));
+  assert.deepEqual(lines, ['[游戏] 游戏中文🙂', '[安装更新] 安装 20%', '[面板] 任务完成', '[游戏] 跨块消息', '[面板] 插入其他来源', '[安装更新] 分块中文🙂']);
+  assert.equal(await new Runtime(directory).logs('all'), await runtime.logs('all'), '重建 Runtime 后可读取已保存的统一日志');
+  assert.match(await readFile(path.join(directory, 'logs/game.log'), 'utf8'), /\x1b\[32m/);
+});
+
+test('统一日志首次保留原有历史且不重复导入，超长中文日志保持有界', async t => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'palbox-combined-history-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await mkdir(path.join(directory, 'logs'));
+  await writeFile(path.join(directory, 'logs/game.log'), '已有游戏日志\n');
+  await writeFile(path.join(directory, 'logs/palbox.log'), '已有面板日志\n');
+  const runtime = new Runtime(directory);
+  await runtime.initialize();
+  runtime.log('palbox', '新增日志\n');
+  await runtime.initialize();
+  const history = await runtime.logs('all');
+  assert.equal(history.split('已有游戏日志').length - 1, 1);
+  assert.match(history, /\[面板\] 已有面板日志/);
+  assert.match(history, /\[面板\] 新增日志/);
+  runtime.log('game', '中文🙂'.repeat(16000) + '最后一行\n');
+  const text = await runtime.logs('all');
+  assert.ok(Buffer.byteLength(text) <= 65536);
+  assert.match(text, /\[游戏\] /);
+  assert.match(text, /最后一行\n$/);
+  assert.doesNotMatch(text, /\ufffd/);
 });

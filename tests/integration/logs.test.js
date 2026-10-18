@@ -51,3 +51,47 @@ test('实时日志通过前端代理推送，兼容外部写入、轮换并在�
   await event('unauthorized');
   assert.equal((await reader.read()).done, true);
 });
+
+test('统一日志 API 和实时连接合并三个来源，并支持合并记录轮换', { timeout: 10000 }, async t => {
+  const f = await managementFixture();
+  t.after(() => f.close());
+  const { cookie } = await f.login();
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  const response = await fetch(f.base + '/api/logs/stream?channel=all', { headers: { Cookie: cookie }, signal: controller.signal });
+  assert.equal(response.status, 200);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffered = '';
+  async function snapshotIncluding(text) {
+    for (;;) {
+      let index;
+      while ((index = buffered.indexOf('\n\n')) !== -1) {
+        const frame = buffered.slice(0, index); buffered = buffered.slice(index + 2);
+        if (!frame.startsWith('event: log\n')) continue;
+        const snapshot = JSON.parse(frame.split('\ndata: ')[1]).text;
+        if (snapshot.includes(text)) return snapshot;
+      }
+      const { value, done } = await reader.read();
+      assert.equal(done, false);
+      buffered += decoder.decode(value, { stream: true });
+    }
+  }
+  f.runtime.log('game', '统一游戏消息\n');
+  f.runtime.log('steamcmd', '统一安装消息\n');
+  f.runtime.log('palbox', '统一面板消息\n');
+  const snapshot = await snapshotIncluding('统一面板消息');
+  assert.match(snapshot, /\[游戏\] 统一游戏消息/);
+  assert.match(snapshot, /\[安装更新\] 统一安装消息/);
+  assert.match(snapshot, /\[面板\] 统一面板消息/);
+  assert.ok(snapshot.indexOf('统一游戏消息') < snapshot.indexOf('统一安装消息'));
+  assert.ok(snapshot.indexOf('统一安装消息') < snapshot.indexOf('统一面板消息'));
+  assert.equal((await (await f.request('/api/logs?channel=all')).json()).text, snapshot);
+  const journal = path.join(f.directory, 'logs/combined.jsonl');
+  await rename(journal, journal + '.1');
+  await writeFile(journal, '');
+  f.runtime.log('palbox', '轮换后的合并日志\n');
+  const rotated = await snapshotIncluding('轮换后的合并日志');
+  assert.doesNotMatch(rotated, /统一游戏消息/);
+  assert.match(rotated, /\[面板\] 轮换后的合并日志/);
+});

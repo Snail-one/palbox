@@ -1,10 +1,11 @@
 import { spawn } from 'node:child_process';
 import { mkdir, readFile, access } from 'node:fs/promises';
-import { appendFileSync, existsSync, renameSync, statSync, constants } from 'node:fs';
+import { constants } from 'node:fs';
+import { StringDecoder } from 'node:string_decoder';
 import path from 'node:path';
 import { decodeString, parse } from '../../shared/domain/config.js';
 import { failure } from './files.js';
-import { readLogTail } from './logs.js';
+import { appendLog, appendCombinedLog, initializeCombinedLog, readCombinedLog, readLogTail } from './logs.js';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -27,13 +28,22 @@ export class Runtime {
     this.startedAt = null;
     this.lastExit = null;
     this.closing = false;
+    this.logDecoders = new Map();
   }
-  async initialize() { await mkdir(path.join(this.directory, 'logs'), { recursive: true, mode: 0o700 }); }
+  async initialize() {
+    await mkdir(path.join(this.directory, 'logs'), { recursive: true, mode: 0o700 });
+    await initializeCombinedLog(this.directory);
+  }
   log(channel, value) {
     const file = path.join(this.directory, 'logs', `${channel}.log`);
     try {
-      if (existsSync(file) && statSync(file).size > 5 * 1024 * 1024) renameSync(file, file + '.1');
-      appendFileSync(file, Buffer.isBuffer(value) ? value : String(value), { mode: 0o600 });
+      appendLog(file, Buffer.isBuffer(value) ? value : String(value));
+      let text = String(value);
+      if (Buffer.isBuffer(value)) {
+        if (!this.logDecoders.has(channel)) this.logDecoders.set(channel, new StringDecoder('utf8'));
+        text = this.logDecoders.get(channel).write(value);
+      }
+      appendCombinedLog(this.directory, channel, text);
       this.logError = null;
     } catch (error) {
       // A full or read-only log volume must not crash the process supervising a live world.
@@ -159,6 +169,7 @@ export class Runtime {
     if (this.game === child) throw failure('游戏进程尚未退出，请检查系统进程。', 504);
   }
   async logs(channel) {
+    if (channel === 'all') return readCombinedLog(this.directory);
     if (!['palbox', 'game', 'steamcmd'].includes(channel)) throw failure('日志类型不存在。', 404);
     return readLogTail(path.join(this.directory, 'logs', channel + '.log'));
   }

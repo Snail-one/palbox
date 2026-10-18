@@ -76,7 +76,7 @@ const path = require('node:path');
     assert.equal(await page.locator('#game-state').textContent(), '运行中');
     assert.equal(await page.locator('#game-version').textContent(), 'test-1.0');
     assert.equal(await page.locator('#game-players').textContent(), '1 / 32');
-    assert.equal(await page.locator('#manager-log-channel button').count(), 3);
+    assert.equal(await page.locator('#manager-log-channel button').count(), 4);
     assert.equal(await page.locator('#manager-log-channel select').count(), 0);
     await page.locator('[data-log-channel="steamcmd"]').click();
     await page.waitForFunction(() => document.getElementById('manager-logs').textContent.includes('SteamCMD simulated installation complete'));

@@ -27,7 +27,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   logs.id = 'game-logs';
   logs.className = 'management-panel';
   logs.setAttribute('aria-label', '运行日志');
-  logs.innerHTML = `<div class="management-heading log-heading"><h2>运行日志</h2><div class="segmented log-type-buttons" id="manager-log-channel" role="group" aria-label="日志类型"><button type="button" class="selected" data-log-channel="game" aria-pressed="true">游戏日志</button><button type="button" data-log-channel="steamcmd" aria-pressed="false">安装与更新</button><button type="button" data-log-channel="palbox" aria-pressed="false">面板日志</button></div></div><p id="manager-log-status" class="management-note" role="status">正在连接实时日志…</p><pre id="manager-logs" tabindex="0">正在读取日志…</pre>`;
+  logs.innerHTML = `<div class="management-heading log-heading"><h2>运行日志</h2><div class="segmented log-type-buttons" id="manager-log-channel" role="group" aria-label="日志类型"><button type="button" class="selected" data-log-channel="all" aria-pressed="true">全部日志</button><button type="button" data-log-channel="game" aria-pressed="false">游戏日志</button><button type="button" data-log-channel="steamcmd" aria-pressed="false">安装与更新</button><button type="button" data-log-channel="palbox" aria-pressed="false">面板日志</button></div></div><p id="manager-log-status" class="management-note" role="status">正在连接实时日志…</p><pre id="manager-logs" tabindex="0">正在读取日志…</pre>`;
   $('game-overview').append(logs);
   const history = document.createElement('section');
   history.className = 'management-panel';
@@ -74,7 +74,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   let settingsRequest = null;
   let settingsCache = null;
   let checkingUpdate = false;
-  let logChannel = 'game';
+  let logChannel = 'all';
   let logGeneration = 0;
   let closeLogs = null;
   let activeLogChannel = null;

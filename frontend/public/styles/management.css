@@ -69,7 +69,7 @@
 .login-card label { font-size: 12px; }
 .login-card input { min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 6px; }
 @media (max-width: 480px) {
-  .log-type-buttons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
+  .log-type-buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .log-type-buttons button { padding: 8px 6px; }
   .topbar-session { gap: 10px; }
   .save-management .management-heading > .management-actions { width: 100%; }
