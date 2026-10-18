@@ -628,7 +628,7 @@
   }
 
   .toast {
-    bottom: 16px;
+    top: calc(70px + env(safe-area-inset-top));
     min-width: 200px;
     text-align: center;
     font-size: 11px;

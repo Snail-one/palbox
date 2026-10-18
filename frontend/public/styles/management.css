@@ -84,8 +84,11 @@
 .save-backup-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); padding-top: 18px; margin-top: 20px; }
 #save-backup-summary, #manager-backups { font-size: 11px; }
 #manager-backups { margin-top: 12px; }
-#native-backups { margin-top: 12px; font-size: 11px; }
-#native-backups .backup-more { margin-top: 10px; }
+#native-backups { margin-top: 12px; font-size: 11px; scroll-margin-top: 90px; }
+.backup-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
+.backup-pagination .page-status { margin-right: 2px; color: var(--muted); }
+.backup-pagination .button { min-height: 26px; padding: 3px 9px; font-size: 10px; }
+.backup-pagination .button.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 #native-backup-summary { font-size: 11px; }
 #native-backup-note { overflow-wrap: anywhere; }
 .save-backup-plan > .management-heading { flex-wrap: wrap; }

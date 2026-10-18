@@ -14,7 +14,7 @@ function uptimeLabel(seconds) {
 
 export function createManagementPanel({ dom, api, ask, notify, getConfiguration, onDefaultsImported }) {
   const { $, document } = dom;
-  const NATIVE_BACKUP_PREVIEW = 10;
+  const NATIVE_BACKUP_PAGE_SIZE = 10;
   const section = document.createElement('section');
   section.className = 'management-panel';
   section.setAttribute('aria-label', '帕鲁服务管理');
@@ -95,7 +95,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   let bannedRenderKey = '';
   let logChannel = 'all';
   let showPollingLogs = false;
-  let showAllNativeBackups = false;
+  let nativeBackupPage = 0;
   let lastLogText = '';
   let logGeneration = 0;
   let closeLogs = null;
@@ -238,8 +238,10 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       $('native-backups').textContent = '暂无完整的官方备份。游戏生成备份后会自动显示；正在写入或已轮换的备份可能暂不可用。';
       return;
     }
-    const visible = showAllNativeBackups ? value.backups : value.backups.slice(0, NATIVE_BACKUP_PREVIEW);
-    for (const backup of visible) {
+    const pageCount = Math.max(1, Math.ceil(value.backups.length / NATIVE_BACKUP_PAGE_SIZE));
+    nativeBackupPage = Math.min(nativeBackupPage, pageCount - 1);
+    const start = nativeBackupPage * NATIVE_BACKUP_PAGE_SIZE;
+    for (const backup of value.backups.slice(start, start + NATIVE_BACKUP_PAGE_SIZE)) {
       const row = document.createElement('div'); row.className = 'backup-row';
       const label = document.createElement('span');
       label.textContent = `${backup.timestamp} · 世界 ${backup.worldId} · ${formatBytes(backup.bytes)}`;
@@ -250,18 +252,41 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       restore.addEventListener('click', () => action('restore-native', { id: backup.id }));
       row.append(label, download, restore); $('native-backups').append(row);
     }
-    if (value.backups.length > NATIVE_BACKUP_PREVIEW) {
-      const more = document.createElement('button');
-      more.type = 'button'; more.className = 'button secondary backup-more';
-      more.setAttribute('aria-expanded', String(showAllNativeBackups));
-      more.textContent = showAllNativeBackups
-        ? `收起，仅显示最近 ${NATIVE_BACKUP_PREVIEW} 份`
-        : `显示全部 ${value.backups.length} 份`;
-      more.addEventListener('click', async () => {
-        showAllNativeBackups = !showAllNativeBackups;
-        try { await loadNativeBackups(); } catch (caught) { error(caught.message); }
-      });
-      $('native-backups').append(more);
+    if (pageCount > 1) {
+      const pagination = document.createElement('div');
+      pagination.className = 'backup-pagination';
+      pagination.setAttribute('role', 'navigation');
+      pagination.setAttribute('aria-label', '官方备份分页');
+      const status = document.createElement('span');
+      status.className = 'page-status';
+      status.textContent = `第 ${nativeBackupPage + 1} / ${pageCount} 页`;
+      pagination.append(status);
+      async function changePage(next) {
+        if (next === nativeBackupPage) return;
+        nativeBackupPage = next;
+        try {
+          await loadNativeBackups();
+          $('native-backups').scrollIntoView({ block: 'start', behavior: 'smooth' });
+        } catch (caught) { error(caught.message); }
+      }
+      function navButton(label, target, disabled = false) {
+        const button = document.createElement('button');
+        button.type = 'button'; button.className = 'button secondary';
+        button.textContent = label;
+        button.disabled = disabled;
+        button.addEventListener('click', () => changePage(target));
+        return button;
+      }
+      pagination.append(navButton('上一页', nativeBackupPage - 1, nativeBackupPage === 0));
+      for (let index = 0; index < pageCount; index++) {
+        const button = navButton(String(index + 1), index);
+        button.classList.toggle('active', index === nativeBackupPage);
+        button.setAttribute('aria-label', `官方备份第 ${index + 1} 页`);
+        if (index === nativeBackupPage) button.setAttribute('aria-current', 'page');
+        pagination.append(button);
+      }
+      pagination.append(navButton('下一页', nativeBackupPage + 1, nativeBackupPage === pageCount - 1));
+      $('native-backups').append(pagination);
     }
   }
   function renderLogs(text) {
