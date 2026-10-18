@@ -14,6 +14,7 @@ function uptimeLabel(seconds) {
 
 export function createManagementPanel({ dom, api, ask, notify, getConfiguration, onDefaultsImported }) {
   const { $, document } = dom;
+  const NATIVE_BACKUP_PREVIEW = 10;
   const section = document.createElement('section');
   section.className = 'management-panel';
   section.setAttribute('aria-label', '帕鲁服务管理');
@@ -94,6 +95,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   let bannedRenderKey = '';
   let logChannel = 'all';
   let showPollingLogs = false;
+  let showAllNativeBackups = false;
   let lastLogText = '';
   let logGeneration = 0;
   let closeLogs = null;
@@ -204,8 +206,12 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     $('native-backup-summary').textContent = `${value.backups.length} 份 · ${formatBytes(nativeBytes)}`;
     $('native-backup-summary').title = `${nativeBytes} 字节`;
     $('native-backups').replaceChildren();
-    if (!value.backups.length) $('native-backups').textContent = '暂无完整的官方备份。游戏生成备份后会自动显示；正在写入或已轮换的备份可能暂不可用。';
-    for (const backup of value.backups) {
+    if (!value.backups.length) {
+      $('native-backups').textContent = '暂无完整的官方备份。游戏生成备份后会自动显示；正在写入或已轮换的备份可能暂不可用。';
+      return;
+    }
+    const visible = showAllNativeBackups ? value.backups : value.backups.slice(0, NATIVE_BACKUP_PREVIEW);
+    for (const backup of visible) {
       const row = document.createElement('div'); row.className = 'backup-row';
       const label = document.createElement('span');
       label.textContent = `${backup.timestamp} · 世界 ${backup.worldId} · ${formatBytes(backup.bytes)}`;
@@ -215,6 +221,19 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       if (!backup.canRestore) restore.title = '只能恢复已确认的当前世界备份';
       restore.addEventListener('click', () => action('restore-native', { id: backup.id }));
       row.append(label, download, restore); $('native-backups').append(row);
+    }
+    if (value.backups.length > NATIVE_BACKUP_PREVIEW) {
+      const more = document.createElement('button');
+      more.type = 'button'; more.className = 'button secondary backup-more';
+      more.setAttribute('aria-expanded', String(showAllNativeBackups));
+      more.textContent = showAllNativeBackups
+        ? `收起，仅显示最近 ${NATIVE_BACKUP_PREVIEW} 份`
+        : `显示全部 ${value.backups.length} 份`;
+      more.addEventListener('click', async () => {
+        showAllNativeBackups = !showAllNativeBackups;
+        try { await loadNativeBackups(); } catch (caught) { error(caught.message); }
+      });
+      $('native-backups').append(more);
     }
   }
   function renderLogs(text) {
