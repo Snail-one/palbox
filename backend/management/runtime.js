@@ -4,6 +4,7 @@ import { appendFileSync, existsSync, renameSync, statSync, constants } from 'nod
 import path from 'node:path';
 import { decodeString, parse } from '../../shared/domain/config.js';
 import { failure } from './files.js';
+import { readLogTail } from './logs.js';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -32,7 +33,7 @@ export class Runtime {
     const file = path.join(this.directory, 'logs', `${channel}.log`);
     try {
       if (existsSync(file) && statSync(file).size > 5 * 1024 * 1024) renameSync(file, file + '.1');
-      appendFileSync(file, String(value), { mode: 0o600 });
+      appendFileSync(file, Buffer.isBuffer(value) ? value : String(value), { mode: 0o600 });
       this.logError = null;
     } catch (error) {
       // A full or read-only log volume must not crash the process supervising a live world.
@@ -56,6 +57,8 @@ export class Runtime {
     return new Promise((resolve, reject) => {
       const child = spawn(command, args, { shell: false, detached: true, env: this.childEnvironment(), stdio: ['ignore', 'pipe', 'pipe'], ...options });
       this.command = child;
+      child.stdout.setEncoding('utf8');
+      child.stderr.setEncoding('utf8');
       let output = '';
       const collect = data => { output = (output + data.toString()).slice(-captureLimit); this.log(channel, data); };
       child.stdout.on('data', collect); child.stderr.on('data', collect);
@@ -104,6 +107,8 @@ export class Runtime {
     if (values.get('RESTAPIEnabled') !== 'True' || !decodeString(values.get('AdminPassword') || '""')) throw failure('启动管理模式需要启用 REST API 并设置管理员密码，请先应用配置。', 409);
     const child = spawn('/bin/bash', [path.join(this.server, 'PalServer.sh'), `-port=${this.port}`, ...this.args], { cwd: this.server, shell: false, detached: true, env: this.childEnvironment(), stdio: ['ignore', 'pipe', 'pipe'] });
     this.game = child; this.ready = false; this.runningSource = source; this.startedAt = new Date().toISOString();
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
     child.stdout.on('data', data => this.log('game', data));
     child.stderr.on('data', data => this.log('game', data));
     child.on('error', error => { this.log('palbox', `游戏进程错误：${error.message}\n`); });
@@ -155,13 +160,7 @@ export class Runtime {
   }
   async logs(channel) {
     if (!['palbox', 'game', 'steamcmd'].includes(channel)) throw failure('日志类型不存在。', 404);
-    const file = path.join(this.directory, 'logs', channel + '.log');
-    try {
-      const { open } = await import('node:fs/promises');
-      const handle = await open(file, 'r');
-      try { const { size } = await handle.stat(); const buffer = Buffer.alloc(Math.min(size, 65536)); await handle.read(buffer, 0, buffer.length, Math.max(0, size - buffer.length)); return buffer.toString('utf8'); }
-      finally { await handle.close(); }
-    } catch (error) { if (error.code === 'ENOENT') return ''; throw error; }
+    return readLogTail(path.join(this.directory, 'logs', channel + '.log'));
   }
   async close() {
     this.closing = true;

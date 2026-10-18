@@ -144,9 +144,10 @@ npx playwright install chromium
 ```sh
 npm run test:e2e
 npm run test:e2e:managed
+npm run test:e2e:logs
 ```
 
-测试默认自行启动临时服务并在结束后关闭。管理测试使用模拟游戏进程，不会下载真实游戏。Playwright 仅用于开发测试，生产运行不依赖它。
+测试默认自行启动临时服务并在结束后关闭。管理测试使用模拟游戏进程，不会下载真实游戏。日志专项测试覆盖状态接口阻塞时的实时更新、中文与终端控制码、频道切换、断线重连和滚动位置。Playwright 仅用于开发测试，生产运行不依赖它。
 
 `npm run test:browser` 是 `test:e2e` 的兼容别名。编辑器测试使用独立临时管理服务，可通过 `PALBOX_QA_OUTPUT` 指定截图和导入样例目录，默认输出到 `test-results/e2e`。
 

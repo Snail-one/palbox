@@ -1,6 +1,20 @@
 export function createManagementClient({ fetch, csrf = '' }) {
   let token = csrf;
   return {
+    watchLogs(channel, { onLog, onOpen, onError }) {
+      const source = new EventSource(`/api/logs/stream?channel=${encodeURIComponent(channel)}`);
+      source.onopen = () => onOpen?.();
+      source.addEventListener('log', event => {
+        try { onLog(JSON.parse(event.data).text); }
+        catch { onError?.(new Error('日志响应无效，请重新连接。')); }
+      });
+      source.addEventListener('unauthorized', () => {
+        source.close();
+        onError?.(Object.assign(new Error('登录已失效，请重新登录以查看日志。'), { status: 401 }));
+      });
+      source.onerror = () => onError?.(new Error(source.readyState === EventSource.CLOSED ? '日志连接已关闭，请刷新页面或重新登录。' : '日志连接中断，正在重新连接…'));
+      return () => source.close();
+    },
     async request(path, { method = 'GET', body } = {}) {
       const response = await fetch('/api/' + path, {
         method, credentials: 'same-origin', cache: 'no-store',

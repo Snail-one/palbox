@@ -81,7 +81,7 @@ const path = require('node:path');
     await page.locator('[data-log-channel="steamcmd"]').click();
     await page.waitForFunction(() => document.getElementById('manager-logs').textContent.includes('SteamCMD simulated installation complete'));
     assert.equal(await page.locator('[data-log-channel="steamcmd"]').getAttribute('aria-pressed'), 'true');
-    const panelLogResponse = page.waitForResponse(response => response.url().includes('/api/logs?channel=palbox'));
+    const panelLogResponse = page.waitForResponse(response => response.url().includes('/api/logs/stream?channel=palbox'));
     await page.locator('[data-log-channel="palbox"]').click();
     await panelLogResponse;
     assert.equal(await page.locator('[data-log-channel="palbox"]').getAttribute('aria-pressed'), 'true');

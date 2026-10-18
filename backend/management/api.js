@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { Authentication } from './auth.js';
 import { failure } from './files.js';
 import { managedTemplate } from './store.js';
+import { streamLogs } from './logs.js';
 
 async function body(request, limit = 8 * 1024 * 1024) {
   if (!request.headers['content-type']?.startsWith('application/json')) throw failure('请求内容必须为 JSON。', 415);
@@ -58,6 +59,10 @@ export function createManagementApi(manager, options = {}) {
       if (pathname === '/api/tasks' && request.method === 'POST') {
         const input = await body(request, 8192);
         json(202, await manager.submit(input.action, input)); return;
+      }
+      if (pathname === '/api/logs/stream' && request.method === 'GET') {
+        const channel = new URL(request.url, 'http://localhost').searchParams.get('channel') || 'palbox';
+        await streamLogs({ request, response, runtime: manager.runtime, auth, channel }); return;
       }
       if (pathname === '/api/logs' && request.method === 'GET') {
         const channel = new URL(request.url, 'http://localhost').searchParams.get('channel') || 'palbox';

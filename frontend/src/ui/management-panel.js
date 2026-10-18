@@ -27,7 +27,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   logs.id = 'game-logs';
   logs.className = 'management-panel';
   logs.setAttribute('aria-label', '运行日志');
-  logs.innerHTML = `<div class="management-heading log-heading"><h2>运行日志</h2><div class="segmented log-type-buttons" id="manager-log-channel" role="group" aria-label="日志类型"><button type="button" class="selected" data-log-channel="game" aria-pressed="true">游戏日志</button><button type="button" data-log-channel="steamcmd" aria-pressed="false">安装与更新</button><button type="button" data-log-channel="palbox" aria-pressed="false">面板日志</button></div></div><p class="management-note">日志自动刷新，支持切换游戏、安装更新与面板日志。</p><pre id="manager-logs" tabindex="0">正在读取日志…</pre>`;
+  logs.innerHTML = `<div class="management-heading log-heading"><h2>运行日志</h2><div class="segmented log-type-buttons" id="manager-log-channel" role="group" aria-label="日志类型"><button type="button" class="selected" data-log-channel="game" aria-pressed="true">游戏日志</button><button type="button" data-log-channel="steamcmd" aria-pressed="false">安装与更新</button><button type="button" data-log-channel="palbox" aria-pressed="false">面板日志</button></div></div><p id="manager-log-status" class="management-note" role="status">正在连接实时日志…</p><pre id="manager-logs" tabindex="0">正在读取日志…</pre>`;
   $('game-overview').append(logs);
   const history = document.createElement('section');
   history.className = 'management-panel';
@@ -75,7 +75,10 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   let settingsCache = null;
   let checkingUpdate = false;
   let logChannel = 'game';
-  let logRequest = 0;
+  let logGeneration = 0;
+  let closeLogs = null;
+  let activeLogChannel = null;
+  let pageActive = true;
   function error(message) { $('management-error').textContent = message; $('management-error').hidden = !message; }
   async function action(name, payload = {}, confirm = true) {
     if (confirm && ['stop', 'force-stop', 'restart', 'update', 'apply', 'backup', 'restore', 'restore-native', 'kick'].includes(name)) {
@@ -153,16 +156,40 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
       row.append(label, download, restore); $('native-backups').append(row);
     }
   }
-  async function loadLogs() {
-    const request = ++logRequest;
-    let result;
-    try { result = await api.request(`logs?channel=${encodeURIComponent(logChannel)}`); }
-    catch (caught) { if (request === logRequest) throw caught; return; }
-    if (request !== logRequest) return;
+  function renderLogs(text) {
     const panel = $('manager-logs');
+    const content = text || '暂无日志';
+    if (panel.textContent === content) return;
     const bottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 30;
-    panel.textContent = result.text || '暂无日志';
+    const scrollTop = panel.scrollTop;
+    panel.textContent = content;
     if (bottom) panel.scrollTop = panel.scrollHeight;
+    else panel.scrollTop = scrollTop;
+  }
+  function stopLogs() {
+    logGeneration++;
+    closeLogs?.();
+    closeLogs = null;
+    activeLogChannel = null;
+  }
+  function syncLogs() {
+    if (!pageActive || stopped || document.hidden || $('game-page').hidden || $('game-overview').hidden) { stopLogs(); return; }
+    if (closeLogs && activeLogChannel === logChannel) return;
+    stopLogs();
+    const generation = logGeneration;
+    activeLogChannel = logChannel;
+    $('manager-log-status').textContent = '正在连接实时日志…';
+    closeLogs = api.watchLogs(logChannel, {
+      onOpen() {
+        if (generation === logGeneration) $('manager-log-status').textContent = '日志实时更新，断线后自动重连；向上滚动可查看历史。';
+      },
+      onLog(text) { if (generation === logGeneration) renderLogs(text); },
+      onError(caught) {
+        if (generation !== logGeneration) return;
+        $('manager-log-status').textContent = caught.message;
+        if (caught.status === 401) { stopped = true; stopLogs(); }
+      }
+    });
   }
   function renderHistory(tasks) {
     const list = $('task-history-list');
@@ -203,6 +230,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
     }
   }
   async function refresh() {
+    syncLogs();
     if (polling || stopped || document.hidden) return;
     polling = true;
     try {
@@ -238,12 +266,11 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
       const overviewVisible = gameVisible && !$('game-overview').hidden;
       const savesVisible = gameVisible && !$('game-saves').hidden;
       if (overviewVisible || savesVisible) await loadSettings();
-      if (overviewVisible) await loadLogs();
       if (savesVisible) await Promise.all([loadNativeBackups(), loadBackups()]);
     } catch (caught) {
       error(caught.message);
       actionButtons.forEach(button => { button.disabled = true; });
-      if (caught.status === 401) { stopped = true; $('game-state').textContent = '需登录'; }
+      if (caught.status === 401) { stopped = true; stopLogs(); $('game-state').textContent = '需登录'; }
     } finally { polling = false; }
   }
   for (const button of $('manager-log-channel').querySelectorAll('button')) button.addEventListener('click', () => {
@@ -255,7 +282,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
       option.setAttribute('aria-pressed', String(selected));
     }
     $('manager-logs').textContent = '正在读取日志…';
-    loadLogs().catch(caught => error(caught.message));
+    syncLogs();
   });
   function loadSettings() {
     settingsRequest ??= api.request('settings').then(settings => {
@@ -301,10 +328,11 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
     try { await getConfiguration(); await api.request('logout', { method: 'POST', body: {} }); document.location.assign('/login.html'); }
     catch (caught) { error(caught.message); }
   });
-  const timer = setInterval(refresh, 5000);
+  let timer = setInterval(refresh, 5000);
   document.addEventListener('visibilitychange', refresh);
   window.addEventListener('hashchange', refresh);
-  window.addEventListener('pagehide', () => clearInterval(timer), { once: true });
+  window.addEventListener('pagehide', () => { pageActive = false; stopLogs(); clearInterval(timer); });
+  window.addEventListener('pageshow', event => { if (event.persisted) { pageActive = true; timer = setInterval(refresh, 5000); refresh(); } });
   refresh();
   return { refresh };
 }

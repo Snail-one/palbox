@@ -1,0 +1,53 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { appendFile, rename, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { managementFixture } from '../helpers/management-fixture.js';
+
+test('实时日志通过前端代理推送，兼容外部写入、轮换并在退出登录后终止', { timeout: 10000 }, async t => {
+  const f = await managementFixture();
+  t.after(() => f.close());
+  assert.equal((await f.request('/api/logs/stream', { authenticated: false })).status, 401);
+  const { cookie } = await f.login();
+  assert.equal((await f.request('/api/logs/stream?channel=../../etc/passwd')).status, 404);
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  f.runtime.log('game', '\x1b[32m初始中文🙂\x1b[0m\n');
+  const response = await fetch(f.base + '/api/logs/stream?channel=game', { headers: { Cookie: cookie }, signal: controller.signal });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /text\/event-stream/);
+  assert.equal(response.headers.get('x-accel-buffering'), 'no');
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffered = '';
+  async function event(name, predicate = () => true) {
+    for (;;) {
+      let index;
+      while ((index = buffered.indexOf('\n\n')) !== -1) {
+        const frame = buffered.slice(0, index); buffered = buffered.slice(index + 2);
+        if (!frame.startsWith(`event: ${name}\n`)) continue;
+        const value = JSON.parse(frame.split('\ndata: ')[1]);
+        if (predicate(value)) return value;
+      }
+      const { value, done } = await reader.read();
+      assert.equal(done, false, '日志流不应提前关闭');
+      buffered += decoder.decode(value, { stream: true });
+    }
+  }
+  assert.equal((await event('log')).text, '初始中文🙂\n');
+  // Log streaming must not call or wait for the slow game status endpoint.
+  f.manager.status = () => { throw new Error('日志不应依赖状态查询'); };
+  const start = Date.now();
+  f.runtime.log('game', '实时追加\n');
+  assert.equal((await event('log', value => value.text.includes('实时追加'))).text, '初始中文🙂\n实时追加\n');
+  assert.ok(Date.now() - start < 2000, '新日志应在两秒内送达');
+  const file = path.join(f.directory, 'logs/game.log');
+  await appendFile(file, '\x1b[33m外部写入\x1b[0m\n');
+  assert.match((await event('log', value => value.text.includes('外部写入'))).text, /外部写入\n$/);
+  await rename(file, file + '.1');
+  await writeFile(file, '轮换后的中文\n');
+  assert.equal((await event('log', value => value.text.includes('轮换后'))).text, '轮换后的中文\n');
+  assert.equal((await f.request('/api/logout', { method: 'POST', body: {} })).status, 200);
+  await event('unauthorized');
+  assert.equal((await reader.read()).done, true);
+});
