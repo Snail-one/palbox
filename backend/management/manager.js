@@ -509,6 +509,21 @@ export class Manager {
     }
     return { players: [...players.values()], skipped: value.skipped };
   }
+  runningConfiguration() {
+    if (!this.runtime.game) return { running: false };
+    const source = this.runtime.runningSource || '';
+    let matchesCurrent = false;
+    try { matchesCurrent = Boolean(source) && output(source) === output(this.store.active().source); }
+    catch { matchesCurrent = false; }
+    return {
+      running: true,
+      source,
+      args: [...(this.runtime.runningArgs || [])],
+      port: this.runtime.port,
+      startedAt: this.runtime.startedAt,
+      matchesCurrent
+    };
+  }
   async status() {
     const installed = await this.runtime.installed();
     const installedBuild = installed ? await this.installedBuild() : null;

@@ -238,6 +238,13 @@ test('SteamCMD、进程、配置应用、备份恢复与故障状态真实联动
   await access(path.join(f.runtime.saved, 'saved-by-api'));
   assert.equal((await f.manager.status()).configuration, 'applied');
   assert.equal(f.runtime.ready, true);
+  const running = await (await f.request('/api/running')).json();
+  assert.equal(running.running, true);
+  assert.equal(running.port, 8211);
+  assert.equal(running.matchesCurrent, true);
+  assert.ok(running.startedAt);
+  assert.deepEqual(running.args, []);
+  assert.match(running.source, /OptionSettings=/);
   assert.equal((await f.task('announce', { message: 'test broadcast' })).state, 'succeeded');
   assert.equal((await f.task('kick', { userid: 'steam_test' })).state, 'succeeded');
   assert.equal((await f.task('save-world')).state, 'succeeded');
@@ -273,6 +280,7 @@ test('SteamCMD、进程、配置应用、备份恢复与故障状态真实联动
   assert.ok(f.runtime.game);
   assert.equal((await f.task('stop')).state, 'succeeded');
   assert.equal((await f.manager.status()).running, false);
+  assert.equal((await (await f.request('/api/running')).json()).running, false);
   assert.equal((await f.request('/api/status')).status, 200);
   const notRunning = await f.task('restart');
   assert.equal(notRunning.state, 'failed');

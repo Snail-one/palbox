@@ -31,6 +31,7 @@ export class Runtime {
     this.command = null;
     this.ready = false;
     this.runningSource = null;
+    this.runningArgs = [];
     this.startedAt = null;
     this.lastExit = null;
     this.closing = false;
@@ -128,7 +129,7 @@ export class Runtime {
     const values = new Map(parse(source).entries.map(e => [e.key, e.raw]));
     if (values.get('RESTAPIEnabled') !== 'True' || !decodeString(values.get('AdminPassword') || '""')) throw failure('启动管理模式需要启用 REST API 并设置管理员密码，请先应用配置。', 409);
     const child = spawn('/bin/bash', [path.join(this.server, 'PalServer.sh'), `-port=${this.port}`, ...this.args], { cwd: this.server, shell: false, detached: true, env: this.childEnvironment(), stdio: ['ignore', 'pipe', 'pipe'] });
-    this.game = child; this.ready = false; this.runningSource = source; this.startedAt = new Date().toISOString();
+    this.game = child; this.ready = false; this.runningSource = source; this.runningArgs = [...this.args]; this.startedAt = new Date().toISOString();
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', data => this.log('game', data));
@@ -136,7 +137,7 @@ export class Runtime {
     child.on('error', error => { this.log('palbox', `游戏进程错误：${error.message}\n`); });
     child.once('close', (code, signal) => {
       this.lastExit = { code, signal, at: new Date().toISOString() };
-      if (this.game === child) { this.game = null; this.ready = false; this.runningSource = null; }
+      if (this.game === child) { this.game = null; this.ready = false; this.runningSource = null; this.runningArgs = []; }
       this.log('palbox', `游戏进程退出：${signal || code}\n`);
     });
     const until = Date.now() + this.readyTimeout;

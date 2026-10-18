@@ -156,6 +156,21 @@ dialog::backdrop {
   max-height: 52dvh;
 }
 
+.running-command {
+  margin: 6px 0 10px;
+  padding: 10px 12px;
+  max-height: 110px;
+  overflow: auto;
+  border: 1px solid #dedede;
+  border-radius: 7px;
+  background: var(--input-bg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .dialog-heading {
   display: flex;
   justify-content: space-between;
