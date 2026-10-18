@@ -92,7 +92,7 @@ export function createManagementApi(manager, options = {}) {
       }
       if (pathname === '/api/settings') {
         if (request.method === 'GET') { json(200, manager.publicSettings()); return; }
-        if (request.method === 'PUT') { json(200, await manager.updateSettings(await body(request, 4096))); return; }
+        if (request.method === 'PUT') { json(200, await manager.updateSettings(await body(request, 65536))); return; }
       }
       json(404, { error: '管理接口不存在。' });
     } catch (error) {

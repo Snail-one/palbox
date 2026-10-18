@@ -20,7 +20,8 @@
 #save-import-progress { width: 100%; margin: 6px 0 10px; }
 .drop-zone[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
 
-#game-args-input {
+#game-args-input,
+#install-args-input {
   width: 100%;
   min-height: 160px;
   resize: vertical;

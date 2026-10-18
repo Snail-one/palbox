@@ -1,4 +1,4 @@
-import { createGameArgsDialog } from './game-args-dialog.js';
+import { createArgsDialog } from './args-dialog.js';
 import { createSaveImportDialog } from './save-import-dialog.js';
 
 export function createManagementPanel({ dom, api, ask, notify, getConfiguration }) {
@@ -9,7 +9,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   section.innerHTML = `
     <div class="management-heading"><h2>游戏服务 <span id="game-state" class="save-status" data-state="pending">连接中</span></h2><a class="button secondary" href="#configuration">管理配置 →</a></div>
     <p class="management-note">管理服务器的安装、启动、停止与更新。</p>
-    <div class="management-actions"><button class="button secondary" data-action="install">安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop">停止</button><button class="button secondary" data-action="restart">重启</button><button class="button secondary" data-action="update">更新服务端</button><button class="button secondary" id="edit-game-args" disabled><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg>启动参数</button></div>`;
+    <div class="management-actions"><button class="button secondary" data-action="install">安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop">停止</button><button class="button secondary" data-action="restart">重启</button><button class="button secondary" data-action="update">更新服务端</button><button class="button secondary" id="edit-game-args" disabled><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg>启动参数</button><button class="button secondary" id="edit-install-args" disabled><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg>安装参数</button></div>`;
   const metrics = document.createElement('dl');
   metrics.className = 'management-metrics';
   metrics.setAttribute('aria-label', '服务器运行信息');
@@ -91,12 +91,18 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
       await refresh();
     } catch (caught) { error(caught.message); }
   }
-  const gameArgsDialog = createGameArgsDialog({ dom, onSave: async gameArgs => {
+  const gameArgsDialog = createArgsDialog({ dom, prefix: 'game-args', onSave: async gameArgs => {
     const saved = await api.request('settings', { method: 'PUT', body: { gameArgs } });
     settingsCache = saved;
     notify('启动参数已保存，将在下次启动或重启游戏服时生效');
   } });
-  $('edit-game-args').addEventListener('click', () => gameArgsDialog.open(settingsCache?.gameArgs ?? []));
+  $('edit-game-args').addEventListener('click', () => gameArgsDialog.open((settingsCache?.gameArgs ?? []).join('\n')));
+  const installArgsDialog = createArgsDialog({ dom, prefix: 'install-args', onSave: async installArgs => {
+    const saved = await api.request('settings', { method: 'PUT', body: { installArgs } });
+    settingsCache = saved;
+    notify('安装参数已保存，将在下次安装或更新服务端时生效');
+  } });
+  $('edit-install-args').addEventListener('click', () => installArgsDialog.open((settingsCache?.installArgs ?? []).join('\n')));
   const saveImport = createSaveImportDialog({ dom, api, onImport: async id => {
     error('');
     const task = await api.request('tasks', { method: 'POST', body: { action: 'import-save', id } });
@@ -218,6 +224,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
       settingsCache = settings;
       $('backup-settings').querySelectorAll('input, button').forEach(control => { control.disabled = false; });
       $('edit-game-args').disabled = false;
+      $('edit-install-args').disabled = false;
       return settings;
     }).catch(caught => { settingsRequest = null; throw caught; });
     return settingsRequest;

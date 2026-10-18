@@ -41,7 +41,8 @@ test('启动参数通过设置接口保存，并在启动和重启时生效', { 
   const f = await managementFixture(); t.after(() => f.close()); await f.login();
   const settings = () => f.request('/api/settings');
   const put = body => f.request('/api/settings', { method: 'PUT', body });
-  assert.deepEqual(await (await settings()).json(), { backupRetention: 10, gameArgs: [] });
+  const installArgs = ['+force_install_dir', f.runtime.server, '+login', 'anonymous', '+app_update', '2394010', 'validate', '+quit'];
+  assert.deepEqual(await (await settings()).json(), { backupRetention: 10, gameArgs: [], installArgs });
   assert.deepEqual(f.runtime.args, []);
   for (const body of [
     {}, { gameArgs: '-x' }, { gameArgs: [1] }, { gameArgs: [''] }, { gameArgs: ['   '] },
@@ -50,17 +51,34 @@ test('启动参数通过设置接口保存，并在启动和重启时生效', { 
     { gameArgs: Array.from({ length: 33 }, () => '-x') }, { gameArgs: ['x'.repeat(201)] },
     { gameArgs: Array.from({ length: 10 }, () => 'x'.repeat(200)) }
   ]) assert.equal((await put(body)).status, 400, JSON.stringify(body).slice(0, 80));
-  assert.deepEqual(await (await settings()).json(), { backupRetention: 10, gameArgs: [] });
+  assert.deepEqual(await (await settings()).json(), { backupRetention: 10, gameArgs: [], installArgs });
   assert.deepEqual(f.runtime.args, []);
   const args = ['-useperfthreads', '-NoAsyncLoadingThread', '--name=two words'];
   const saved = await put({ gameArgs: args });
   assert.equal(saved.status, 200);
-  assert.deepEqual(await saved.json(), { backupRetention: 10, gameArgs: args });
+  assert.deepEqual(await saved.json(), { backupRetention: 10, gameArgs: args, installArgs });
   assert.deepEqual(f.runtime.args, args);
   assert.deepEqual(JSON.parse(await readFile(path.join(f.directory, 'palbox/settings.json'), 'utf8')).gameArgs, args);
   assert.equal((await put({ gameArgs: ['-portrait'] })).status, 200);
   assert.deepEqual(f.runtime.args, ['-portrait']);
   assert.equal((await put({ gameArgs: args })).status, 200);
+  for (const body of [
+    { installArgs: 'x' }, { installArgs: [] }, { installArgs: ['+quit'] },
+    { installArgs: ['+force_install_dir', '/tmp', '+app_update', '2394010', '+quit'] },
+    { installArgs: ['+force_install_dir', f.runtime.server, '+app_update', '1', '+quit'] },
+    { installArgs: ['+force_install_dir', f.runtime.server, '+app_update', '2394010'] },
+    { installArgs: ['+force_install_dir', f.runtime.server, '+app_update', '2394010', 'bad\narg', '+quit'] },
+    { installArgs: Array.from({ length: 65 }, () => 'x') }
+  ]) assert.equal((await put(body)).status, 400, JSON.stringify(body).slice(0, 80));
+  const customInstall = ['+force_install_dir', f.runtime.server, '+login', 'anonymous', '+app_update', '2394010', '-beta', 'public', 'validate', '+quit'];
+  const installSaved = await put({ installArgs: customInstall });
+  assert.equal(installSaved.status, 200);
+  assert.deepEqual((await installSaved.json()).installArgs, customInstall);
+  assert.deepEqual(f.runtime.installArgs, customInstall);
+  assert.deepEqual(JSON.parse(await readFile(path.join(f.directory, 'palbox/settings.json'), 'utf8')).installArgs,
+    ['+force_install_dir', '{server}', '+login', 'anonymous', '+app_update', '2394010', '-beta', 'public', 'validate', '+quit']);
+  assert.equal((await put({ installArgs })).status, 200);
+  assert.deepEqual(f.runtime.installArgs, installArgs);
   assert.equal((await f.task('install')).state, 'succeeded');
   assert.equal((await f.task('start')).state, 'succeeded');
   assert.deepEqual(JSON.parse(await readFile(f.argvFile, 'utf8')), ['-port=8211', ...args]);
@@ -75,7 +93,7 @@ test('启动参数通过设置接口保存，并在启动和重启时生效', { 
   assert.deepEqual(JSON.parse(await readFile(f.argvFile, 'utf8')), ['-port=8211', ...nextArgs]);
   const retention = await put({ backupRetention: 5 });
   assert.equal(retention.status, 200);
-  assert.deepEqual(await retention.json(), { backupRetention: 5, gameArgs: nextArgs });
+  assert.deepEqual(await retention.json(), { backupRetention: 5, gameArgs: nextArgs, installArgs });
   assert.deepEqual(f.runtime.args, nextArgs);
   assert.equal((await f.task('stop')).state, 'succeeded');
 });
@@ -163,7 +181,7 @@ test('首次访问通过网页初始化管理员，重启沿用账号，密码�
   const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
   const username = 'index-admin';
   const password = 'index-test-password-123';
-  const env = { ...process.env, PATH: path.dirname(process.execPath) + path.delimiter + process.env.PATH, HOST: '127.0.0.1', PORT: String(port), PALBOX_DATA_DIR: directory, PALBOX_AUTO_INSTALL: 'false', PALBOX_AUTO_START: 'false', PALBOX_GAME_ARGS: 'not-json' };
+  const env = { ...process.env, PATH: path.dirname(process.execPath) + path.delimiter + process.env.PATH, HOST: '127.0.0.1', PORT: String(port), PALBOX_DATA_DIR: directory, PALBOX_GAME_ARGS: 'not-json' };
   delete env.PALBOX_ADMIN_PASSWORD;
   delete env.PALBOX_ADMIN_PASSWORD_FILE;
   const children = [];

@@ -17,12 +17,8 @@ try {
   const server = createServer({ api });
   const host = process.env.HOST || '127.0.0.1';
   server.on('error', error => { console.error(`启动失败：${error.message}`); process.exitCode = 1; manager?.close(); });
-  server.listen(listenPort, host, async () => {
+  server.listen(listenPort, host, () => {
     console.log(`Palbox 游戏管理已启动：http://${host}:${listenPort}`);
-    try {
-      if (process.env.PALBOX_AUTO_INSTALL === 'true' && !(await manager.runtime.installed())) await manager.submit('install', { start: process.env.PALBOX_AUTO_START === 'true' });
-      else if (process.env.PALBOX_AUTO_START === 'true' && await manager.runtime.installed()) await manager.submit('start');
-    } catch (error) { manager.runtime.log('palbox', `自动启动失败：${error.message}\n`); }
   });
   let closing = false;
   async function close() {

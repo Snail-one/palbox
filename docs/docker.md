@@ -20,7 +20,7 @@ docker compose up -d --build
 docker compose logs -f palbox
 ```
 
-默认面板地址为 <http://127.0.0.1:8080>。**首次访问**会进入初始化页面，设置管理员用户名和至少 12 位密码，随后用该账号登录。首次启动自动安装并启动游戏服，安装进度查看页面的「运行日志 → 安装与更新」。安装失败后面板仍可访问，可查看日志并点击「安装服务端」重试。游戏管理员密码与面板登录密码独立，新的管理配置会生成随机游戏管理员密码并启用 REST API。
+默认面板地址为 <http://127.0.0.1:8080>。**首次访问**会进入初始化页面，设置管理员用户名和至少 12 位密码，随后用该账号登录。进入「游戏管理」后点击「安装服务端」下载游戏服务端，安装完成后点击「启动」；安装进度可在「运行日志 → 安装与更新」查看。安装失败后面板仍可访问，可查看日志后重试。游戏管理员密码与面板登录密码独立，新的管理配置会生成随机游戏管理员密码并启用 REST API。
 
 默认网页只绑定宿主机回环地址。需要从内网访问时，将 `compose.yaml` 中 `ports` 的 `127.0.0.1` 改成服务器内网 IP 或 `0.0.0.0`；公网使用 HTTPS 反向代理，并设置 `PALBOX_SECURE_COOKIE=true`。游戏 REST API 仅由管理后端通过容器内的回环地址访问，不映射到宿主机。
 
@@ -83,6 +83,8 @@ docker compose up -d --build
 
 游戏启动参数通过「游戏管理 → 服务器概况 → 游戏服务」中的「启动参数」按钮编辑，每行一个参数，保存到 `palbox/settings.json` 的 `gameArgs`。保存不会自动重启游戏服，将在下次启动或重启时生效；更新、应用配置、备份恢复等流程触发的自动重启同样使用新参数。`-port` 由 `PALBOX_GAME_PORT` 管理，不能在启动参数中填写。
 
+同一区域的「安装参数」按钮显示完整 SteamCMD 参数并允许编辑，保存到 `settings.json` 的 `installArgs`，下次安装或更新时生效。安装目录、App ID `2394010` 和末尾的 `+quit` 由面板校验，其余参数可自定义。
+
 「恢复输入配置」恢复面板中最初输入或导入的完整内容并自动保存，保留注释、未知字段与顺序；点击应用才影响游戏。已有 INI 配置可通过「配置管理」导入。服务端第一次建立配置库时，如果 `/data/server/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini` 已存在，则将它作为初始输入；否则创建管理模板。
 
 ## 服务与备份
@@ -108,8 +110,6 @@ Docker 部署的全部配置都在 `compose.yaml` 中，不再读取 `.env`。
 | 位置 | 默认值 | 用途 |
 | --- | --- | --- |
 | `environment.PALBOX_GAME_PORT` | `8211` | 游戏进程监听端口，需同步修改 `ports` 的宿主机端口 |
-| `environment.PALBOX_AUTO_INSTALL` | `true` | 缺少服务端时自动安装 |
-| `environment.PALBOX_AUTO_START` | `true` | 安装完成或容器启动后自动启动游戏 |
 | `environment.PALBOX_SECURE_COOKIE` | `false` | HTTPS 部署时为登录 Cookie 设置 Secure |
 | `PUID` / `PGID`（可选） | `1000` / `1000` | 入口脚本默认使用 `1000:1000`，compose 中不再预置；需要自定义时再在 `environment` 中添加 |
 | `TZ`（可选） | 容器默认时区 | 需要指定时区时再在 `environment` 中添加，镜像已安装 `tzdata` |
@@ -117,9 +117,9 @@ Docker 部署的全部配置都在 `compose.yaml` 中，不再读取 `.env`。
 | `ports` 第二项 | `8211:8211/udp` | 游戏 UDP 端口映射 |
 | `volumes` | `/srv/palbox:/data` | 宿主机数据目录 |
 
-直接运行镜像而不使用 Compose 时，仍可通过环境变量配置端口、自动安装/启动和运行用户；管理员账号统一在首次访问网页时创建，启动参数也在网页中设置，不再通过环境变量提供。`npm start` / `dev.sh` 的开发流程同样使用环境变量配置其他参数。
+直接运行镜像而不使用 Compose 时，仍可通过环境变量配置端口和运行用户；管理员账号、游戏安装/启动和启动参数统一在网页中管理，不再通过环境变量提供。`npm start` / `dev.sh` 的开发流程同样使用环境变量配置其他参数。
 
-使用现有存档时，可以在面板「存档管理 → 导入存档」上传官方快照 `.tar.gz`，也可以先将完整的 `Pal/Saved` 放入 `/srv/palbox/server/Pal/Saved`，不要只复制单个 `Level.sav`。首次部署可将 `compose.yaml` 中的 `PALBOX_AUTO_START` 设为 `false`，安装完成后检查输入配置与存档，再手动启动。
+使用现有存档时，可以在面板「存档管理 → 导入存档」上传官方快照 `.tar.gz`，也可以先将完整的 `Pal/Saved` 放入 `/srv/palbox/server/Pal/Saved`，不要只复制单个 `Level.sav`。安装完成后检查输入配置与存档，再在面板中手动启动。
 
 ## 验证
 

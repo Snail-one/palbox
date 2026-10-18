@@ -30,8 +30,6 @@ fi
 export HOST="${HOST:-127.0.0.1}"
 export PORT="${PORT:-8080}"
 export PALBOX_DATA_DIR="${PALBOX_DATA_DIR:-$PWD/data}"
-export PALBOX_AUTO_INSTALL="${PALBOX_AUTO_INSTALL:-false}"
-export PALBOX_AUTO_START="${PALBOX_AUTO_START:-false}"
 
 echo "游戏管理：http://$HOST:$PORT/#game"
 echo "配置管理：http://$HOST:$PORT/#configuration"

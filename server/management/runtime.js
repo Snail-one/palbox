@@ -8,7 +8,7 @@ import { failure } from './files.js';
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 export class Runtime {
-  constructor(directory, { steamcmd = '/opt/steamcmd/steamcmd.sh', port = 8211, readyTimeout = 180000, stopTimeout = 60000, args = [] } = {}) {
+  constructor(directory, { steamcmd = '/opt/steamcmd/steamcmd.sh', port = 8211, readyTimeout = 180000, stopTimeout = 60000, args = [], installArgs = null } = {}) {
     this.directory = directory;
     this.server = path.join(directory, 'server');
     this.saved = path.join(this.server, 'Pal/Saved');
@@ -18,6 +18,7 @@ export class Runtime {
     this.readyTimeout = readyTimeout;
     this.stopTimeout = stopTimeout;
     this.args = args;
+    this.installArgs = installArgs;
     this.game = null;
     this.command = null;
     this.ready = false;
@@ -74,7 +75,8 @@ export class Runtime {
   async install() {
     if (this.game) throw failure('请先停止游戏服再安装或更新。', 409);
     await mkdir(this.server, { recursive: true });
-    const result = await this.run(this.steamcmd, ['+force_install_dir', this.server, '+login', 'anonymous', '+app_update', '2394010', 'validate', '+quit'], 'steamcmd');
+    const args = this.installArgs || ['+force_install_dir', this.server, '+login', 'anonymous', '+app_update', '2394010', 'validate', '+quit'];
+    const result = await this.run(this.steamcmd, args, 'steamcmd');
     if (!/Success!.*App\s+'2394010'.*(?:fully installed|up to date)/i.test(result) || !(await this.installed())) throw failure('SteamCMD 未确认安装完成或启动文件不完整，请检查安装日志。', 500);
   }
   async rest(endpoint, body) {

@@ -1,19 +1,19 @@
-export function createGameArgsDialog({ dom, onSave }) {
+export function createArgsDialog({ dom, prefix, onSave }) {
   const { $ } = dom;
-  const dialog = $('game-args-dialog');
-  const input = $('game-args-input');
-  const error = $('game-args-error');
-  const save = $('game-args-save');
-  const cancel = $('game-args-cancel');
-  const close = $('game-args-close');
+  const dialog = $(`${prefix}-dialog`);
+  const input = $(`${prefix}-input`);
+  const error = $(`${prefix}-error`);
+  const save = $(`${prefix}-save`);
+  const cancel = $(`${prefix}-cancel`);
+  const close = $(`${prefix}-close`);
   let busy = false;
 
   function setBusy(value) {
     busy = value;
     save.disabled = value; cancel.disabled = value; close.disabled = value;
   }
-  function open(args) {
-    input.value = args.join('\n');
+  function open(value) {
+    input.value = value;
     error.textContent = ''; error.hidden = true;
     setBusy(false);
     dialog.showModal();
@@ -21,10 +21,10 @@ export function createGameArgsDialog({ dom, onSave }) {
   }
   async function submit() {
     if (busy) return;
-    const gameArgs = input.value.split('\n').map(line => line.endsWith('\r') ? line.slice(0, -1) : line).filter(line => line.trim() !== '');
+    const args = input.value.split('\n').map(line => line.endsWith('\r') ? line.slice(0, -1) : line).filter(line => line.trim() !== '');
     setBusy(true); error.hidden = true;
     try {
-      await onSave(gameArgs);
+      await onSave(args);
       dialog.close();
     } catch (caught) {
       error.textContent = caught.message; error.hidden = false;

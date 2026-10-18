@@ -45,7 +45,7 @@ RUN chmod 755 /usr/local/bin/palbox-entrypoint
 
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080 \
     PALBOX_DATA_DIR=/data PALBOX_STEAMCMD=/opt/steamcmd/steamcmd.sh \
-    PALBOX_AUTO_INSTALL=true PALBOX_AUTO_START=true HOME=/home/node
+    HOME=/home/node
 
 EXPOSE 8080/tcp 8211/udp
 VOLUME ["/data"]

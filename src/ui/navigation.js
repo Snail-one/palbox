@@ -32,7 +32,6 @@ export function createNavigation({ dom, window, isDirty, onSave, onConfiguration
     const name = game ? '游戏管理' : '配置管理';
     $('game-page').hidden = !game;
     for (const [id, active] of [['game-navigation', game], ['configuration-navigation', !game]]) {
-      $(id).hidden = !active;
       const links = [...$(id).querySelectorAll('a')];
       for (const link of links) {
         const selected = active && (link.dataset.gameView || link.dataset.configurationView) === route.view;
@@ -73,7 +72,7 @@ export function createNavigation({ dom, window, isDirty, onSave, onConfiguration
   });
   document.addEventListener('keydown', event => {
     const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
-    const modalOpen = $('action-dialog').open || $('import-dialog').open || $('save-import-dialog').open || $('game-args-dialog').open;
+    const modalOpen = $('action-dialog').open || $('import-dialog').open || $('save-import-dialog').open || $('game-args-dialog').open || $('install-args-dialog').open;
     const configuring = !$('configuration-page').hidden;
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's' && !modalOpen && configuring) { event.preventDefault(); onSave(); }
     if (event.key === '/' && !typing && !modalOpen && configuring && !$('configuration-editor').hidden) { event.preventDefault(); $('search').focus(); }

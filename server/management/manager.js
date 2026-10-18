@@ -20,6 +20,7 @@ const MAX_GAME_ARGS = 32;
 const MAX_GAME_ARG_LENGTH = 200;
 const MAX_GAME_ARGS_BYTES = 1800;
 const PORT_ARGUMENT = /(?:^|\s)-port(?:=|\s|$)/i;
+const DEFAULT_INSTALL_ARGS = Object.freeze(['+force_install_dir', '{server}', '+login', 'anonymous', '+app_update', '2394010', 'validate', '+quit']);
 
 function gameArgsError(value) {
   if (!Array.isArray(value)) return '启动参数必须是字符串数组。';
@@ -35,6 +36,32 @@ function gameArgsError(value) {
   }
   if (bytes > MAX_GAME_ARGS_BYTES) return `启动参数总长度不能超过 ${MAX_GAME_ARGS_BYTES} 字节。`;
   return null;
+}
+
+function normalizeInstallArgs(value, server) {
+  if (!Array.isArray(value)) throw failure('安装参数必须是字符串数组。');
+  if (value.length > 64) throw failure('安装参数不能超过 64 项。');
+  const args = value.map(arg => {
+    if (typeof arg !== 'string' || !arg.trim()) throw failure('安装参数不能包含空行。');
+    if (arg.length > 512) throw failure('单个安装参数不能超过 512 个字符。');
+    if (/[\u0000-\u001f\u007f]/.test(arg)) throw failure('安装参数不能包含控制字符。');
+    return arg;
+  });
+  const directories = args.map((arg, index) => arg.toLowerCase() === '+force_install_dir' ? index : -1).filter(index => index >= 0);
+  if (!directories.length) throw failure('安装参数必须包含 +force_install_dir。');
+  if (directories.length > 1) throw failure('安装参数只能包含一个 +force_install_dir。');
+  const directory = args[directories[0] + 1];
+  if (directory !== '{server}' && directory !== server) throw failure('+force_install_dir 必须使用面板的安装目录，不能修改。');
+  args[directories[0] + 1] = '{server}';
+  let updates = 0;
+  for (let index = 0; index < args.length; index++) {
+    if (args[index].toLowerCase() !== '+app_update') continue;
+    updates++;
+    if (args[index + 1] !== '2394010') throw failure('+app_update 必须是帕鲁专用服务端 App 2394010。');
+  }
+  if (!updates) throw failure('安装参数必须包含 +app_update 2394010。');
+  if (args.at(-1).toLowerCase() !== '+quit') throw failure('安装参数最后一项必须是 +quit。');
+  return args;
 }
 
 export class Manager {
@@ -67,12 +94,14 @@ export class Manager {
       this.validateSettings(settings);
       let write = false;
       if (!Object.hasOwn(settings, 'gameArgs')) { settings.gameArgs = []; write = true; }
+      if (!Object.hasOwn(settings, 'installArgs')) { settings.installArgs = [...DEFAULT_INSTALL_ARGS]; write = true; }
       if (Object.hasOwn(settings, 'backupIntervalHours')) { delete settings.backupIntervalHours; write = true; }
       this.settings = settings;
       this.setupRequired = false;
       if (write) await jsonWrite(this.settingsFile, settings);
     }
     this.syncRuntimeArgs();
+    this.syncRuntimeInstallArgs();
     await this.store.initialize();
     await this.runtime.initialize();
     try { await this.imports.initialize(); }
@@ -99,11 +128,17 @@ export class Manager {
       const message = gameArgsError(settings.gameArgs);
       if (message) throw new Error(`settings.json 中的启动参数无效：${message}请编辑 ${this.settingsFile} 修正 gameArgs 后重新启动。`);
     }
+    if (Object.hasOwn(settings, 'installArgs')) {
+      try { settings.installArgs = normalizeInstallArgs(settings.installArgs, this.runtime.server); }
+      catch (error) { throw new Error(`settings.json 中的安装参数无效：${error.message}请编辑 ${this.settingsFile} 修正 installArgs 后重新启动。`); }
+    }
   }
   needsSetup() { return this.setupRequired; }
   get backupRetention() { return this.settings?.backupRetention ?? 10; }
   get gameArgs() { return this.settings?.gameArgs ?? []; }
+  get installArgs() { return this.settings?.installArgs ?? DEFAULT_INSTALL_ARGS; }
   syncRuntimeArgs() { this.runtime.args = [...this.gameArgs]; }
+  syncRuntimeInstallArgs() { this.runtime.installArgs = this.installArgs.map(arg => arg === '{server}' ? this.runtime.server : arg); }
   async setupAdmin(username, password) {
     if (!this.setupRequired) throw failure('管理员已初始化，请直接登录。', 409);
     if (this.setupPending) throw failure('管理员初始化正在进行，请稍后重试。', 409);
@@ -113,7 +148,7 @@ export class Manager {
       if (!validUsername(name)) throw failure('管理员用户名须为 1 到 64 个字符，且不能包含控制字符。', 400);
       if (typeof password !== 'string' || password.length < 12) throw failure('管理密码至少需要 12 位。', 400);
       if (password.length > 1024) throw failure('管理密码不能超过 1024 位。', 400);
-      const next = { admin: { username: name, ...passwordRecord(password) }, backupRetention: 10, gameArgs: [] };
+      const next = { admin: { username: name, ...passwordRecord(password) }, backupRetention: 10, gameArgs: [], installArgs: [...DEFAULT_INSTALL_ARGS] };
       await jsonWrite(this.settingsFile, next);
       this.settings = next;
       this.setupRequired = false;
@@ -349,7 +384,13 @@ export class Manager {
     const enabled = setting ? setting.raw === 'True' : null;
     return { enabled, ...await this.native.list() };
   }
-  publicSettings() { return { backupRetention: this.backupRetention, gameArgs: [...this.gameArgs] }; }
+  publicSettings() {
+    return {
+      backupRetention: this.backupRetention,
+      gameArgs: [...this.gameArgs],
+      installArgs: this.installArgs.map(arg => arg === '{server}' ? this.runtime.server : arg)
+    };
+  }
   updateSettings(value) {
     const update = this.settingsUpdates.then(() => this.applySettings(value));
     this.settingsUpdates = update.catch(() => {});
@@ -361,8 +402,9 @@ export class Manager {
     if (Object.hasOwn(value, 'backupIntervalHours')) throw failure('面板定时备份已移除，请使用游戏官方自动备份。');
     const hasRetention = Object.hasOwn(value, 'backupRetention');
     const hasArgs = Object.hasOwn(value, 'gameArgs');
-    if (!hasRetention && !hasArgs) throw failure('请提供要保存的设置。');
-    const next = { ...this.settings, gameArgs: [...this.gameArgs] };
+    const hasInstallArgs = Object.hasOwn(value, 'installArgs');
+    if (!hasRetention && !hasArgs && !hasInstallArgs) throw failure('请提供要保存的设置。');
+    const next = { ...this.settings, gameArgs: [...this.gameArgs], installArgs: [...this.installArgs] };
     if (hasRetention) {
       if (!Number.isInteger(value.backupRetention) || value.backupRetention < 1 || value.backupRetention > 100) throw failure('完整备份保留数量须为 1 到 100。');
       next.backupRetention = value.backupRetention;
@@ -372,9 +414,11 @@ export class Manager {
       if (message) throw failure(message);
       next.gameArgs = [...value.gameArgs];
     }
+    if (hasInstallArgs) next.installArgs = normalizeInstallArgs(value.installArgs, this.runtime.server);
     await jsonWrite(this.settingsFile, next);
     this.settings = next;
     this.syncRuntimeArgs();
+    this.syncRuntimeInstallArgs();
     return this.publicSettings();
   }
   async close() {

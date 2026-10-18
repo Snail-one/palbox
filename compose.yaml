@@ -13,8 +13,6 @@ services:
     environment:
       # 首次打开网页时创建管理员用户名和密码，无需在这里配置登录密码。
       PALBOX_GAME_PORT: "8211"
-      PALBOX_AUTO_INSTALL: "true"
-      PALBOX_AUTO_START: "true"
       PALBOX_SECURE_COOKIE: "false"
     volumes:
       # 宿主机数据目录，存放服务端、存档、备份和日志。
