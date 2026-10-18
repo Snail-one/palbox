@@ -19,7 +19,7 @@ test('Node.js 静态服务', async t => {
     }
   });
   await t.test('样式、脚本、图标和浏览器测试页面可访问', async () => {
-    for (const route of ['/styles/index.css', '/src/domain/config.js', '/src/domain/template.js', '/src/domain/schema.js', '/src/services/management-api.js', '/src/main.js', '/src/setup.js', '/src/ui/save-import-dialog.js', '/setup.html', '/assets/favicon.svg', '/tests/index.html', '/tests/shared/core-cases.js', '/tests/browser/runner.js']) {
+    for (const route of ['/styles/index.css', '/src/domain/config.js', '/src/domain/template.js', '/src/domain/schema.js', '/src/services/management-api.js', '/src/main.js', '/src/setup.js', '/src/ui/save-import-dialog.js', '/src/ui/game-args-dialog.js', '/setup.html', '/assets/favicon.svg', '/tests/index.html', '/tests/shared/core-cases.js', '/tests/browser/runner.js']) {
       const response = await fetch(base + route);
       assert.equal(response.status, 200, route);
       assert.equal(response.headers.get('x-content-type-options'), 'nosniff');

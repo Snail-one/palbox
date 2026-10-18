@@ -32,15 +32,10 @@
 .management-note, .management-task { font-size: 11px; line-height: 1.8; margin: 13px 0; }
 .management-task { padding: 8px 12px; border-radius: 6px; background: #f4f4f5; overflow-wrap: anywhere; }
 .management-panel label { font-size: 11px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.management-panel input, .management-panel select, .management-panel textarea { border: 1px solid var(--line); border-radius: 5px; padding: 8px; min-width: 0; font: inherit; }
+.management-panel input, .management-panel select { border: 1px solid var(--line); border-radius: 5px; padding: 8px; min-width: 0; font: inherit; }
 .management-panel form { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin: 10px 0; }
 #backup-settings label { display: grid; }
 #backup-settings input { width: 170px; }
-#game-args-settings { display: grid; gap: 8px; align-items: stretch; }
-#game-args-settings label { display: grid; gap: 6px; }
-#game-args { width: 100%; min-width: 0; min-height: 78px; resize: vertical; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
-#game-args-settings .management-note { margin: 0; }
-#game-args-settings .button { justify-self: start; }
 .save-management .management-heading { flex-wrap: wrap; }
 .save-management h3 { font-size: 13px; }
 .save-management .management-heading .management-note { margin: 6px 0 0; }
@@ -82,5 +77,4 @@
   .management-heading h2 { font-size: 15px; }
   .management-actions .button { flex: 1 0 40%; }
   .management-heading > .button { flex-shrink: 0; font-size: 10px; padding: 7px; }
-  #game-args-settings .button { justify-self: stretch; }
 }

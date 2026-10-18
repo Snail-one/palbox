@@ -55,9 +55,11 @@ const path = require('node:path');
     const waitTask = async name => {
       await page.waitForFunction(label => document.getElementById('management-task').textContent.includes(label + ' · 已完成'), name, { timeout: 30000 });
     };
-    await page.waitForFunction(() => !document.getElementById('game-args').disabled);
-    await page.locator('#game-args').fill('-useperfthreads\n-NoAsyncLoadingThread');
-    await page.locator('#game-args-settings button').click();
+    await page.waitForFunction(() => !document.getElementById('edit-game-args').disabled);
+    await page.locator('#edit-game-args').click();
+    await page.locator('#game-args-dialog').waitFor();
+    await page.locator('#game-args-input').fill('-useperfthreads\n-NoAsyncLoadingThread');
+    await page.locator('#game-args-save').click();
     await page.waitForFunction(() => document.getElementById('toast').textContent.includes('启动参数已保存'));
     assert.deepEqual(f.manager.settings.gameArgs, ['-useperfthreads', '-NoAsyncLoadingThread']);
     await page.locator('[data-action="install"]').click();

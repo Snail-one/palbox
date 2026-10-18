@@ -81,7 +81,7 @@ docker compose up -d --build
 
 应用管理配置需要 `RESTAPIEnabled=True`、非空 `AdminPassword` 和有效的 `RESTAPIPort`。已导入且关闭 REST API 的配置需要先调整这几个参数；不会静默覆盖用户导入的配置。`PALBOX_GAME_PORT` 控制游戏进程的实际监听端口，修改时要同步修改 `compose.yaml` 中 `ports` 的宿主机端口；INI 中的 `PublicPort` 只负责公布端口。
 
-游戏启动参数在「游戏管理 → 服务器概况 → 游戏服务」中设置，每行一个参数，保存到 `palbox/settings.json` 的 `gameArgs`。保存不会自动重启游戏服，将在下次启动或重启时生效；更新、应用配置、备份恢复等流程触发的自动重启同样使用新参数。`-port` 由 `PALBOX_GAME_PORT` 管理，不能在启动参数中填写。
+游戏启动参数通过「游戏管理 → 服务器概况 → 游戏服务」中的「启动参数」按钮编辑，每行一个参数，保存到 `palbox/settings.json` 的 `gameArgs`。保存不会自动重启游戏服，将在下次启动或重启时生效；更新、应用配置、备份恢复等流程触发的自动重启同样使用新参数。`-port` 由 `PALBOX_GAME_PORT` 管理，不能在启动参数中填写。
 
 「恢复输入配置」恢复面板中最初输入或导入的完整内容并自动保存，保留注释、未知字段与顺序；点击应用才影响游戏。已有 INI 配置可通过「配置管理」导入。服务端第一次建立配置库时，如果 `/data/server/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini` 已存在，则将它作为初始输入；否则创建管理模板。
 

@@ -20,6 +20,18 @@
 #save-import-progress { width: 100%; margin: 6px 0 10px; }
 .drop-zone[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
 
+#game-args-input {
+  width: 100%;
+  min-height: 160px;
+  resize: vertical;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
 #source-error {
   margin: 12px 24px 0;
 }

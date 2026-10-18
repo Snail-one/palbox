@@ -1,3 +1,4 @@
+import { createGameArgsDialog } from './game-args-dialog.js';
 import { createSaveImportDialog } from './save-import-dialog.js';
 
 export function createManagementPanel({ dom, api, ask, notify, getConfiguration }) {
@@ -8,13 +9,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   section.innerHTML = `
     <div class="management-heading"><h2>游戏服务 <span id="game-state" class="save-status" data-state="pending">连接中</span></h2><a class="button secondary" href="#configuration">管理配置 →</a></div>
     <p class="management-note">管理服务器的安装、启动、停止与更新。</p>
-    <div class="management-actions"><button class="button secondary" data-action="install">安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop">停止</button><button class="button secondary" data-action="restart">重启</button><button class="button secondary" data-action="update">更新服务端</button></div>
-    <form id="game-args-settings">
-      <label for="game-args">启动参数（每行一个）</label>
-      <textarea id="game-args" rows="3" spellcheck="false" autocapitalize="off" autocomplete="off" aria-describedby="game-args-note" disabled></textarea>
-      <p id="game-args-note" class="management-note">保存后不会自动重启游戏服，将在下次启动或重启时生效。游戏端口由 PALBOX_GAME_PORT 控制，不能在这里设置 -port。</p>
-      <button class="button secondary" type="submit" disabled>保存启动参数</button>
-    </form>`;
+    <div class="management-actions"><button class="button secondary" data-action="install">安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop">停止</button><button class="button secondary" data-action="restart">重启</button><button class="button secondary" data-action="update">更新服务端</button><button class="button secondary" id="edit-game-args" disabled><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg>启动参数</button></div>`;
   const metrics = document.createElement('dl');
   metrics.className = 'management-metrics';
   metrics.setAttribute('aria-label', '服务器运行信息');
@@ -71,6 +66,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   let lastTask;
   let lastStatus;
   let settingsRequest = null;
+  let settingsCache = null;
   let logChannel = 'game';
   let logRequest = 0;
   function error(message) { $('management-error').textContent = message; $('management-error').hidden = !message; }
@@ -95,6 +91,12 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
       await refresh();
     } catch (caught) { error(caught.message); }
   }
+  const gameArgsDialog = createGameArgsDialog({ dom, onSave: async gameArgs => {
+    const saved = await api.request('settings', { method: 'PUT', body: { gameArgs } });
+    settingsCache = saved;
+    notify('启动参数已保存，将在下次启动或重启游戏服时生效');
+  } });
+  $('edit-game-args').addEventListener('click', () => gameArgsDialog.open(settingsCache?.gameArgs ?? []));
   const saveImport = createSaveImportDialog({ dom, api, onImport: async id => {
     error('');
     const task = await api.request('tasks', { method: 'POST', body: { action: 'import-save', id } });
@@ -213,8 +215,9 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   function loadSettings() {
     settingsRequest ??= api.request('settings').then(settings => {
       $('backup-retention').value = settings.backupRetention;
-      $('game-args').value = settings.gameArgs.join('\n');
-      for (const control of [...$('backup-settings').querySelectorAll('input, button'), ...$('game-args-settings').querySelectorAll('textarea, button')]) control.disabled = false;
+      settingsCache = settings;
+      $('backup-settings').querySelectorAll('input, button').forEach(control => { control.disabled = false; });
+      $('edit-game-args').disabled = false;
       return settings;
     }).catch(caught => { settingsRequest = null; throw caught; });
     return settingsRequest;
@@ -223,18 +226,6 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
     event.preventDefault();
     try { await api.request('settings', { method: 'PUT', body: { backupRetention: Number($('backup-retention').value) } }); notify('完整备份保留设置已保存'); }
     catch (caught) { error(caught.message); }
-  });
-  $('game-args-settings').addEventListener('submit', async event => {
-    event.preventDefault();
-    const button = event.currentTarget.querySelector('button[type="submit"]');
-    const gameArgs = $('game-args').value.split('\n').map(line => line.endsWith('\r') ? line.slice(0, -1) : line).filter(line => line.trim() !== '');
-    button.disabled = true;
-    try {
-      const saved = await api.request('settings', { method: 'PUT', body: { gameArgs } });
-      $('game-args').value = saved.gameArgs.join('\n');
-      notify('启动参数已保存，将在下次启动或重启游戏服时生效');
-    } catch (caught) { error(caught.message); }
-    finally { button.disabled = false; }
   });
   $('manager-announce').addEventListener('submit', event => { event.preventDefault(); action('announce', { message: $('announce-message').value }, false); });
   $('manager-logout').addEventListener('click', async () => {

@@ -73,7 +73,7 @@ export function createNavigation({ dom, window, isDirty, onSave, onConfiguration
   });
   document.addEventListener('keydown', event => {
     const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
-    const modalOpen = $('action-dialog').open || $('import-dialog').open || $('save-import-dialog').open;
+    const modalOpen = $('action-dialog').open || $('import-dialog').open || $('save-import-dialog').open || $('game-args-dialog').open;
     const configuring = !$('configuration-page').hidden;
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's' && !modalOpen && configuring) { event.preventDefault(); onSave(); }
     if (event.key === '/' && !typing && !modalOpen && configuring && !$('configuration-editor').hidden) { event.preventDefault(); $('search').focus(); }
