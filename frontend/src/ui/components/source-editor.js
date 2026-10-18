@@ -1,6 +1,7 @@
 export function createSourceEditor({ dom, editor, ask, notify, onChanged }) {
   const { $, el } = dom;
   $('source-editor').addEventListener('input', () => {
+    if ($('source-editor').readOnly) return;
     editor.setSourceDraft($('source-editor').value);
     $('source-error').hidden = true;
     onChanged();
@@ -9,6 +10,7 @@ export function createSourceEditor({ dom, editor, ask, notify, onChanged }) {
   restore.id = 'restore-source';
   $('apply-source').before(restore);
   restore.addEventListener('click', async () => {
+    if ($('source-editor').readOnly) return;
     if (editor.sourceDraft !== null) {
       const discard = await ask({ title: '还原源码？', description: '放弃尚未应用的源码编辑，恢复为当前已应用的配置。', confirm: '还原源码', symbol: 'code' });
       if (!discard) return;
@@ -19,6 +21,7 @@ export function createSourceEditor({ dom, editor, ask, notify, onChanged }) {
     onChanged();
   });
   $('apply-source').addEventListener('click', () => {
+    if ($('source-editor').readOnly) return;
     try {
       editor.applySource($('source-editor').value);
       $('source-error').hidden = true;

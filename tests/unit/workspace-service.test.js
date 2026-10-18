@@ -188,7 +188,7 @@ test('旧配置首次保存前捕获输入基准，保存失败与重试不会�
   assert.equal(loaded.initialSource, old.profiles[0].source);
 });
 
-test('锁定的游戏默认配置不能选择、重命名、删除或修改源码', () => {
+test('游戏默认配置可选择并修改参数，但不能重命名或删除', () => {
   const lockedSource = 'OptionSettings=(ExpRate=1)';
   const initial = {
     version: 1,
@@ -199,13 +199,16 @@ test('锁定的游戏默认配置不能选择、重命名、删除或修改源�
     ]
   };
   const { service, data } = setup(initial);
-  assert.throws(() => service.select('locked'), /只读/);
+  service.select('locked');
+  assert.equal(service.active.id, 'locked');
+  assert.equal(service.updateSource('locked', 'OptionSettings=(ExpRate=9)'), true);
+  const locked = service.profiles.find(profile => profile.id === 'locked');
+  assert.equal(locked.source, 'OptionSettings=(ExpRate=9)');
+  assert.equal(locked.initialSource, lockedSource);
+  assert.equal(JSON.parse(data.get(KEY)).profiles.find(profile => profile.id === 'locked').source, 'OptionSettings=(ExpRate=9)');
   assert.throws(() => service.rename('改名', 'locked'), /不能重命名/);
   assert.throws(() => service.remove('locked'), /不能删除/);
-  assert.throws(() => service.updateSource('locked', 'OptionSettings=(ExpRate=9)'), /不能修改源码/);
-  assert.equal(service.profiles.find(profile => profile.id === 'locked').source, lockedSource);
-  assert.equal(service.active.id, 'editable');
-  assert.equal(data.get(KEY), JSON.stringify(initial));
+  assert.equal(service.active.id, 'locked');
 });
 
 test('删除最后一个可编辑配置时从游戏默认配置创建可编辑副本', () => {

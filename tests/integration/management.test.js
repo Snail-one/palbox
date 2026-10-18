@@ -46,6 +46,17 @@ test('管理 API 登录、权限、并发保存与路径边界', { skip: process
   await writeFile(defaultFile, changedDefault);
   const refreshed = await (await f.request('/api/workspace')).json();
   assert.equal(refreshed.workspace.profiles.find(profile => profile.locked).source, changedDefault);
+  const lockedProfile = refreshed.workspace.profiles.find(profile => profile.locked);
+  const workingProfile = refreshed.workspace.profiles.find(profile => profile.id === refreshed.workspace.activeId);
+  lockedProfile.source = workingProfile.source.replace('ExpRate=2,', 'ExpRate=5,');
+  refreshed.workspace.activeId = lockedProfile.id;
+  assert.equal((await f.request('/api/workspace', { method: 'PUT', body: refreshed })).status, 200);
+  const edited = await (await f.request('/api/workspace')).json();
+  const editedLocked = edited.workspace.profiles.find(profile => profile.locked);
+  assert.equal(edited.workspace.activeId, lockedProfile.id);
+  assert.equal(value(editedLocked.source, 'ExpRate'), '5');
+  assert.equal(editedLocked.name, '游戏默认配置');
+  assert.equal(editedLocked.origin, OFFICIAL_DEFAULT_ORIGIN);
   assert.equal((await f.request('/api/settings')).status, 200);
   assert.equal(JSON.stringify(await (await f.request('/api/settings')).json()).includes('hash'), false);
   for (const route of ['/api/backup?id=../../etc/passwd', '/api/logs?channel=../../etc/passwd']) assert.ok((await f.request(route)).status >= 400);

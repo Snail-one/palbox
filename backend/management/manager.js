@@ -268,7 +268,6 @@ export class Manager {
         const snapshot = this.store.snapshot();
         if (payload.revision !== snapshot.revision || payload.profileId !== snapshot.workspace.activeId) throw failure('配置已变更，请等待自动保存完成后重新应用。', 409);
         const active = this.store.active();
-        if (active.locked) throw failure('游戏默认配置为只读，不能应用；请创建副本后编辑。', 409);
         const source = output(active.source);
         const values = new Map(parse(source).entries.map(e => [e.key, e.raw]));
         if (values.get('RESTAPIEnabled') !== 'True' || !decodeString(values.get('AdminPassword') || '""')) throw failure('管理模式需要 RESTAPIEnabled=True 和非空管理员密码。');

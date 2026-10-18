@@ -95,13 +95,16 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
     async select(id) {
       if (id === workspace.active.id) {
         navigation.closeSidebar();
+        if (workspace.active.locked) { navigation.openEditor('form'); return; }
         navigation.openEditor('advanced');
         panel?.showSource();
         return;
       }
       if (!(await beforeLeave())) { navigation.openEditor(); return; }
+      const profile = workspace.profiles.find(candidate => candidate.id === id);
       workspace.select(id);
-      changedProfile(undefined, { source: true });
+      // The default entry opens the parameter form; its raw source stays read-only.
+      changedProfile(undefined, { source: profile?.locked !== true });
     },
     async create(name) {
       try {
@@ -113,8 +116,8 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
     async duplicate(name, id = workspace.active.id, { fromList = false } = {}) {
       const sourceProfile = workspace.profiles.find(profile => profile.id === id) ?? workspace.active;
       let source;
-      if (sourceProfile.locked) {
-        // A copy of the read-only entry must be usable as a managed configuration.
+      if (sourceProfile.locked && sourceProfile.source === sourceProfile.initialSource) {
+        // An untouched default copy gets managed REST settings and can be applied directly.
         try { ({ source } = await management.request('default-configuration')); }
         catch (error) { notifications.toast(error.message, true); return; }
       } else {
@@ -128,7 +131,8 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
       if (success) notifications.toast('已创建独立副本');
     },
     rename(name, id = workspace.active.id) {
-      workspace.rename(name, id);
+      try { workspace.rename(name, id); }
+      catch (error) { notifications.toast(error.message, true); return; }
       if (persist()) notifications.toast('配置名称已提交');
       profiles.render();
       summary.render();
@@ -149,7 +153,8 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
         }
       }
       const activeRemoved = id === workspace.active.id;
-      workspace.remove(id, { fallbackSource, fallbackOrigin });
+      try { workspace.remove(id, { fallbackSource, fallbackOrigin }); }
+      catch (error) { notifications.toast(error.message, true); return; }
       if (!fromList) { changedProfile('配置已删除'); return; }
       if (activeRemoved) editor.reset(workspace.active.source);
       const success = persist();

@@ -119,28 +119,22 @@ export class ManagementStore {
         locked = createProfile(GAME_DEFAULT_PROFILE_NAME, source, { id: () => GAME_DEFAULT_PROFILE_ID, origin: OFFICIAL_DEFAULT_ORIGIN, locked: true });
         workspace.profiles.push(locked);
         changed = true;
-      } else if (locked.name !== GAME_DEFAULT_PROFILE_NAME || locked.source !== source || locked.initialSource !== source || locked.origin !== OFFICIAL_DEFAULT_ORIGIN || locked.locked !== true) {
-        Object.assign(locked, {
-          name: GAME_DEFAULT_PROFILE_NAME, source, initialSource: source,
-          origin: OFFICIAL_DEFAULT_ORIGIN, locked: true, updatedAt: new Date().toISOString()
-        });
-        changed = true;
+      } else {
+        // The file is the initial input. Once parameters are edited, keep the
+        // working source and only move the restore baseline forward.
+        const unedited = locked.source === locked.initialSource;
+        const nextSource = unedited || !locked.source ? source : locked.source;
+        if (locked.name !== GAME_DEFAULT_PROFILE_NAME || locked.origin !== OFFICIAL_DEFAULT_ORIGIN || locked.locked !== true || locked.initialSource !== source || locked.source !== nextSource) {
+          Object.assign(locked, {
+            name: GAME_DEFAULT_PROFILE_NAME, origin: OFFICIAL_DEFAULT_ORIGIN, locked: true,
+            source: nextSource, initialSource: source, updatedAt: new Date().toISOString()
+          });
+          changed = true;
+        }
       }
-    } else if (locked && locked.origin !== OFFICIAL_DEFAULT_ORIGIN) {
-      locked.origin = OFFICIAL_DEFAULT_ORIGIN;
+    } else if (locked && (locked.name !== GAME_DEFAULT_PROFILE_NAME || locked.origin !== OFFICIAL_DEFAULT_ORIGIN || locked.locked !== true)) {
+      Object.assign(locked, { name: GAME_DEFAULT_PROFILE_NAME, origin: OFFICIAL_DEFAULT_ORIGIN, locked: true });
       changed = true;
-    }
-    if (locked && workspace.activeId === locked.id) {
-      const fallback = workspace.profiles.find(profile => profile.id !== locked.id && !profile.locked);
-      if (fallback) {
-        workspace.activeId = fallback.id;
-        changed = true;
-      } else if (locked.source) {
-        const editable = createProfile('我的帕鲁世界', managedTemplate(this.gamePort, locked.source), { origin: DERIVED_DEFAULT_ORIGIN });
-        workspace.profiles.push(editable);
-        workspace.activeId = editable.id;
-        changed = true;
-      }
     }
     return changed;
   }
@@ -201,8 +195,11 @@ export class ManagementStore {
       for (let index = 0; index < candidate.profiles.length; index++) {
         const profile = candidate.profiles[index];
         if (locked && profile.id === locked.id) {
-          // The server owns this entry; client edits to it are never persisted.
-          candidate.profiles[index] = structuredClone(locked);
+          // The server owns name/origin/restore baseline; parameter edits are allowed.
+          const next = structuredClone(locked);
+          next.source = profile.source;
+          if (typeof profile.updatedAt === 'string') next.updatedAt = profile.updatedAt;
+          candidate.profiles[index] = next;
           continue;
         }
         const previous = this.workspace.profiles.find(p => p.id === profile.id);
@@ -213,7 +210,6 @@ export class ManagementStore {
         if (profile.origin === OFFICIAL_DEFAULT_ORIGIN) profile.origin = DERIVED_DEFAULT_ORIGIN;
       }
       if (locked && !candidate.profiles.some(profile => profile.id === locked.id)) candidate.profiles.push(structuredClone(locked));
-      if (locked && candidate.activeId === locked.id) throw failure('游戏默认配置为只读，不能作为当前编辑配置。', 409);
       validateConfigurationWorkspace(candidate);
       const next = this.revision + 1;
       const pendingDefault = this.pendingDefault && candidate.profiles.some(profile => profile.id === this.pendingDefault.id && profile.source === this.pendingDefault.source) ? this.pendingDefault : null;

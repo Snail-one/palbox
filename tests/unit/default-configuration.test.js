@@ -169,32 +169,68 @@ test('默认配置接口要求登录，文件缺失时返回明确错误且现�
   assert.equal((await request('/api/workspace', { cookie })).body.workspace.activeId, manager.store.active().id);
 });
 
-test('游戏默认配置由服务端维护，客户端不能修改、删除或选中', async t => {
+test('游戏默认配置可修改参数并应用，但名称和来源由服务端维护', async t => {
   const { directory, file } = await fixture(t);
   await writeFile(file, official);
   const store = new ManagementStore(directory, 9000);
   await store.initialize();
   const workingId = store.active().id;
   const lockedId = store.workspace.profiles.find(profile => profile.locked).id;
+  const editedSource = 'OptionSettings=(ServerName="Edited Default",ExpRate=5)';
 
+  // Parameter edits are accepted; identity fields and the restore baseline stay canonical.
   let snapshot = store.snapshot();
   const target = snapshot.workspace.profiles.find(profile => profile.id === lockedId);
-  target.source = 'OptionSettings=(ServerName="Tampered")';
+  target.source = editedSource;
   target.name = '篡改的默认配置';
+  target.origin = '伪造来源';
+  target.initialSource = 'OptionSettings=(Wrong=1)';
   await store.update(snapshot.workspace, snapshot.revision);
   let current = store.snapshot().workspace;
-  assert.equal(current.profiles.find(profile => profile.id === lockedId).source, official);
-  assert.equal(current.profiles.find(profile => profile.id === lockedId).name, GAME_DEFAULT_PROFILE_NAME);
-  assert.equal(current.profiles.find(profile => profile.id === lockedId).locked, true);
+  let kept = current.profiles.find(profile => profile.id === lockedId);
+  assert.equal(kept.source, editedSource);
+  assert.equal(kept.name, GAME_DEFAULT_PROFILE_NAME);
+  assert.equal(kept.origin, OFFICIAL_DEFAULT_ORIGIN);
+  assert.equal(kept.locked, true);
+  assert.equal(kept.initialSource, official);
   assert.equal(current.activeId, workingId);
 
+  // Removal is still corrected and the edited working source is retained.
   snapshot = store.snapshot();
   snapshot.workspace.profiles = snapshot.workspace.profiles.filter(profile => profile.id !== lockedId);
   await store.update(snapshot.workspace, snapshot.revision);
   current = store.snapshot().workspace;
-  assert.ok(current.profiles.some(profile => profile.id === lockedId));
-  assert.equal(current.profiles.find(profile => profile.id === lockedId).source, official);
+  kept = current.profiles.find(profile => profile.id === lockedId);
+  assert.ok(kept);
+  assert.equal(kept.source, editedSource);
 
+  // A file refresh moves the restore baseline but does not overwrite edits.
+  const changed = official.replace('ExpRate=2.500000', 'ExpRate=7.000000');
+  await writeFile(file, changed);
+  await store.syncDefaultProfile();
+  kept = store.snapshot().workspace.profiles.find(profile => profile.id === lockedId);
+  assert.equal(kept.source, editedSource);
+  assert.equal(kept.initialSource, changed);
+
+  // Resetting to the file makes the entry follow later file updates again.
+  snapshot = store.snapshot();
+  snapshot.workspace.profiles.find(profile => profile.id === lockedId).source = changed;
+  await store.update(snapshot.workspace, snapshot.revision);
+  const nextFile = changed.replace('ExpRate=7.000000', 'ExpRate=9.000000');
+  await writeFile(file, nextFile);
+  await store.syncDefaultProfile();
+  kept = store.snapshot().workspace.profiles.find(profile => profile.id === lockedId);
+  assert.equal(kept.source, nextFile);
+  assert.equal(kept.initialSource, nextFile);
+
+  // The default entry can be selected and therefore applied by the manager.
+  snapshot = store.snapshot();
+  snapshot.workspace.activeId = lockedId;
+  await store.update(snapshot.workspace, snapshot.revision);
+  assert.equal(store.snapshot().workspace.activeId, lockedId);
+  assert.equal(store.active().locked, true);
+
+  // Other profiles cannot claim locked/official identity.
   snapshot = store.snapshot();
   const fake = structuredClone(snapshot.workspace.profiles.find(profile => profile.id === workingId));
   fake.id = 'fake-locked'; fake.name = '伪只读'; fake.locked = true; fake.origin = OFFICIAL_DEFAULT_ORIGIN;
@@ -203,15 +239,6 @@ test('游戏默认配置由服务端维护，客户端不能修改、删除或�
   const savedFake = store.snapshot().workspace.profiles.find(profile => profile.id === 'fake-locked');
   assert.equal(savedFake.locked, undefined);
   assert.equal(savedFake.origin, DERIVED_DEFAULT_ORIGIN);
-
-  snapshot = store.snapshot();
-  snapshot.workspace.activeId = lockedId;
-  await assert.rejects(store.update(snapshot.workspace, snapshot.revision), { status: 409, message: /只读/ });
-
-  const changed = official.replace('ExpRate=2.500000', 'ExpRate=7.000000');
-  await writeFile(file, changed);
-  await store.syncDefaultProfile();
-  assert.equal(store.snapshot().workspace.profiles.find(profile => profile.id === lockedId).source, changed);
 });
 
 test('旧版官方来源配置迁移为可编辑副本，并自动补充只读默认项', async t => {

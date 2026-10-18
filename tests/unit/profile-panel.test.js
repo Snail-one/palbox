@@ -118,8 +118,8 @@ test('官方默认配置来源的弹窗只读且不会调用保存回调', async
   await saveButton.fire('click');
   assert.deepEqual(saves, []);
   const tools = rows[1].children[1];
-  assert.equal(tools.children[0].disabled, true);
-  assert.equal(tools.children[0].children[1].textContent, '只读');
+  assert.equal(tools.children[0].disabled, false);
+  assert.equal(tools.children[0].children[1].textContent, '选择');
   assert.deepEqual(tools.children.map(button => button.dataset.profileAction), ['select', 'duplicate']);
 });
 

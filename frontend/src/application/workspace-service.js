@@ -58,9 +58,7 @@ export class WorkspaceService {
   }
 
   select(id) {
-    const profile = this.profiles.find(candidate => candidate.id === id);
-    if (!profile) throw new Error('配置不存在。');
-    if (profile.locked) throw new Error('游戏默认配置为只读，不能选择；请创建副本后编辑。');
+    if (!this.profiles.some(profile => profile.id === id)) throw new Error('配置不存在。');
     this.#workspace.activeId = id;
   }
 
@@ -103,7 +101,6 @@ export class WorkspaceService {
   updateSource(id, source) {
     const profile = this.profiles.find(candidate => candidate.id === id);
     if (!profile) throw new Error('配置不存在。');
-    if (profile.locked) throw new Error('游戏默认配置只读取自游戏目录中的 DefaultPalWorldSettings.ini，不能修改源码。');
     parse(source);
     // Capture legacy profiles before their first edit; later saves keep this baseline.
     profile.initialSource ??= profile.source;

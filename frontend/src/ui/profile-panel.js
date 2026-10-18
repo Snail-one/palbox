@@ -22,7 +22,7 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
     $('source-view-save').hidden = sourceReadOnly;
     $('source-view-save').disabled = sourceReadOnly;
     $('source-view-error').hidden = true;
-    sourceDescription.textContent = `「${profile.name}」的输入源码。来源：${origin}。${sourceReadOnly ? '该条目直接读取游戏目录中的 DefaultPalWorldSettings.ini，源码不可修改；可创建副本后编辑。' : active ? '保存后会替换当前配置的输入源码，当前未应用或无效的编辑将被覆盖。' : '保存后更新该配置，不会切换当前配置。'}`;
+    sourceDescription.textContent = `「${profile.name}」的输入源码。来源：${origin}。${sourceReadOnly ? `该条目以游戏目录中的 DefaultPalWorldSettings.ini 作为输入来源，输入源码只读；${active ? '请在可视化编辑或参数列表中修改参数并应用。' : '选择后可在可视化编辑或参数列表中修改参数并应用。'}` : active ? '保存后会替换当前配置的输入源码，当前未应用或无效的编辑将被覆盖。' : '保存后更新该配置，不会切换当前配置。'}`;
     sourceDialog.showModal();
     sourceText.scrollTop = 0;
   }
@@ -61,7 +61,7 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
   }
   async function duplicate(profile, fromList = false) {
     if (profile.id === workspace.active.id && !ready()) return;
-    const description = profile.locked
+    const description = profile.locked && profile.source === profile.initialSource
       ? '副本读取当前官方默认配置并补入管理模式必需的 REST API 参数，作为自己的恢复基准；后续编辑与原条目相互独立。'
       : `副本包含「${profile.name}」的所有有效参数，并将这些参数作为自己的恢复基准；后续编辑与原配置相互独立。`;
     const name = await ask({ title: '复制这套配置', description, name: profile.name + ' · 副本', confirm: '复制配置', symbol: 'copy' });
@@ -83,6 +83,11 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
       $('profile-count').textContent = workspace.profiles.length;
       $('profile-origin').textContent = `来源：${workspace.active.origin || '已有配置'}`;
       $('profile-origin').title = workspace.active.origin || '已有配置';
+      const activeLocked = workspace.active.locked === true;
+      $('rename-profile').disabled = activeLocked;
+      $('delete-profile').disabled = activeLocked;
+      $('rename-profile').title = activeLocked ? '游戏默认配置不能重命名。' : '';
+      $('delete-profile').title = activeLocked ? '游戏默认配置不能删除。' : '';
       for (const profile of workspace.profiles) {
         const selected = profile.id === workspace.active.id;
         const row = el('div', `profile-item${selected ? ' selected' : ''}`);
@@ -97,7 +102,7 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
         const origin = profile.origin || '已有配置';
         const originText = el('small', 'profile-origin', `来源：${origin}`);
         originText.title = origin;
-        text.append(el('strong', '', profile.name), el('small', '', profile.locked ? '游戏默认文件 · 只读' : `${selected ? '当前配置 · ' : ''}PalWorldSettings.ini`), originText);
+        text.append(el('strong', '', profile.name), el('small', '', `${selected ? '当前配置 · ' : ''}${profile.locked ? '游戏默认来源 · 源码只读' : 'PalWorldSettings.ini'}`), originText);
         button.append(icon('file'), text);
         if (selected) button.append(icon('arrow'));
         button.addEventListener('click', () => openSourceDialog(profile));
@@ -105,11 +110,11 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
         const choose = el('button', 'button secondary');
         choose.type = 'button';
         choose.dataset.profileAction = 'select';
-        choose.disabled = selected || profile.locked === true;
-        choose.append(icon(profile.locked ? 'eye' : 'check'), el('span', '', profile.locked ? '只读' : selected ? '已选择' : '选择'));
-        if (profile.locked) choose.title = '游戏默认配置只读，不能选择；可创建副本后编辑。';
+        choose.disabled = selected;
+        choose.append(icon('check'), el('span', '', selected ? '已选择' : '选择'));
+        if (profile.locked) choose.title = '选择后在可视化编辑中修改参数；输入源码只读。';
         choose.addEventListener('click', () => {
-          if (selected || profile.locked) return;
+          if (selected) return;
           Promise.resolve(actions.select(profile.id)).catch(error => notify(error.message, true));
         });
         tools.append(choose);

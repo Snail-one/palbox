@@ -18,8 +18,17 @@ export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged
 
   function render() {
     const origin = workspace.active?.origin || '已有配置';
+    const sourceLocked = workspace.active?.locked === true;
     $('source-origin').textContent = `来源：${origin}`;
     $('source-origin').title = origin;
+    $('source-file').textContent = workspace.active?.locked ? '输入源码 · DefaultPalWorldSettings.ini' : '输入源码 · PalWorldSettings.ini';
+    $('source-editor').readOnly = sourceLocked;
+    $('apply-source').disabled = sourceLocked;
+    $('restore-source').disabled = sourceLocked;
+    $('source-editor').title = sourceLocked ? '该条目以游戏默认文件为输入，源码只读；请使用可视化编辑或参数列表修改参数。' : '';
+    $('source-help').textContent = sourceLocked
+      ? '游戏默认配置的输入源码只读；请在「可视化编辑」或「参数列表」中修改参数，修改后可直接应用。'
+      : '粘贴或编辑 INI 后点击「应用源码」，同步到表单和输出源码。';
     $('view-form').hidden = view.mode !== 'form';
     $('view-advanced').hidden = view.mode !== 'advanced';
     $('table-container').hidden = view.advanced !== 'table';

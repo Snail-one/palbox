@@ -583,6 +583,11 @@ textarea::placeholder {
   border-color: #dedede;
 }
 
+#source-editor[readonly] {
+  color: var(--muted);
+  cursor: default;
+}
+
 .primary,
 .category-button.active,
 .category-button.active:hover {
