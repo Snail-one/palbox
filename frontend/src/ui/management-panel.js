@@ -25,7 +25,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     <div class="server-controls">
       <div class="management-actions server-primary-actions">
         <button class="button primary" data-action="install" hidden>安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop" hidden>停止</button><button class="button secondary" data-action="restart" hidden>重启</button>
-        <button class="button secondary" data-action="update" title="更新前会自动备份，运行中的游戏服务将短暂停服。">更新服务端</button><button class="button secondary" id="edit-game-args" disabled>启动参数</button><button class="button secondary" id="edit-install-args" disabled>安装参数</button><button class="button secondary" data-action="force-stop" title="仅在正常停止无效时使用，可能丢失最近一次未保存的进度。">强制停止</button>
+        <button class="button secondary" data-action="update" title="更新前会自动备份，运行中的游戏服务将短暂停服。">更新服务端</button><button class="button secondary" id="edit-game-args" disabled>启动参数</button><button class="button secondary" id="edit-install-args" disabled>安装参数</button><button class="button secondary" id="edit-shutdown-wait" disabled>关服倒计时</button><button class="button secondary" data-action="force-stop" title="仅在正常停止无效时使用，可能丢失最近一次未保存的进度。">强制停止</button>
       </div>
     </div>
     <dl class="management-metrics" aria-label="服务器运行信息">
@@ -159,6 +159,34 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     settingsCache = saved;
     notify('启动参数已保存，将在下次启动或重启游戏服时生效');
   } });
+  $('edit-shutdown-wait').addEventListener('click', () => {
+    const dialog = $('shutdown-wait-dialog');
+    if (dialog.open) return;
+    $('shutdown-wait-input').value = settingsCache?.shutdownWait ?? 5;
+    $('shutdown-wait-error').hidden = true;
+    dialog.showModal();
+  });
+  for (const id of ['shutdown-wait-close', 'shutdown-wait-cancel']) $(id).addEventListener('click', () => $('shutdown-wait-dialog').close());
+  $('shutdown-wait-save').addEventListener('click', async () => {
+    const input = $('shutdown-wait-input');
+    const errorNode = $('shutdown-wait-error');
+    const value = input.value.trim() === '' ? NaN : Number(input.value);
+    if (!Number.isInteger(value) || value < 0 || value > 300) {
+      errorNode.textContent = '关服倒计时须为 0 到 300 的整数秒。';
+      errorNode.hidden = false;
+      return;
+    }
+    const button = $('shutdown-wait-save');
+    button.disabled = true; errorNode.hidden = true;
+    try {
+      settingsCache = await api.request('settings', { method: 'PUT', body: { shutdownWait: value } });
+      $('shutdown-wait-dialog').close();
+      notify(`关服倒计时已设置为 ${value} 秒`);
+    } catch (caught) {
+      errorNode.textContent = caught.message;
+      errorNode.hidden = false;
+    } finally { button.disabled = false; }
+  });
   $('edit-game-args').addEventListener('click', () => gameArgsDialog.open((settingsCache?.gameArgs ?? []).join('\n')));
   const installArgsDialog = createArgsDialog({ dom, prefix: 'install-args', onSave: async installArgs => {
     const saved = await api.request('settings', { method: 'PUT', body: { installArgs } });
@@ -456,6 +484,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       $('backup-settings').querySelectorAll('input, button').forEach(control => { control.disabled = false; });
       $('edit-game-args').disabled = false;
       $('edit-install-args').disabled = false;
+      $('edit-shutdown-wait').disabled = false;
       return settings;
     }).catch(caught => { settingsRequest = null; throw caught; });
     return settingsRequest;

@@ -10,7 +10,7 @@ import { appendLog, appendCombinedLog, initializeCombinedLog, readCombinedLog, r
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 export class Runtime {
-  constructor(directory, { steamcmd = '/opt/steamcmd/steamcmd.sh', port = 8211, readyTimeout = 180000, stopTimeout = 60000, args = [], installArgs = null } = {}) {
+  constructor(directory, { steamcmd = '/opt/steamcmd/steamcmd.sh', port = 8211, readyTimeout = 180000, stopTimeout = 60000, shutdownWait = 5, args = [], installArgs = null } = {}) {
     this.directory = directory;
     this.server = path.join(directory, 'server');
     this.saved = path.join(this.server, 'Pal/Saved');
@@ -19,6 +19,7 @@ export class Runtime {
     this.port = port;
     this.readyTimeout = readyTimeout;
     this.stopTimeout = stopTimeout;
+    this.shutdownWait = shutdownWait;
     this.args = args;
     this.installArgs = installArgs;
     this.game = null;
@@ -142,16 +143,21 @@ export class Runtime {
     if (!child) return;
     const wasReady = this.ready;
     this.ready = false;
+    const waitTime = Number.isInteger(this.shutdownWait) && this.shutdownWait >= 0 && this.shutdownWait <= 300 ? this.shutdownWait : 5;
+    let countdown = 0;
     if (force) this.kill(child, 'SIGKILL');
     else {
-      try { await this.rest('save', {}); await this.rest('shutdown', { waittime: 5, message: 'Palbox 正在维护服务器' }); }
-      catch (error) {
+      try {
+        await this.rest('save', {});
+        await this.rest('shutdown', { waittime: waitTime, message: 'Palbox 正在维护服务器' });
+        countdown = waitTime;
+      } catch (error) {
         if (requireSave) { this.ready = wasReady; throw error; }
         this.log('palbox', `API 关服失败，发送 SIGTERM：${error.message}\n`);
         this.kill(child, 'SIGTERM');
       }
     }
-    const until = Date.now() + this.stopTimeout;
+    const until = Date.now() + this.stopTimeout + countdown * 1000;
     while (this.game === child && Date.now() < until) await delay(100);
     if (this.game === child) throw failure('游戏进程尚未退出，已中止后续文件操作。', 504);
   }

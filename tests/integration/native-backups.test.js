@@ -118,7 +118,7 @@ test('旧定时计划自动移除，已有定时归档继续保留', async t => 
   const manager = new Manager({ directory: f.directory }); t.after(() => manager.close());
   await manager.initialize();
   assert.deepEqual(manager.publicSettings(), {
-    backupRetention: 10, autoStart: false, gameArgs: [],
+    backupRetention: 10, autoStart: false, shutdownWait: 5, gameArgs: [],
     installArgs: ['+force_install_dir', path.join(f.directory, 'server'), '+login', 'anonymous', '+app_update', '2394010', 'validate', '+quit']
   });
   const migrated = JSON.parse(await readFile(settingsFile, 'utf8'));

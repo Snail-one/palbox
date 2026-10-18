@@ -119,6 +119,7 @@ export class Manager {
       if (!Object.hasOwn(settings, 'autoStart')) { settings.autoStart = false; write = true; }
       if (!Object.hasOwn(settings, 'gameArgs')) { settings.gameArgs = []; write = true; }
       if (!Object.hasOwn(settings, 'installArgs')) { settings.installArgs = [...DEFAULT_INSTALL_ARGS]; write = true; }
+      if (!Object.hasOwn(settings, 'shutdownWait')) { settings.shutdownWait = 5; write = true; }
       if (Object.hasOwn(settings, 'backupIntervalHours')) { delete settings.backupIntervalHours; write = true; }
       this.settings = settings;
       this.setupRequired = false;
@@ -149,6 +150,9 @@ export class Manager {
       || !/^[a-f0-9]{128}$(?![\s\S])/.test(admin.hash || '') || !/^[a-f0-9]+$(?![\s\S])/.test(admin.salt || '')) throw new Error(this.settingsError());
     if (!Number.isInteger(settings.backupRetention) || settings.backupRetention < 1 || settings.backupRetention > 100) throw new Error(this.settingsError());
     if (Object.hasOwn(settings, 'autoStart') && typeof settings.autoStart !== 'boolean') throw new Error(this.settingsError());
+    if (Object.hasOwn(settings, 'shutdownWait') && (!Number.isInteger(settings.shutdownWait) || settings.shutdownWait < 0 || settings.shutdownWait > 300)) {
+      throw new Error(`settings.json 中的关服倒计时须为 0 到 300 的整数秒。请编辑 ${this.settingsFile} 修正 shutdownWait 后重新启动。`);
+    }
     if (Object.hasOwn(settings, 'gameArgs')) {
       const message = gameArgsError(settings.gameArgs);
       if (message) throw new Error(`settings.json 中的启动参数无效：${message}请编辑 ${this.settingsFile} 修正 gameArgs 后重新启动。`);
@@ -163,7 +167,8 @@ export class Manager {
   get autoStart() { return this.settings?.autoStart === true; }
   get gameArgs() { return this.settings?.gameArgs ?? []; }
   get installArgs() { return this.settings?.installArgs ?? DEFAULT_INSTALL_ARGS; }
-  syncRuntimeArgs() { this.runtime.args = [...this.gameArgs]; }
+  get shutdownWait() { return this.settings?.shutdownWait ?? 5; }
+  syncRuntimeArgs() { this.runtime.args = [...this.gameArgs]; this.runtime.shutdownWait = this.shutdownWait; }
   syncRuntimeInstallArgs() { this.runtime.installArgs = this.installArgs.map(arg => arg === '{server}' ? this.runtime.server : arg); }
   async setupAdmin(username, password) {
     if (!this.setupRequired) throw failure('管理员已初始化，请直接登录。', 409);
@@ -174,10 +179,12 @@ export class Manager {
       if (!validUsername(name)) throw failure('管理员用户名须为 1 到 64 个字符，且不能包含控制字符。', 400);
       if (typeof password !== 'string' || password.length < 12) throw failure('管理密码至少需要 12 位。', 400);
       if (password.length > 1024) throw failure('管理密码不能超过 1024 位。', 400);
-      const next = { admin: { username: name, ...await passwordRecord(password) }, backupRetention: 10, autoStart: false, gameArgs: [], installArgs: [...DEFAULT_INSTALL_ARGS] };
+      const next = { admin: { username: name, ...await passwordRecord(password) }, backupRetention: 10, autoStart: false, shutdownWait: 5, gameArgs: [], installArgs: [...DEFAULT_INSTALL_ARGS] };
       await jsonWrite(this.settingsFile, next);
       this.settings = next;
       this.setupRequired = false;
+      this.syncRuntimeArgs();
+      this.syncRuntimeInstallArgs();
       return next.admin;
     } finally { this.setupPending = false; }
   }
@@ -602,6 +609,7 @@ export class Manager {
     return {
       backupRetention: this.backupRetention,
       autoStart: this.autoStart,
+      shutdownWait: this.shutdownWait,
       gameArgs: [...this.gameArgs],
       installArgs: this.installArgs.map(arg => arg === '{server}' ? this.runtime.server : arg)
     };
@@ -617,9 +625,10 @@ export class Manager {
     if (Object.hasOwn(value, 'backupIntervalHours')) throw failure('面板定时备份已移除，请使用游戏官方自动备份。');
     const hasRetention = Object.hasOwn(value, 'backupRetention');
     const hasAutoStart = Object.hasOwn(value, 'autoStart');
+    const hasShutdownWait = Object.hasOwn(value, 'shutdownWait');
     const hasArgs = Object.hasOwn(value, 'gameArgs');
     const hasInstallArgs = Object.hasOwn(value, 'installArgs');
-    if (!hasRetention && !hasAutoStart && !hasArgs && !hasInstallArgs) throw failure('请提供要保存的设置。');
+    if (!hasRetention && !hasAutoStart && !hasShutdownWait && !hasArgs && !hasInstallArgs) throw failure('请提供要保存的设置。');
     const next = { ...this.settings, gameArgs: [...this.gameArgs], installArgs: [...this.installArgs] };
     if (hasRetention) {
       if (!Number.isInteger(value.backupRetention) || value.backupRetention < 1 || value.backupRetention > 100) throw failure('完整备份保留数量须为 1 到 100。');
@@ -628,6 +637,10 @@ export class Manager {
     if (hasAutoStart) {
       if (typeof value.autoStart !== 'boolean') throw failure('自动启动设置必须为布尔值。');
       next.autoStart = value.autoStart;
+    }
+    if (hasShutdownWait) {
+      if (!Number.isInteger(value.shutdownWait) || value.shutdownWait < 0 || value.shutdownWait > 300) throw failure('关服倒计时须为 0 到 300 的整数秒。');
+      next.shutdownWait = value.shutdownWait;
     }
     if (hasArgs) {
       const message = gameArgsError(value.gameArgs);
