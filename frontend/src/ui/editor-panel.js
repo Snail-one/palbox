@@ -22,6 +22,10 @@ export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged
     $('table-container').hidden = view.advanced !== 'table';
     $('source-container').hidden = view.advanced !== 'source';
     $('output-container').hidden = view.advanced !== 'output';
+    for (const mode of ['form', 'advanced']) {
+      $('editor-mode-' + mode).classList.toggle('selected', mode === view.mode);
+      $('editor-mode-' + mode).setAttribute('aria-pressed', String(mode === view.mode));
+    }
     for (const mode of ['table', 'source', 'output']) {
       $('mode-' + mode).classList.toggle('selected', mode === view.advanced);
       $('mode-' + mode).setAttribute('aria-pressed', String(mode === view.advanced));
@@ -31,6 +35,13 @@ export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged
     else if (view.advanced === 'table') parameters.render();
     else source.render();
   }
+
+  for (const mode of ['form', 'advanced']) $('editor-mode-' + mode).addEventListener('click', () => {
+    if (view.mode === mode) return;
+    view.mode = mode;
+    render();
+    onViewChanged(mode);
+  });
 
   for (const mode of ['table', 'source', 'output']) $('mode-' + mode).addEventListener('click', () => {
     if (view.advanced === mode) return;

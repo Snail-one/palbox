@@ -1,5 +1,23 @@
-export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, isDirty, actions }) {
+export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, isDirty, clipboard, notify, actions }) {
   const { $, el, icon, empty } = dom;
+  const sourceDialog = $('source-view-dialog');
+  const sourceText = $('source-view-text');
+  const sourceDescription = $('source-view-description');
+  function closeSourceDialog() { sourceDialog.close(); }
+  function openSourceDialog() {
+    sourceText.value = workspace.active.source;
+    sourceDescription.textContent = `「${workspace.active.name}」的输入源码（只读）。修改请使用「高级编辑 → 输入源码」。`;
+    sourceDialog.showModal();
+    sourceText.scrollTop = 0;
+  }
+  $('view-profile-source').addEventListener('click', openSourceDialog);
+  $('source-view-close').addEventListener('click', closeSourceDialog);
+  $('source-view-ok').addEventListener('click', closeSourceDialog);
+  sourceDialog.addEventListener('close', () => { sourceText.value = ''; });
+  $('source-view-copy').addEventListener('click', async () => {
+    try { await clipboard.write(sourceText.value); notify('配置源码已复制'); }
+    catch { notify('复制失败，请手动选择源码复制', true); }
+  });
   $('new-profile').addEventListener('click', async () => {
     if (!(await beforeLeave())) return;
     const name = await ask({ title: '创建一个新的世界', description: '读取游戏目录中的官方 DefaultPalWorldSettings.ini，创建一套独立配置。', name: '新的帕鲁世界', confirm: '创建配置', symbol: 'plus' });

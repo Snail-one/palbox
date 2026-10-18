@@ -23,12 +23,12 @@ export function createNavigation({ dom, window, isDirty, onSave, onConfiguration
       '#game/saves': { view: 'saves', title: '存档管理' }
     };
     const configurationRoutes = {
-      '#configuration/advanced': { view: 'advanced', title: '高级编辑' },
+      '#configuration/advanced': { view: 'editor', mode: 'advanced', title: '配置编辑' },
       '#configuration/profiles': { view: 'profiles', title: '配置列表' }
     };
     const route = game
       ? gameRoutes[window.location.hash] || { view: 'overview', title: '服务器概况' }
-      : configurationRoutes[window.location.hash] || { view: 'form', title: '可视化编辑' };
+      : configurationRoutes[window.location.hash] || { view: 'editor', mode: 'form', title: '配置编辑' };
     const name = game ? '游戏管理' : '配置管理';
     $('game-page').hidden = !game;
     for (const [id, active] of [['game-navigation', game], ['configuration-navigation', !game]]) {
@@ -45,7 +45,7 @@ export function createNavigation({ dom, window, isDirty, onSave, onConfiguration
     $('configuration-page').hidden = game;
     $('configuration-actions').hidden = game;
     $('configuration-apply').hidden = game || route.view === 'profiles';
-    if (!game && route.view !== 'profiles') onConfigurationView(route.view);
+    if (!game && route.view !== 'profiles') onConfigurationView(route.mode || 'form');
     $('current-page').textContent = name;
     $('current-section').hidden = false;
     $('current-section').textContent = route.title;

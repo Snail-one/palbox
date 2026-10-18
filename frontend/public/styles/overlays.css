@@ -83,6 +83,21 @@ dialog::backdrop {
   width: min(600px,calc(100vw - 28px));
 }
 
+.source-view-dialog {
+  width: min(760px,calc(100vw - 28px));
+}
+
+.source-view-dialog .source-caption {
+  margin: 0;
+}
+
+.source-view-dialog .source-view-editor {
+  margin: 0;
+  width: 100%;
+  min-height: 280px;
+  max-height: 52dvh;
+}
+
 .dialog-heading {
   display: flex;
   justify-content: space-between;

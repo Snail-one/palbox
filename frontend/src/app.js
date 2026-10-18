@@ -81,7 +81,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
     navigation.openEditor();
     if (success && successMessage) notifications.toast(successMessage);
   }
-  const profiles = createProfilePanel({ dom, workspace, ask, beforeLeave, ready, isDirty, actions: {
+  const profiles = createProfilePanel({ dom, workspace, ask, beforeLeave, ready, isDirty, clipboard, notify: notifications.toast, actions: {
     async select(id) {
       if (id === workspace.active.id) { navigation.closeSidebar(); navigation.openEditor(); return; }
       if (!(await beforeLeave())) { navigation.openEditor(); return; }
