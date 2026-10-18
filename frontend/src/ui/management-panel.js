@@ -1,5 +1,6 @@
 import { createArgsDialog } from './args-dialog.js';
 import { createSaveImportDialog } from './save-import-dialog.js';
+import { filterPollingLogs } from './log-filter.js';
 
 function uptimeLabel(seconds) {
   if (!Number.isFinite(seconds)) return '—';
@@ -217,7 +218,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   }
   function renderLogs(text) {
     const panel = $('manager-logs');
-    const content = text || '暂无日志';
+    const content = filterPollingLogs(text) || '暂无日志';
     if (panel.textContent === content) return;
     const bottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 30;
     const scrollTop = panel.scrollTop;
