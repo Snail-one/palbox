@@ -39,6 +39,7 @@ const assert = require('node:assert/strict');
     assert.ok(combined.indexOf('中文游戏日志') < combined.indexOf('中文安装日志'));
     assert.ok(combined.indexOf('中文安装日志') < combined.indexOf('面板任务日志'));
     assert.doesNotMatch(combined, /\x1b|\ufffd/);
+    assert.match(combined, /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} UTC\] \[游戏\]/m);
     f.runtime.log('game', '状态查询未完成时仍实时追加\n');
     await waitLog('状态查询未完成时仍实时追加');
     f.runtime.log('steamcmd', '统一窗口中的实时安装更新\n');
@@ -50,6 +51,7 @@ const assert = require('node:assert/strict');
 
     await page.locator('[data-log-channel="steamcmd"]').click();
     await waitLog('中文安装日志');
+    assert.match(await page.locator('#manager-logs').textContent(), /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} UTC\] 中文安装日志/m);
     assert.doesNotMatch(await page.locator('#manager-logs').textContent(), /中文游戏日志/);
     f.runtime.log('game', '旧频道追加不应污染当前频道\n');
     f.runtime.log('steamcmd', '当前安装频道实时追加\n');

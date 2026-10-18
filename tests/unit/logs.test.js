@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile, appendFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { readableLog, readLogTail } from '../../backend/management/logs.js';
+import { readableLog, readLogTail, timestampLogChunk } from '../../backend/management/logs.js';
 import { Runtime } from '../../backend/management/runtime.js';
 
 test('日志隐藏终端颜色、标题与控制字符，并将进度回车和退格显示为可读文本', () => {
@@ -11,6 +11,33 @@ test('日志隐藏终端颜色、标题与控制字符，并将进度回车和�
   assert.equal(readableLog('进度 50%\r'), '进度 50%');
   assert.equal(readableLog('正文\x1b[31'), '正文');
   assert.equal(readableLog('正文\x1b]0;未完成标题'), '正文');
+});
+
+test('分块输出只在行首增加时间戳，进度覆盖后保留时间，换行后使用新时间', () => {
+  const state = { prefix: true, at: null };
+  const first = '2026-10-18T08:01:02.123Z';
+  const second = '2026-10-18T08:01:03.456Z';
+  const third = '2026-10-18T08:01:04.789Z';
+  const text = timestampLogChunk('中文', first, state)
+    + timestampLogChunk('启动\r\x1b[32m更新完成\x1b[0m\r', second, state)
+    + timestampLogChunk('\n下一行', third, state);
+  assert.equal(readableLog(text), '[2026-10-18 08:01:02.123 UTC] 更新完成\n[2026-10-18 08:01:04.789 UTC] 下一行');
+});
+
+test('三个分类与统一视图使用相同的记录时间，刷新和重新读取不会改变时间戳', async t => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'palbox-log-timestamps-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const runtime = new Runtime(directory);
+  await runtime.initialize();
+  for (const channel of ['game', 'steamcmd', 'palbox']) {
+    runtime.log(channel, `时间戳测试 ${channel}\n`);
+    const raw = await readFile(path.join(directory, 'logs', channel + '.log'), 'utf8');
+    const timestamp = raw.match(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} UTC\]/)?.[0];
+    assert.ok(timestamp, '分类日志应记录 UTC 毫秒时间戳');
+    assert.equal(await runtime.logs(channel), raw);
+    assert.ok((await runtime.logs('all')).includes(timestamp), '统一视图使用同一时间戳');
+    assert.equal(await new Runtime(directory).logs(channel), raw);
+  }
 });
 
 test('日志尾部窗口与正在写入的 UTF-8 字符不会显示乱码，原始日志保持不变', async t => {

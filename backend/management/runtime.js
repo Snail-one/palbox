@@ -5,7 +5,7 @@ import { StringDecoder } from 'node:string_decoder';
 import path from 'node:path';
 import { decodeString, parse } from '../../shared/domain/config.js';
 import { failure } from './files.js';
-import { appendLog, appendCombinedLog, initializeCombinedLog, readCombinedLog, readLogTail } from './logs.js';
+import { appendLog, appendCombinedLog, initializeCombinedLog, readCombinedLog, readLogTail, timestampLogChunk } from './logs.js';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -29,6 +29,7 @@ export class Runtime {
     this.lastExit = null;
     this.closing = false;
     this.logDecoders = new Map();
+    this.logLines = new Map();
   }
   async initialize() {
     await mkdir(path.join(this.directory, 'logs'), { recursive: true, mode: 0o700 });
@@ -37,13 +38,15 @@ export class Runtime {
   log(channel, value) {
     const file = path.join(this.directory, 'logs', `${channel}.log`);
     try {
-      appendLog(file, Buffer.isBuffer(value) ? value : String(value));
       let text = String(value);
       if (Buffer.isBuffer(value)) {
         if (!this.logDecoders.has(channel)) this.logDecoders.set(channel, new StringDecoder('utf8'));
         text = this.logDecoders.get(channel).write(value);
       }
-      appendCombinedLog(this.directory, channel, text);
+      if (!this.logLines.has(channel)) this.logLines.set(channel, { prefix: true, at: null });
+      const at = new Date().toISOString();
+      appendLog(file, timestampLogChunk(text, at, this.logLines.get(channel)));
+      appendCombinedLog(this.directory, channel, text, at);
       this.logError = null;
     } catch (error) {
       // A full or read-only log volume must not crash the process supervising a live world.

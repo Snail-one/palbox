@@ -4,6 +4,8 @@ import { appendFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { managementFixture } from '../helpers/management-fixture.js';
 
+const withoutTimestamps = text => text.replace(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} UTC\] /gm, '');
+
 test('实时日志通过前端代理推送，兼容外部写入、轮换并在退出登录后终止', { timeout: 10000 }, async t => {
   const f = await managementFixture();
   t.after(() => f.close());
@@ -34,12 +36,16 @@ test('实时日志通过前端代理推送，兼容外部写入、轮换并在�
       buffered += decoder.decode(value, { stream: true });
     }
   }
-  assert.equal((await event('log')).text, '初始中文🙂\n');
+  const initial = (await event('log')).text;
+  assert.match(initial, /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} UTC\] 初始中文🙂\n$/);
+  assert.equal(withoutTimestamps(initial), '初始中文🙂\n');
   // Log streaming must not call or wait for the slow game status endpoint.
   f.manager.status = () => { throw new Error('日志不应依赖状态查询'); };
   const start = Date.now();
   f.runtime.log('game', '实时追加\n');
-  assert.equal((await event('log', value => value.text.includes('实时追加'))).text, '初始中文🙂\n实时追加\n');
+  const updated = (await event('log', value => value.text.includes('实时追加'))).text;
+  assert.equal(withoutTimestamps(updated), '初始中文🙂\n实时追加\n');
+  assert.equal(updated.split('\n')[0], initial.trimEnd(), '刷新不改变已有记录的时间戳');
   assert.ok(Date.now() - start < 2000, '新日志应在两秒内送达');
   const file = path.join(f.directory, 'logs/game.log');
   await appendFile(file, '\x1b[33m外部写入\x1b[0m\n');

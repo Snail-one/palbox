@@ -7,6 +7,32 @@ import path from 'node:path';
 const sources = { game: '游戏', steamcmd: '安装更新', palbox: '面板' };
 const combinedFile = directory => path.join(directory, 'logs/combined.jsonl');
 
+export const logTimestamp = at => `[${at.replace('T', ' ').replace(/Z$/, ' UTC')}]`;
+
+export function timestampLogChunk(text, at, state) {
+  let output = '';
+  for (const part of text.split(/([\r\n])/)) {
+    if (!part) continue;
+    if (part === '\n') {
+      output += part;
+      state.prefix = true;
+      state.at = null;
+    } else if (part === '\r') {
+      output += part;
+      // Progress output rewrites the same line: repeat its original timestamp.
+      state.prefix = true;
+    } else {
+      if (state.prefix) {
+        state.at ??= at;
+        output += logTimestamp(state.at) + ' ';
+        state.prefix = false;
+      }
+      output += part;
+    }
+  }
+  return output;
+}
+
 export function appendLog(file, value) {
   if (existsSync(file) && statSync(file).size > 5 * 1024 * 1024) renameSync(file, file + '.1');
   appendFileSync(file, value, { mode: 0o600 });
@@ -26,10 +52,9 @@ export async function initializeCombinedLog(directory) {
   catch (error) { if (error.code !== 'EEXIST') throw error; }
 }
 
-export function appendCombinedLog(directory, channel, text) {
+export function appendCombinedLog(directory, channel, text, at = new Date().toISOString()) {
   if (!Object.hasOwn(sources, channel) || !text) return;
   // Bound each record so a large burst still fits in the journal tail window.
-  const at = new Date().toISOString();
   const records = text.match(/[\s\S]{1,16384}/gu).map(part => JSON.stringify({ at, channel, text: part }) + '\n');
   appendLog(combinedFile(directory), records.join(''));
 }
@@ -65,7 +90,7 @@ export async function readCombinedLog(directory, limit = 65536) {
   const result = [];
   let remaining = limit;
   for (const row of rows.reverse()) {
-    const prefix = `${row.at ? `[${row.at}] ` : ''}[${sources[row.channel]}] `;
+    const prefix = `${row.at ? logTimestamp(row.at) + ' ' : ''}[${sources[row.channel]}] `;
     const available = remaining - Buffer.byteLength(prefix + '\n');
     if (available < 0) break;
     const text = readableLog(row.text);
