@@ -163,6 +163,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     const dialog = $('shutdown-wait-dialog');
     if (dialog.open) return;
     $('shutdown-wait-input').value = settingsCache?.shutdownWait ?? 5;
+    $('shutdown-message-input').value = settingsCache?.shutdownMessage ?? 'Palbox 正在维护服务器';
     $('shutdown-wait-error').hidden = true;
     dialog.showModal();
   });
@@ -171,17 +172,23 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     const input = $('shutdown-wait-input');
     const errorNode = $('shutdown-wait-error');
     const value = input.value.trim() === '' ? NaN : Number(input.value);
+    const message = $('shutdown-message-input').value.trim();
     if (!Number.isInteger(value) || value < 0 || value > 300) {
       errorNode.textContent = '关服倒计时须为 0 到 300 的整数秒。';
+      errorNode.hidden = false;
+      return;
+    }
+    if (!message || message.length > 500 || /\p{Cc}/u.test(message)) {
+      errorNode.textContent = '关服提示须为 1 到 500 个字符，且不能包含控制字符。';
       errorNode.hidden = false;
       return;
     }
     const button = $('shutdown-wait-save');
     button.disabled = true; errorNode.hidden = true;
     try {
-      settingsCache = await api.request('settings', { method: 'PUT', body: { shutdownWait: value } });
+      settingsCache = await api.request('settings', { method: 'PUT', body: { shutdownWait: value, shutdownMessage: message } });
       $('shutdown-wait-dialog').close();
-      notify(`关服倒计时已设置为 ${value} 秒`);
+      notify(`关服设置已保存：倒计时 ${value} 秒，提示将在下次关服时显示`);
     } catch (caught) {
       errorNode.textContent = caught.message;
       errorNode.hidden = false;

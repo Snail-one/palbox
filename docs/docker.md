@@ -98,6 +98,7 @@ docker compose up -d --build
 ## 服务与备份
 
 - 启动、停止、重启：管理游戏进程。停止优先调用官方 API 存档和关服，API 不可用时尝试 SIGTERM；未成功退出不会继续改写文件。正常停止失败时可使用「强制停止」，优先调用官方 `/stop`，必要时发送 SIGKILL。
+- 关服倒计时：在同名设置窗口中编辑倒计时秒数（0–300 秒）和提示文字（1–500 个字符），保存在 `palbox/settings.json` 的 `shutdownWait`、`shutdownMessage`。正常关服调用[官方 `/shutdown`](https://docs.palworldgame.com/api/rest-api/shutdown/) 时传入这两项；保存后下次关服生效，不需要重启面板。旧设置自动沿用默认提示「Palbox 正在维护服务器」。
 - 自动启动：在「服务器概况」标题栏的「任务记录」前切换「自动启动」滑块。启用后，后端启动并监听端口时会自动创建「启动」任务；服务端未安装、尚未完成管理员初始化或检测到游戏已在运行时跳过。设置保存在 `palbox/settings.json` 的 `autoStart`，默认关闭；执行 `docker compose restart palbox`、`up -d` 或宿主机重启后生效。
 - 更新：先正常停服并创建更新前备份，再执行 SteamCMD `app_update 2394010 validate`；原先运行的游戏服会重新启动。「检查更新」优先通过 [SteamCMD.net API](https://api.steamcmd.net/v1/info/2394010) 查询最新 build，失败时回退 SteamCMD，并与本地 `appmanifest_2394010.acf` 对比，结果以「游戏版本」卡片旁的气泡显示。
 - 官方自动备份：由 `bIsUseBackupSaveData=True` 启用，游戏运行中自行生成，无需面板停服。面板展示 `SaveGames/0/<世界 ID>/backup/world/<时间>/` 中完整的世界和玩家备份，支持在线下载。官方保留档位为每 30 秒 5 份、每 10 分钟 6 份、每 1 小时 12 份、每 1 天 7 份：[官方说明](https://docs.palworldgame.com/settings-and-operation/configuration/#about-bisusebackupsavedata)。

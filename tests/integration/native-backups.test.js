@@ -112,18 +112,20 @@ test('旧定时计划自动移除，已有定时归档继续保留', async t => 
   await f.manager.close();
   const settingsFile = path.join(f.directory, 'palbox/settings.json');
   const settings = JSON.parse(await readFile(settingsFile, 'utf8'));
-  const { gameArgs: _gameArgs, ...withoutArgs } = settings;
+  const { gameArgs: _gameArgs, shutdownMessage: _shutdownMessage, ...withoutArgs } = settings;
   await writeFile(settingsFile, JSON.stringify({ ...withoutArgs, backupIntervalHours: 1 }));
   await writeFile(path.join(f.directory, 'backups/scheduled/old.tar.gz'), 'old-backup');
   const manager = new Manager({ directory: f.directory }); t.after(() => manager.close());
   await manager.initialize();
   assert.deepEqual(manager.publicSettings(), {
-    backupRetention: 10, autoStart: false, shutdownWait: 5, gameArgs: [],
+    backupRetention: 10, autoStart: false, shutdownWait: 5, shutdownMessage: 'Palbox 正在维护服务器', gameArgs: [],
     installArgs: ['+force_install_dir', path.join(f.directory, 'server'), '+login', 'anonymous', '+app_update', '2394010', 'validate', '+quit']
   });
   const migrated = JSON.parse(await readFile(settingsFile, 'utf8'));
   assert.equal(Object.hasOwn(migrated, 'backupIntervalHours'), false);
   assert.deepEqual(migrated.gameArgs, []);
+  assert.equal(migrated.shutdownMessage, 'Palbox 正在维护服务器');
+  assert.equal(manager.runtime.shutdownMessage, 'Palbox 正在维护服务器');
   assert.equal((await manager.backups())[0].category, 'scheduled');
   await assert.rejects(manager.updateSettings({ backupIntervalHours: 1, backupRetention: 10 }), /定时备份已移除/);
 });

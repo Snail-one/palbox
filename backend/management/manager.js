@@ -3,7 +3,7 @@ import { readFile, mkdir, readdir, stat, rename, rm, rmdir, lstat, unlink } from
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { Runtime } from './runtime.js';
+import { Runtime, DEFAULT_SHUTDOWN_MESSAGE } from './runtime.js';
 import { NativeBackups } from './native-backups.js';
 import { SaveImports } from './save-imports.js';
 import { readBanList } from './banned-players.js';
@@ -120,6 +120,7 @@ export class Manager {
       if (!Object.hasOwn(settings, 'gameArgs')) { settings.gameArgs = []; write = true; }
       if (!Object.hasOwn(settings, 'installArgs')) { settings.installArgs = [...DEFAULT_INSTALL_ARGS]; write = true; }
       if (!Object.hasOwn(settings, 'shutdownWait')) { settings.shutdownWait = 5; write = true; }
+      if (!Object.hasOwn(settings, 'shutdownMessage')) { settings.shutdownMessage = DEFAULT_SHUTDOWN_MESSAGE; write = true; }
       if (Object.hasOwn(settings, 'backupIntervalHours')) { delete settings.backupIntervalHours; write = true; }
       this.settings = settings;
       this.setupRequired = false;
@@ -153,6 +154,9 @@ export class Manager {
     if (Object.hasOwn(settings, 'shutdownWait') && (!Number.isInteger(settings.shutdownWait) || settings.shutdownWait < 0 || settings.shutdownWait > 300)) {
       throw new Error(`settings.json 中的关服倒计时须为 0 到 300 的整数秒。请编辑 ${this.settingsFile} 修正 shutdownWait 后重新启动。`);
     }
+    if (Object.hasOwn(settings, 'shutdownMessage') && (typeof settings.shutdownMessage !== 'string' || !settings.shutdownMessage.trim() || settings.shutdownMessage.length > 500 || /\p{Cc}/u.test(settings.shutdownMessage))) {
+      throw new Error(`settings.json 中的关服提示须为 1 到 500 个字符，且不能包含控制字符。请编辑 ${this.settingsFile} 修正 shutdownMessage 后重新启动。`);
+    }
     if (Object.hasOwn(settings, 'gameArgs')) {
       const message = gameArgsError(settings.gameArgs);
       if (message) throw new Error(`settings.json 中的启动参数无效：${message}请编辑 ${this.settingsFile} 修正 gameArgs 后重新启动。`);
@@ -168,7 +172,8 @@ export class Manager {
   get gameArgs() { return this.settings?.gameArgs ?? []; }
   get installArgs() { return this.settings?.installArgs ?? DEFAULT_INSTALL_ARGS; }
   get shutdownWait() { return this.settings?.shutdownWait ?? 5; }
-  syncRuntimeArgs() { this.runtime.args = [...this.gameArgs]; this.runtime.shutdownWait = this.shutdownWait; }
+  get shutdownMessage() { return this.settings?.shutdownMessage ?? DEFAULT_SHUTDOWN_MESSAGE; }
+  syncRuntimeArgs() { this.runtime.args = [...this.gameArgs]; this.runtime.shutdownWait = this.shutdownWait; this.runtime.shutdownMessage = this.shutdownMessage; }
   syncRuntimeInstallArgs() { this.runtime.installArgs = this.installArgs.map(arg => arg === '{server}' ? this.runtime.server : arg); }
   async setupAdmin(username, password) {
     if (!this.setupRequired) throw failure('管理员已初始化，请直接登录。', 409);
@@ -179,7 +184,7 @@ export class Manager {
       if (!validUsername(name)) throw failure('管理员用户名须为 1 到 64 个字符，且不能包含控制字符。', 400);
       if (typeof password !== 'string' || password.length < 12) throw failure('管理密码至少需要 12 位。', 400);
       if (password.length > 1024) throw failure('管理密码不能超过 1024 位。', 400);
-      const next = { admin: { username: name, ...await passwordRecord(password) }, backupRetention: 10, autoStart: false, shutdownWait: 5, gameArgs: [], installArgs: [...DEFAULT_INSTALL_ARGS] };
+      const next = { admin: { username: name, ...await passwordRecord(password) }, backupRetention: 10, autoStart: false, shutdownWait: 5, shutdownMessage: DEFAULT_SHUTDOWN_MESSAGE, gameArgs: [], installArgs: [...DEFAULT_INSTALL_ARGS] };
       await jsonWrite(this.settingsFile, next);
       this.settings = next;
       this.setupRequired = false;
@@ -625,6 +630,7 @@ export class Manager {
       backupRetention: this.backupRetention,
       autoStart: this.autoStart,
       shutdownWait: this.shutdownWait,
+      shutdownMessage: this.shutdownMessage,
       gameArgs: [...this.gameArgs],
       installArgs: this.installArgs.map(arg => arg === '{server}' ? this.runtime.server : arg)
     };
@@ -641,9 +647,10 @@ export class Manager {
     const hasRetention = Object.hasOwn(value, 'backupRetention');
     const hasAutoStart = Object.hasOwn(value, 'autoStart');
     const hasShutdownWait = Object.hasOwn(value, 'shutdownWait');
+    const hasShutdownMessage = Object.hasOwn(value, 'shutdownMessage');
     const hasArgs = Object.hasOwn(value, 'gameArgs');
     const hasInstallArgs = Object.hasOwn(value, 'installArgs');
-    if (!hasRetention && !hasAutoStart && !hasShutdownWait && !hasArgs && !hasInstallArgs) throw failure('请提供要保存的设置。');
+    if (!hasRetention && !hasAutoStart && !hasShutdownWait && !hasShutdownMessage && !hasArgs && !hasInstallArgs) throw failure('请提供要保存的设置。');
     const next = { ...this.settings, gameArgs: [...this.gameArgs], installArgs: [...this.installArgs] };
     if (hasRetention) {
       if (!Number.isInteger(value.backupRetention) || value.backupRetention < 1 || value.backupRetention > 100) throw failure('完整备份保留数量须为 1 到 100。');
@@ -656,6 +663,10 @@ export class Manager {
     if (hasShutdownWait) {
       if (!Number.isInteger(value.shutdownWait) || value.shutdownWait < 0 || value.shutdownWait > 300) throw failure('关服倒计时须为 0 到 300 的整数秒。');
       next.shutdownWait = value.shutdownWait;
+    }
+    if (hasShutdownMessage) {
+      if (typeof value.shutdownMessage !== 'string' || !value.shutdownMessage.trim() || value.shutdownMessage.length > 500 || /\p{Cc}/u.test(value.shutdownMessage)) throw failure('关服提示须为 1 到 500 个字符，且不能包含控制字符。');
+      next.shutdownMessage = value.shutdownMessage.trim();
     }
     if (hasArgs) {
       const message = gameArgsError(value.gameArgs);

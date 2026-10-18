@@ -13,9 +13,10 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 // progress output line-buffered; quote every argument because `script -c` runs a shell.
 const shellQuote = value => `'${String(value).replaceAll("'", "'\\''")}'`;
 const ptyAvailable = process.platform === 'linux' && existsSync('/usr/bin/script');
+export const DEFAULT_SHUTDOWN_MESSAGE = 'Palbox 正在维护服务器';
 
 export class Runtime {
-  constructor(directory, { steamcmd = '/opt/steamcmd/steamcmd.sh', port = 8211, readyTimeout = 180000, stopTimeout = 60000, shutdownWait = 5, args = [], installArgs = null } = {}) {
+  constructor(directory, { steamcmd = '/opt/steamcmd/steamcmd.sh', port = 8211, readyTimeout = 180000, stopTimeout = 60000, shutdownWait = 5, shutdownMessage = DEFAULT_SHUTDOWN_MESSAGE, args = [], installArgs = null } = {}) {
     this.directory = directory;
     this.server = path.join(directory, 'server');
     this.saved = path.join(this.server, 'Pal/Saved');
@@ -25,6 +26,7 @@ export class Runtime {
     this.readyTimeout = readyTimeout;
     this.stopTimeout = stopTimeout;
     this.shutdownWait = shutdownWait;
+    this.shutdownMessage = shutdownMessage;
     this.args = args;
     this.installArgs = installArgs;
     this.game = null;
@@ -158,7 +160,7 @@ export class Runtime {
     else {
       try {
         await this.rest('save', {});
-        await this.rest('shutdown', { waittime: waitTime, message: 'Palbox 正在维护服务器' });
+        await this.rest('shutdown', { waittime: waitTime, message: this.shutdownMessage });
         countdown = waitTime;
       } catch (error) {
         if (requireSave) { this.ready = wasReady; throw error; }
