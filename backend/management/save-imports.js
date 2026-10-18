@@ -4,7 +4,7 @@ import { mkdir, open, readdir, lstat, rename, rm } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { failure, jsonWrite, readJson } from './files.js';
-import { saveName, worldName } from './native-backups.js';
+import { saveName } from './native-backups.js';
 
 const run = promisify(execFile);
 const importId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$(?![\s\S])/;

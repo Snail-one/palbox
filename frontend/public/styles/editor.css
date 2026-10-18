@@ -144,14 +144,6 @@
   grid-column: 1/-1;
 }
 
-.field-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: start;
-  gap: 9px;
-  margin-bottom: 3px;
-}
-
 .field-label {
   display: flex;
   align-items: center;
@@ -173,12 +165,6 @@
   margin-bottom: 10px;
   overflow-wrap: anywhere;
   min-height: 14px;
-}
-
-.field-description {
-  line-height: 1.7;
-  margin-top: 7px;
-  min-height: 17px;
 }
 
 .input-wrap {
@@ -274,10 +260,6 @@
 
 .boolean-field .field-key {
   margin-bottom: 0;
-}
-
-.boolean-field .field-description {
-  margin-top: 6px;
 }
 
 .toggle {

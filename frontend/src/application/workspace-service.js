@@ -97,8 +97,6 @@ export class WorkspaceService {
     this.#persisted = false;
   }
 
-  removeActive() { this.remove(); }
-
   updateSource(id, source) {
     const profile = this.profiles.find(candidate => candidate.id === id);
     if (!profile) throw new Error('配置不存在。');

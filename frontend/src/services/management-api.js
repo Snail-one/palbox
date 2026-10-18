@@ -93,7 +93,6 @@ export function createRemoteRepository({ api, workspace, revision }) {
     return working;
   }
   return {
-    remote: true,
     get revision() { return revision; },
     get pending() { return Boolean(working || queued) && !error; },
     get error() { return error; },

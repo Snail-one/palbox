@@ -88,30 +88,6 @@
   flex-shrink: 0;
 }
 
-.sidebar-active .tiny-dot {
-  margin-left: auto;
-}
-
-.list-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 34px 9px 9px;
-  font-size: 11px;
-}
-
-.list-heading>span {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.list-heading>span>span {
-  background: #f4f4f4;
-  padding: 0 6px;
-  border-radius: 4px;
-}
-
 .icon-button {
   width: 32px;
   height: 32px;
@@ -175,10 +151,6 @@
   background: #f6f6f6;
 }
 
-.profile-item>.icon {
-  width: 18px;
-}
-
 .profile-item-text {
   min-width: 0;
   flex: 1;
@@ -200,10 +172,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.profile-item>.icon:last-child {
-  width: 12px;
 }
 
 .sidebar-bottom {
@@ -304,31 +272,6 @@
 .breadcrumb-section { border-left: 1px solid var(--line); padding-left: 14px; white-space: nowrap; }
 .topbar-session { display: flex; align-items: center; gap: 16px; margin-left: auto; flex-shrink: 0; }
 .topbar .page-actions:not([hidden]) + .topbar-session { margin-left: 0; }
-
-.connection-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 10px;
-}
-
-.topbar-divider {
-  height: 20px;
-  width: 1px;
-  background: var(--line);
-  margin: 0 12px;
-}
-
-.avatar {
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  width: 29px;
-  height: 29px;
-  border: 3px solid #ffffff;
-  font-weight: 600;
-  font-size: 11px;
-}
 
 main {
   flex: 1;

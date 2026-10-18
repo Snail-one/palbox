@@ -47,9 +47,9 @@ test('新建、复制、重命名、切换与删除通过工作空间服务完�
   service.select(original.id);
   assert.equal(service.active.source, template);
   service.select(copy.id);
-  service.removeActive();
+  service.remove();
   assert.equal(service.active.id, original.id);
-  service.removeActive();
+  service.remove();
   assert.equal(service.profiles.length, 1);
   assert.equal(service.active.source, template);
 });

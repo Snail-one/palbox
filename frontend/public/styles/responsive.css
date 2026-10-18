@@ -208,10 +208,6 @@
     margin: 0;
   }
 
-  .topbar .connection-status {
-    margin-left: auto;
-  }
-
   .breadcrumb {
     gap: 9px;
   }
@@ -226,19 +222,6 @@
 
   .breadcrumb strong {
     font-size: 11px;
-  }
-
-  .topbar-divider {
-    margin: 0 6px;
-  }
-
-  .connection-status {
-    font-size: 9px;
-  }
-
-  .avatar {
-    width: 26px;
-    height: 26px;
   }
 
   main {
@@ -528,10 +511,6 @@
 
   .field-label {
     font-size: 12px;
-  }
-
-  .field-description {
-    font-size: 10px;
   }
 
   .field.boolean-field {
