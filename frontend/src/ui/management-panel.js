@@ -29,7 +29,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       </div>
     </div>
     <dl class="management-metrics" aria-label="服务器运行信息">
-      <div class="server-metric server-version-metric"><dt>游戏版本</dt><dd id="game-version" class="metric-value metric-text">读取中</dd><dd id="game-build-meta" class="server-metric-note" hidden>Steam Build <span id="game-build">—</span></dd><dd class="server-metric-update"><span class="update-check"><button class="button secondary" id="check-update" disabled>检查更新</button><span id="update-status" class="update-bubble" hidden><span id="update-status-text" role="status"></span><button type="button" id="update-status-close" class="update-bubble-close" aria-label="关闭提示">×</button></span></span></dd></div>
+      <div class="server-metric server-version-metric"><dt>游戏版本</dt><dd id="game-version" class="metric-value metric-text">读取中</dd><dd id="game-build-meta" class="server-metric-note" hidden>Steam Build <span id="game-build">—</span></dd><dd class="server-metric-update"><button class="button secondary" id="check-update" disabled>检查更新</button></dd></div>
       <div class="server-metric"><dt>在线玩家</dt><dd id="game-players" class="metric-value">—</dd></div>
       <div class="server-metric"><dt>服务器 FPS</dt><dd id="game-fps" class="metric-value">—</dd></div>
       <div class="server-metric"><dt>游戏端口</dt><dd class="metric-value"><span id="game-port">8211</span><span class="metric-unit">UDP</span></dd></div>
@@ -403,7 +403,16 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       const game = $('game-state');
       game.textContent = !value.installed ? '未安装' : value.running ? (value.ready ? '运行中' : value.task?.action === 'start' || value.task?.action === 'install' || value.task?.action === 'apply' || value.task?.action === 'restart' ? '启动中' : '接口异常') : '已停止';
       game.dataset.state = value.running && value.ready ? 'saved' : 'pending';
-      $('server-state-note').textContent = !value.installed ? '先安装服务端，再启动你的帕鲁世界。' : !value.running ? '服务端已就绪，可以启动。' : value.ready ? '服务运行正常' : '游戏进程运行中，管理接口暂未就绪';
+      const stateNote = $('server-state-note');
+      stateNote.replaceChildren();
+      if (!value.installed) stateNote.textContent = '先安装服务端，再启动你的帕鲁世界。';
+      else if (!value.running) {
+        const ready = document.createElement('span');
+        ready.className = 'save-status';
+        ready.dataset.state = 'saved';
+        ready.textContent = '服务端已就绪';
+        stateNote.append(ready, document.createTextNode(' 可以启动。'));
+      } else stateNote.textContent = value.ready ? '服务运行正常' : '游戏进程运行中，管理接口暂未就绪';
       const config = $('game-config-state');
       config.textContent = value.configuration === 'pending' ? '待生效' : value.running && value.ready ? '已生效' : '已写入';
       config.dataset.state = value.configuration === 'pending' ? 'pending' : value.running && value.ready ? 'saved' : 'written';
@@ -489,41 +498,29 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     }).catch(caught => { settingsRequest = null; throw caught; });
     return settingsRequest;
   }
-  let updateStatusTimer;
-  function hideUpdateStatus() {
-    clearTimeout(updateStatusTimer);
-    updateStatusTimer = null;
-    $('update-status').hidden = true;
-  }
-  function showUpdateStatus(message, { error = false, timeout = 9000 } = {}) {
-    const status = $('update-status');
-    clearTimeout(updateStatusTimer);
-    $('update-status-text').textContent = message;
-    status.classList.toggle('error', error);
-    status.hidden = false;
+  let updatePopupTimer;
+  function showUpdateStatus(message, { error = false } = {}) {
+    const popup = $('update-popup');
+    clearTimeout(updatePopupTimer);
+    popup.textContent = message;
+    popup.classList.toggle('error', error);
+    popup.hidden = false;
     $('check-update').title = message;
-    if (timeout) updateStatusTimer = setTimeout(() => { status.hidden = true; }, timeout);
+    updatePopupTimer = setTimeout(() => { popup.hidden = true; }, error ? 8000 : 6000);
   }
-  $('update-status-close').addEventListener('click', hideUpdateStatus);
-  document.addEventListener('click', event => {
-    const status = $('update-status');
-    if (status.hidden) return;
-    if (status.contains(event.target) || $('check-update').contains(event.target)) return;
-    hideUpdateStatus();
-  });
   $('check-update').addEventListener('click', async () => {
     if (checkingUpdate) return;
     checkingUpdate = true;
-    showUpdateStatus('正在检查 Steam 最新版本…', { timeout: 0 });
+    showUpdateStatus('正在检查 Steam 最新版本…');
     $('check-update').disabled = true;
     try {
       // SteamCMD may need longer than the default API timeout.
       const value = await api.request('update-check', { timeout: 150000 });
       if (!value.installed) showUpdateStatus('服务端尚未安装。');
-      else if (value.error) showUpdateStatus(`更新检查失败：${value.error}`, { error: true, timeout: 12000 });
+      else if (value.error) showUpdateStatus(`更新检查失败：${value.error}`, { error: true });
       else if (value.updateAvailable) showUpdateStatus(`发现新版本：已安装 build ${value.installedBuild}，Steam 最新 build ${value.latestBuild}。可点击「更新服务端」。`);
       else showUpdateStatus(`已是最新版本（build ${value.installedBuild}）。`);
-    } catch (caught) { showUpdateStatus(`更新检查失败：${caught.message}`, { error: true, timeout: 12000 }); }
+    } catch (caught) { showUpdateStatus(`更新检查失败：${caught.message}`, { error: true }); }
     finally {
       checkingUpdate = false;
       $('check-update').disabled = !lastStatus?.installed || Boolean(lastStatus?.task);

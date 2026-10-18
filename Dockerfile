@@ -16,7 +16,7 @@ RUN test "${TARGETARCH:-amd64}" = amd64 \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         curl ca-certificates lib32gcc-s1 procps \
-        tini gosu libstdc++6 libatomic1 tzdata \
+        tini gosu libstdc++6 libatomic1 tzdata util-linux \
     && rm -rf /var/lib/apt/lists/* \
     && node --version
 

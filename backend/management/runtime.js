@@ -1,13 +1,18 @@
 import { spawn } from 'node:child_process';
 import { mkdir, readFile, access } from 'node:fs/promises';
-import { constants } from 'node:fs';
+import { constants, existsSync } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
+import { stripVTControlCharacters } from 'node:util';
 import path from 'node:path';
 import { decodeString, parse } from '../../shared/domain/config.js';
 import { failure } from './files.js';
 import { appendLog, appendCombinedLog, initializeCombinedLog, readCombinedLog, readLogTail, timestampLogChunk } from './logs.js';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+// SteamCMD block-buffers stdout when it is a pipe. A pseudo-terminal keeps its
+// progress output line-buffered; quote every argument because `script -c` runs a shell.
+const shellQuote = value => `'${String(value).replaceAll("'", "'\\''")}'`;
+const ptyAvailable = process.platform === 'linux' && existsSync('/usr/bin/script');
 
 export class Runtime {
   constructor(directory, { steamcmd = '/opt/steamcmd/steamcmd.sh', port = 8211, readyTimeout = 180000, stopTimeout = 60000, shutdownWait = 5, args = [], installArgs = null } = {}) {
@@ -66,10 +71,13 @@ export class Runtime {
     if (!child?.pid) return;
     try { process.kill(-child.pid, signal); } catch (error) { if (error.code !== 'ESRCH') throw error; }
   }
-  run(command, args, channel = 'palbox', { captureLimit = 65536, ...options } = {}) {
+  run(command, args, channel = 'palbox', { captureLimit = 65536, pty = false, ...options } = {}) {
     if (this.closing) return Promise.reject(failure('面板正在关闭。', 503));
     return new Promise((resolve, reject) => {
-      const child = spawn(command, args, { shell: false, detached: true, env: this.childEnvironment(), stdio: ['ignore', 'pipe', 'pipe'], ...options });
+      const usePty = pty && ptyAvailable;
+      const executable = usePty ? '/usr/bin/script' : command;
+      const argv = usePty ? ['-qefc', [command, ...args].map(shellQuote).join(' '), '/dev/null'] : args;
+      const child = spawn(executable, argv, { shell: false, detached: true, env: this.childEnvironment(), stdio: ['ignore', 'pipe', 'pipe'], ...options });
       this.command = child;
       child.stdout.setEncoding('utf8');
       child.stderr.setEncoding('utf8');
@@ -93,8 +101,8 @@ export class Runtime {
     if (this.game) throw failure('请先停止游戏服再安装或更新。', 409);
     await mkdir(this.server, { recursive: true });
     const args = this.installArgs || ['+force_install_dir', this.server, '+login', 'anonymous', '+app_update', '2394010', 'validate', '+quit'];
-    const result = await this.run(this.steamcmd, args, 'steamcmd');
-    if (!/Success!.*App\s+'2394010'.*(?:fully installed|up to date)/i.test(result) || !(await this.installed())) throw failure('SteamCMD 未确认安装完成或启动文件不完整，请检查安装日志。', 500);
+    const result = await this.run(this.steamcmd, args, 'steamcmd', { pty: true });
+    if (!/Success!.*App\s+'2394010'.*(?:fully installed|up to date)/i.test(stripVTControlCharacters(result)) || !(await this.installed())) throw failure('SteamCMD 未确认安装完成或启动文件不完整，请检查安装日志。', 500);
   }
   async rest(endpoint, body) {
     const source = await readFile(this.config, 'utf8');
