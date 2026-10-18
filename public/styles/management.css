@@ -43,6 +43,11 @@
 .save-backup-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); padding-top: 18px; margin-top: 20px; }
 #save-backup-summary, #manager-backups { font-size: 11px; }
 #manager-backups { margin-top: 12px; }
+#native-backups { margin-top: 12px; font-size: 11px; }
+#native-backup-summary { font-size: 11px; }
+#native-backup-note { overflow-wrap: anywhere; }
+.save-backup-plan > .management-heading { flex-wrap: wrap; }
+.save-backup-plan h3 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 #manager-announce input { flex: 1; }
 #manager-logs { max-height: 65vh; min-height: 280px; overflow: auto; padding: 14px; border-radius: 6px; background: #202124; color: #f4f4f5; font: 11px/1.7 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 10px; }
 .log-heading { flex-wrap: wrap; }

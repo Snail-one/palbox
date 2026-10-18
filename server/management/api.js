@@ -49,6 +49,24 @@ export function createManagementApi(manager, options = {}) {
         json(200, { text: await manager.runtime.logs(channel) }); return;
       }
       if (pathname === '/api/backups' && request.method === 'GET') { json(200, await manager.backups()); return; }
+      if (pathname === '/api/native-backups' && request.method === 'GET') { json(200, await manager.nativeBackups()); return; }
+      if (pathname === '/api/native-backup' && request.method === 'GET') {
+        const archive = await manager.native.export(new URL(request.url, 'http://localhost').searchParams.get('id'));
+        let handle;
+        try {
+          if (response.destroyed) { await archive.cleanup(); return; }
+          handle = await open(archive.file, constants.O_RDONLY | constants.O_NOFOLLOW);
+          const info = await handle.stat();
+          if (response.destroyed) { await handle.close(); await archive.cleanup(); return; }
+          response.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Disposition': `attachment; filename="${archive.filename}"`, 'Content-Length': info.size, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+          const stream = handle.createReadStream();
+          stream.on('error', () => response.destroy());
+          stream.on('close', () => archive.cleanup().catch(error => manager.runtime.log('palbox', `${error.message}\n`)));
+          response.on('close', () => stream.destroy());
+          stream.pipe(response);
+        } catch (error) { await handle?.close(); await archive.cleanup(); throw error; }
+        return;
+      }
       if (pathname === '/api/backup' && request.method === 'GET') {
         const file = manager.backupFile(new URL(request.url, 'http://localhost').searchParams.get('id'));
         const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);

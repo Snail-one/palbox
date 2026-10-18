@@ -2,6 +2,7 @@ import path from 'node:path';
 import { readFile, mkdir, readdir, stat, rename, rm, lstat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { Runtime } from './runtime.js';
+import { NativeBackups } from './native-backups.js';
 import { ManagementStore } from './store.js';
 import { atomicWrite, readJson, jsonWrite, failure } from './files.js';
 import { passwordRecord } from './auth.js';
@@ -23,6 +24,7 @@ export class Manager {
     this.store = new ManagementStore(this.directory, options.port || runtime?.port || 8211);
     this.webPort = webPort;
     this.runtime = runtime || new Runtime(this.directory, options);
+    this.native = new NativeBackups(this.runtime.saved, this.directory);
     this.tasks = [];
     this.busy = null;
     this.closing = false;
@@ -33,11 +35,15 @@ export class Manager {
     if (!this.settings) {
       if (typeof this.password !== 'string' || this.password.length < 12) throw new Error('首次启动请设置至少 12 位的 PALBOX_ADMIN_PASSWORD。');
       if (this.password === 'replace-with-a-long-random-password') throw new Error('请将 .env 中的示例管理密码替换成自己的随机密码。');
-      this.settings = { admin: passwordRecord(this.password), backupIntervalHours: 0, backupRetention: 10 };
+      this.settings = { admin: passwordRecord(this.password), backupRetention: 10 };
       await jsonWrite(this.settingsFile, this.settings);
     }
     if (!/^[a-f0-9]{128}$/.test(this.settings.admin?.hash || '') || !/^[a-f0-9]+$/.test(this.settings.admin?.salt || '')) throw new Error('管理密码记录损坏，请检查 settings.json。');
-    if (!Number.isInteger(this.settings.backupIntervalHours) || this.settings.backupIntervalHours < 0 || this.settings.backupIntervalHours > 168 || !Number.isInteger(this.settings.backupRetention) || this.settings.backupRetention < 1 || this.settings.backupRetention > 100) throw new Error('备份计划记录损坏，请检查 settings.json。');
+    if (!Number.isInteger(this.settings.backupRetention) || this.settings.backupRetention < 1 || this.settings.backupRetention > 100) throw new Error('备份保留设置损坏，请检查 settings.json。');
+    if (Object.hasOwn(this.settings, 'backupIntervalHours')) {
+      delete this.settings.backupIntervalHours;
+      await jsonWrite(this.settingsFile, this.settings);
+    }
     this.password = undefined;
     await this.store.initialize();
     await this.runtime.initialize();
@@ -45,13 +51,12 @@ export class Manager {
     if (!Array.isArray(this.tasks)) throw new Error('任务记录损坏，请检查 tasks.json。');
     for (const task of this.tasks) if (task.state === 'running') { task.state = 'interrupted'; task.message = '面板重启，任务已中断，请检查日志后重试。'; }
     await this.saveTasks();
-    this.scheduler = setInterval(() => this.schedule().catch(error => this.runtime.log('palbox', `${error.message}\n`)), 60000);
-    this.scheduler.unref();
   }
   saveTasks() { return jsonWrite(this.tasksFile, this.tasks.slice(0, 40)); }
   async submit(action, payload = {}) {
-    const allowed = ['install', 'update', 'start', 'stop', 'restart', 'apply', 'backup', 'restore', 'save-world', 'announce', 'kick'];
+    const allowed = ['install', 'update', 'start', 'stop', 'restart', 'apply', 'backup', 'restore', 'restore-native', 'save-world', 'announce', 'kick'];
     if (!allowed.includes(action)) throw failure('管理操作不存在。', 404);
+    if (action === 'backup' && payload.category && payload.category !== 'manual') throw failure('定时备份已交由游戏官方机制，面板仅支持手动完整备份。');
     if (this.closing) throw failure('管理服务正在关闭。', 503);
     if (this.busy) throw failure('已有任务正在执行，请稍后再试。', 409);
     const task = { id: randomUUID(), action, state: 'running', message: '任务已开始', createdAt: new Date().toISOString() };
@@ -114,11 +119,20 @@ export class Manager {
       case 'backup': {
         const running = Boolean(this.runtime.game);
         if (running) { task.message = '保存世界并停服，准备一致性备份'; await this.runtime.stop({ requireSave: true }); }
-        try { task.backup = await this.backup(payload.category === 'scheduled' ? 'scheduled' : 'manual'); }
+        try { task.backup = await this.backup('manual'); }
         finally { if (running && !this.closing) await this.runtime.start(); }
         break;
       }
       case 'restore': await this.restore(payload.id); break;
+      case 'restore-native': {
+        const running = Boolean(this.runtime.game);
+        await this.native.restore(payload.id, async () => {
+          if (running) await this.runtime.stop({ requireSave: true });
+          await this.backup('manual');
+        });
+        if (running) await this.runtime.start();
+        break;
+      }
       case 'save-world': await this.requireRunning(); await this.runtime.rest('save', {}); break;
       case 'announce':
         await this.requireRunning();
@@ -206,23 +220,26 @@ export class Manager {
     }
     return status;
   }
-  publicSettings() { return { backupIntervalHours: this.settings.backupIntervalHours, backupRetention: this.settings.backupRetention }; }
+  async nativeBackups() {
+    let source = this.runtime.game ? this.runtime.runningSource : null;
+    if (!source) {
+      try { source = await readFile(this.runtime.config, 'utf8'); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
+    const setting = source ? parse(source).entries.find(entry => entry.key === 'bIsUseBackupSaveData') : null;
+    const enabled = setting ? setting.raw === 'True' : null;
+    return { enabled, ...await this.native.list() };
+  }
+  publicSettings() { return { backupRetention: this.settings.backupRetention }; }
   async updateSettings(value) {
-    if (!Number.isInteger(value.backupIntervalHours) || value.backupIntervalHours < 0 || value.backupIntervalHours > 168 || !Number.isInteger(value.backupRetention) || value.backupRetention < 1 || value.backupRetention > 100) throw failure('备份间隔须为 0 到 168 小时，保留数量为 1 到 100。');
-    const next = { ...this.settings, ...this.publicSettings(), backupIntervalHours: value.backupIntervalHours, backupRetention: value.backupRetention };
+    if (Object.hasOwn(value, 'backupIntervalHours')) throw failure('面板定时备份已移除，请使用游戏官方自动备份。');
+    if (!Number.isInteger(value.backupRetention) || value.backupRetention < 1 || value.backupRetention > 100) throw failure('完整备份保留数量须为 1 到 100。');
+    const next = { ...this.settings, backupRetention: value.backupRetention };
     await jsonWrite(this.settingsFile, next); this.settings = next;
     return this.publicSettings();
   }
-  async schedule() {
-    if (this.closing || this.busy || !this.settings.backupIntervalHours || !this.runtime.game) return;
-    const last = this.tasks.find(t => t.action === 'backup' && t.category === 'scheduled' && t.state === 'succeeded');
-    const since = last?.finishedAt || this.runtime.startedAt;
-    if (Date.now() - new Date(since).getTime() < this.settings.backupIntervalHours * 3600000) return;
-    const task = await this.submit('backup', { category: 'scheduled' });
-    const actual = this.tasks.find(t => t.id === task.id); actual.category = 'scheduled';
-  }
   async close() {
-    this.closing = true; clearInterval(this.scheduler);
+    this.closing = true;
     await this.runtime.close();
     await this.operation;
   }
