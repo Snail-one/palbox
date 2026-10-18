@@ -66,7 +66,7 @@ docker compose up -d --build
 
 ## 配置与生效
 
-管理模式下配置通过 HTTP API 自动保存到服务器的 `workspace.json`，与普通模式的浏览器存储互相独立。多设备共享该配置库；并发编辑使用版本号检查，遇到冲突保留本页编辑并提示刷新，不静默覆盖其他设备的修改。
+配置通过 HTTP API 自动保存到服务器的 `workspace.json`。多设备共享该配置库；并发编辑使用版本号检查，遇到冲突保留本页编辑并提示刷新，不静默覆盖其他设备的修改。
 
 - 「保存中」：正在提交到服务器；「已保存」：服务器已确认写入。
 - 「待生效」：当前选中配置与游戏配置或本次启动使用的配置不同。
@@ -77,7 +77,7 @@ docker compose up -d --build
 
 应用管理配置需要 `RESTAPIEnabled=True`、非空 `AdminPassword` 和有效的 `RESTAPIPort`。已导入且关闭 REST API 的配置需要先调整这几个参数；不会静默覆盖用户导入的配置。`PALBOX_GAME_PORT` 控制游戏进程的实际监听端口和 Compose 映射，INI 中的 `PublicPort` 只负责公布端口。
 
-「恢复输入配置」恢复面板中最初输入或导入的完整内容并自动保存，保留注释、未知字段与顺序；点击应用才影响游戏。旧的浏览器配置可在原页面复制 INI，再到管理模式导入。服务端第一次建立配置库时，如果 `/data/server/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini` 已存在，则将它作为初始输入；否则创建管理模板。
+「恢复输入配置」恢复面板中最初输入或导入的完整内容并自动保存，保留注释、未知字段与顺序；点击应用才影响游戏。已有 INI 配置可通过「配置管理」导入。服务端第一次建立配置库时，如果 `/data/server/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini` 已存在，则将它作为初始输入；否则创建管理模板。
 
 ## 服务与备份
 

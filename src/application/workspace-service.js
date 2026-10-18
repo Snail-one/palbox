@@ -28,7 +28,7 @@ export class WorkspaceService {
       this.#workspace = null;
       this.#blocked = true;
       this.#persisted = false;
-      this.#message = `${error.message} 当前使用临时工作空间，可以编辑并复制；请先备份或修复原始本地数据。`;
+      this.#message = `${error.message} 当前使用临时工作空间，可以编辑并复制；请先备份或修复原始数据。`;
     }
     if (!this.#workspace) {
       this.#workspace = createWorkspace(this.#profile('我的帕鲁世界', template));

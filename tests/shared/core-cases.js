@@ -1,7 +1,7 @@
 import * as C from '../../src/domain/config.js';
 import template from '../../src/domain/template.js';
 import * as Schema from '../../src/domain/schema.js';
-import * as Storage from '../../src/services/storage.js';
+import { validateWorkspace } from '../../src/domain/workspace.js';
 
 export function coreCases() {
   const cases = [];
@@ -16,10 +16,6 @@ export function coreCases() {
   const test = (name, run) => cases.push({ name, run });
   const values = source => C.parse(source).entries.map(e => [e.key, e.raw]);
   const value = (source, key) => C.parse(source).entries.find(e => e.key === key)?.raw;
-  const memory = () => {
-    const data = new Map();
-    return { getItem: key => data.has(key) ? data.get(key) : null, setItem: (key, val) => data.set(key, val) };
-  };
   const workspace = () => ({ version: 1, activeId: 'one', profiles: [{ id: 'one', name: '我的世界', source: template, updatedAt: '2026-10-17T00:00:00Z' }] });
 
   test('用户模板包含完整的 122 项参数', () => {
@@ -151,42 +147,12 @@ export function coreCases() {
   test('模板所有已知字段均通过类型和范围检查', () => {
     for (const e of C.parse(template).entries) equal([e.key, Schema.validate(e.key, e.raw)], [e.key, null]);
   });
-  test('空本地存储正常初始化，多配置保存后可恢复', () => {
-    const storage = memory();
-    equal(Storage.load(storage), null);
-    const data = workspace();
-    data.profiles.push({ ...data.profiles[0], id: 'two', name: '另一个世界', source: template.replace('ExpRate=1.000000', 'ExpRate=2') });
-    data.activeId = 'two';
-    Storage.save(storage, data);
-    equal(Storage.load(storage), data);
-  });
-  test('读写恢复后的配置彼此独立', () => {
-    const storage = memory();
-    const data = workspace();
-    data.profiles.push({ ...data.profiles[0], id: 'two' });
-    Storage.save(storage, data);
-    const loaded = Storage.load(storage);
-    loaded.profiles[1].source = 'OptionSettings=(A=2)';
-    equal(loaded.profiles[0].source, template);
-    equal(Storage.load(storage).profiles[1].source, template);
-  });
-  test('损坏的存储报错并保留原始数据', () => {
-    const storage = memory(); storage.setItem(Storage.KEY, '{broken');
-    throws(() => Storage.load(storage), '读取');
-    equal(storage.getItem(Storage.KEY), '{broken');
-    storage.setItem(Storage.KEY, JSON.stringify({ version: 99, profiles: [] }));
-    throws(() => Storage.load(storage), '格式');
-  });
   test('拒绝重复 ID、不完整记录和无效 activeId', () => {
     const data = workspace();
     data.profiles.push({ ...data.profiles[0] });
-    throws(() => Storage.validate(data), '不完整');
-    throws(() => Storage.validate({ ...workspace(), activeId: 'missing' }), '不存在');
-    throws(() => Storage.validate({ version: 1, profiles: [{ id: 'x' }], activeId: 'x' }), '不完整');
-  });
-  test('存储被禁用和配额不足有明确错误', () => {
-    throws(() => Storage.load({ getItem() { throw new Error('SecurityError'); } }), '读取');
-    throws(() => Storage.save({ setItem() { throw new Error('QuotaExceededError'); } }, workspace()), '请复制');
+    throws(() => validateWorkspace(data), '不完整');
+    throws(() => validateWorkspace({ ...workspace(), activeId: 'missing' }), '不存在');
+    throws(() => validateWorkspace({ version: 1, profiles: [{ id: 'x' }], activeId: 'x' }), '不完整');
   });
   return cases;
 }

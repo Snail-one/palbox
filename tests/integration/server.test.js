@@ -19,12 +19,18 @@ test('Node.js 静态服务', async t => {
     }
   });
   await t.test('样式、脚本、图标和浏览器测试页面可访问', async () => {
-    for (const route of ['/styles/index.css', '/src/domain/config.js', '/src/domain/template.js', '/src/domain/schema.js', '/src/services/storage.js', '/src/main.js', '/assets/favicon.svg', '/tests/index.html', '/tests/shared/core-cases.js', '/tests/browser/runner.js']) {
+    for (const route of ['/styles/index.css', '/src/domain/config.js', '/src/domain/template.js', '/src/domain/schema.js', '/src/services/management-api.js', '/src/main.js', '/assets/favicon.svg', '/tests/index.html', '/tests/shared/core-cases.js', '/tests/browser/runner.js']) {
       const response = await fetch(base + route);
       assert.equal(response.status, 200, route);
       assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
       assert.ok((await response.text()).length > 0);
     }
+  });
+  await t.test('没有管理后端时返回错误，不提供本地编辑模式', async () => {
+    const response = await fetch(base + '/api/bootstrap');
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: '管理服务尚未初始化。' });
+    assert.equal((await fetch(base + '/src/services/storage.js')).status, 404);
   });
   await t.test('HEAD 返回正确长度且没有响应正文', async () => {
     const get = await fetch(base + '/src/domain/config.js');

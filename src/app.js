@@ -11,7 +11,7 @@ import { createNavigation } from './ui/navigation.js';
 import { createManagementPanel } from './ui/management-panel.js';
 
 /** Composition root: connect UI callbacks to domain/application services. */
-export function createApp({ document, window, catalog, repository, clipboard, files, management = null }) {
+export function createApp({ document, window, catalog, repository, clipboard, files, management }) {
   const dom = createDom(document);
   const workspace = new WorkspaceService({ repository, template: catalog.template });
   const editor = new EditorSession(workspace.active.source, { validate: catalog.validate, formatOutput: catalog.formatOutput });
@@ -56,8 +56,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
     // Keep the editor and focused control intact, including invalid/source drafts.
     summary.render();
     if (success && !automatic) {
-      if (repository.remote) repository.flush().then(saved => notifications.toast(saved ? '所有有效修改已保存到服务器' : repository.error, !saved));
-      else notifications.toast('所有有效修改已自动保存到当前浏览器');
+      repository.flush().then(saved => notifications.toast(saved ? '所有有效修改已保存到服务器' : repository.error, !saved));
     }
     return success;
   }
@@ -70,7 +69,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
       notifications.toast('完整 INI 配置已复制到剪贴板');
     } catch { notifications.toast('复制失败，请允许剪贴板访问，或在「高级编辑 → 输出源码」中手动复制。', true); }
   }
-  const navigation = createNavigation({ dom, window, isDirty, onSave: save, managed: Boolean(management) });
+  const navigation = createNavigation({ dom, window, isDirty, onSave: save });
   const panel = createEditorPanel({ dom, editor, catalog, ask, notify: notifications.toast, onChanged: () => save({ automatic: true }), ready });
   function changedProfile(successMessage) {
     editor.reset(workspace.active.source);
@@ -90,7 +89,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
     duplicate(name) { workspace.add(name, editor.source()); changedProfile('已创建独立副本'); },
     rename(name) {
       workspace.rename(name);
-      if (persist()) notifications.toast(repository.remote ? '配置名称已提交' : '配置名称已保存');
+      if (persist()) notifications.toast('配置名称已提交');
       profiles.render();
       summary.render();
     },
@@ -106,7 +105,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
     editor.reset(workspace.initialSource);
     let saved = save({ automatic: true });
     render();
-    if (saved && repository.remote) saved = await repository.flush();
+    if (saved) saved = await repository.flush();
     notifications.toast(saved ? '已恢复输入配置并自动保存' : '已恢复输入配置，但保存失败，请复制备份', !saved);
   });
   dom.$('header-copy-button').addEventListener('click', copy);
@@ -114,8 +113,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
   function render() { profiles.render(); panel.render(); summary.render(); }
   render();
   notifications.storage(workspace.message);
-  let managementPanel;
-  if (management) managementPanel = createManagementPanel({ dom, api: management, ask, notify: notifications.toast, async getConfiguration() {
+  const managementPanel = createManagementPanel({ dom, api: management, ask, notify: notifications.toast, async getConfiguration() {
     if (!ready()) throw new Error(editor.blockReason);
     if (!(await repository.flush())) throw new Error(repository.error || '请等待自动保存完成。');
     return { profileId: workspace.active.id, revision: repository.revision };

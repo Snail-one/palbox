@@ -220,7 +220,7 @@
     margin: 0;
   }
 
-  .topbar .local-status {
+  .topbar .connection-status {
     margin-left: auto;
   }
 
@@ -244,7 +244,7 @@
     margin: 0 6px;
   }
 
-  .local-status {
+  .connection-status {
     font-size: 9px;
   }
 

@@ -4,16 +4,43 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   section.className = 'management-panel';
   section.setAttribute('aria-label', '帕鲁服务管理');
   section.innerHTML = `
-    <div class="management-heading"><h2>服务器概况 <span id="game-state" class="save-status" data-state="pending">连接中</span></h2><a class="button secondary" href="#configuration">管理配置 →</a></div>
-    <div class="management-metrics"><span>版本 <strong id="game-version">—</strong></span><span>在线 <strong id="game-players">—</strong></span><span>FPS <strong id="game-fps">—</strong></span><span>运行 <strong id="game-uptime">—</strong></span><span>游戏端口 <strong id="game-port">8211</strong></span></div>
-    <div class="management-actions"><button class="button secondary" data-action="install">安装服务端</button><button class="button secondary" data-action="start">启动</button><button class="button secondary" data-action="stop">停止</button><button class="button secondary" data-action="restart">重启</button><button class="button secondary" data-action="update">更新服务端</button><button class="button secondary" data-action="save-world">保存世界</button><button class="button secondary" data-action="backup">创建备份</button></div>
-    <p class="management-note">管理游戏服务与世界存档。创建备份时会先存档并短暂停服，完成后恢复运行。</p>
-    <div class="management-details">
-      <details id="manager-log-details"><summary>运行日志</summary><label>日志类型 <select id="manager-log-channel"><option value="game">游戏日志</option><option value="steamcmd">安装与更新</option><option value="palbox">面板日志</option></select></label><pre id="manager-logs" tabindex="0">暂无日志</pre></details>
-      <details id="manager-backup-details"><summary>备份与恢复</summary><form id="backup-settings"><label>自动备份间隔（小时，0 关闭）<input id="backup-interval" disabled type="number" min="0" max="168" required></label><label>每类保留数量<input id="backup-retention" disabled type="number" min="1" max="100" required></label><button class="button secondary" type="submit" disabled>保存计划</button></form><div id="manager-backups">暂无备份</div></details>
-      <details id="manager-player-details"><summary>在线玩家与广播</summary><form id="manager-announce"><label class="sr-only" for="announce-message">广播内容</label><input id="announce-message" maxlength="500" required placeholder="向服务器玩家广播…"><button class="button secondary" type="submit">发送广播</button></form><div id="manager-players-list">游戏服尚未连接</div></details>
-    </div>`;
-  $('game-page').append(section);
+    <div class="management-heading"><h2>游戏服务 <span id="game-state" class="save-status" data-state="pending">连接中</span></h2><a class="button secondary" href="#configuration">管理配置 →</a></div>
+    <p class="management-note">管理服务器的安装、启动、停止与更新。</p>
+    <div class="management-actions"><button class="button secondary" data-action="install">安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop">停止</button><button class="button secondary" data-action="restart">重启</button><button class="button secondary" data-action="update">更新服务端</button></div>`;
+  const metrics = document.createElement('dl');
+  metrics.className = 'management-metrics';
+  metrics.setAttribute('aria-label', '服务器运行信息');
+  const cards = [
+    ['版本', 'game-version', 'code', '—', '当前游戏服务端版本'],
+    ['在线', 'game-players', 'user', '—', '当前人数 / 人数上限'],
+    ['FPS', 'game-fps', 'sparkles', '—', '服务器每秒运行帧数'],
+    ['运行', 'game-uptime', 'globe', '—', '本次启动持续时间'],
+    ['游戏端口', 'game-port', 'server', '8211', 'UDP 游戏连接端口']
+  ];
+  metrics.innerHTML = cards.map(([label, id, icon, initial, caption]) => `<div class="server-metric"><dt><span class="metric-icon"><svg class="icon" aria-hidden="true"><use href="#i-${icon}"/></svg></span>${label}</dt><dd id="${id}" class="metric-value">${initial}</dd><dd class="metric-caption">${caption}</dd></div>`).join('');
+  $('game-overview').append(metrics, section);
+  const logs = document.createElement('section');
+  logs.id = 'game-logs';
+  logs.className = 'management-panel';
+  logs.setAttribute('aria-label', '运行日志');
+  logs.innerHTML = `<div class="management-heading log-heading"><h2>运行日志</h2><div class="segmented log-type-buttons" id="manager-log-channel" role="group" aria-label="日志类型"><button type="button" class="selected" data-log-channel="game" aria-pressed="true">游戏日志</button><button type="button" data-log-channel="steamcmd" aria-pressed="false">安装与更新</button><button type="button" data-log-channel="palbox" aria-pressed="false">面板日志</button></div></div><p class="management-note">日志自动刷新，支持切换游戏、安装更新与面板日志。</p><pre id="manager-logs" tabindex="0">正在读取日志…</pre>`;
+  $('game-overview').append(logs);
+  const playerPanel = document.createElement('section');
+  playerPanel.className = 'management-panel';
+  playerPanel.setAttribute('aria-label', '在线玩家与广播');
+  playerPanel.innerHTML = `<div class="management-heading"><h2>在线玩家与广播</h2></div><p class="management-note">查看在线玩家并向服务器发送公告。</p><form id="manager-announce"><label class="sr-only" for="announce-message">广播内容</label><input id="announce-message" maxlength="500" required placeholder="向服务器玩家广播…"><button class="button secondary" type="submit">发送广播</button></form><div id="manager-players-list">游戏服尚未连接</div>`;
+  $('game-players-view').append(playerPanel);
+  const saves = document.createElement('section');
+  saves.id = 'save-management';
+  saves.className = 'management-panel save-management';
+  saves.setAttribute('aria-labelledby', 'save-management-title');
+  saves.innerHTML = `
+    <div class="management-heading"><div><h2 id="save-management-title">存档管理</h2><p class="management-note">保存世界与玩家进度，管理存档备份和恢复。</p></div><div class="management-actions"><button class="button secondary" data-action="save-world" disabled>保存世界</button><button class="button primary" data-action="backup" disabled>创建备份</button></div></div>
+    <p class="management-note">备份包含世界、玩家存档和游戏配置。游戏运行中创建备份会先存档并短暂停服，完成后重新启动；恢复前会备份当前存档。</p>
+    <div class="save-backup-plan"><h3>自动备份</h3><form id="backup-settings"><label>自动备份间隔（小时，0 关闭）<input id="backup-interval" disabled type="number" min="0" max="168" required></label><label>每类保留数量<input id="backup-retention" disabled type="number" min="1" max="100" required></label><button class="button secondary" type="submit" disabled>保存计划</button></form></div>
+    <div class="save-backup-heading"><h3>存档备份</h3><span id="save-backup-summary" role="status">正在读取…</span></div>
+    <div id="manager-backups">正在读取存档备份…</div>`;
+  $('game-saves').append(saves);
   const deployment = document.createElement('section');
   deployment.className = 'configuration-deployment';
   deployment.setAttribute('aria-label', '配置应用');
@@ -25,18 +52,18 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   $('storage-error').after(feedback);
   const logout = document.createElement('button');
   logout.id = 'manager-logout'; logout.className = 'button secondary'; logout.textContent = '退出登录';
-  document.querySelector('.topbar').append(logout);
+  document.querySelector('.topbar-session').append(logout);
   document.querySelector('.bottom-note > span:last-child').textContent = '配置自动保存 · 应用后在游戏中生效';
-  const actionButtons = [...section.querySelectorAll('[data-action]'), ...deployment.querySelectorAll('[data-action]')];
+  const actionButtons = [...section.querySelectorAll('[data-action]'), ...saves.querySelectorAll('[data-action]'), ...deployment.querySelectorAll('[data-action]')];
   actionButtons.forEach(button => { button.disabled = true; });
-  document.querySelector('.local-status').textContent = '服务管理模式';
-  document.querySelector('.local-card strong').textContent = '保存在你的服务器';
-  document.querySelector('.local-card p').textContent = '配置、存档与备份持久保存，换设备也能继续管理。';
   const names = { install: '安装服务端', start: '启动', stop: '停止', restart: '重启', update: '更新服务端', apply: '应用配置', backup: '创建备份', restore: '恢复备份', 'save-world': '保存世界', announce: '发送广播', kick: '移出玩家' };
   let polling = false;
   let stopped = false;
   let lastTask;
   let lastStatus;
+  let settingsLoaded = false;
+  let logChannel = 'game';
+  let logRequest = 0;
   function error(message) { $('management-error').textContent = message; $('management-error').hidden = !message; }
   async function action(name, payload = {}, confirm = true) {
     if (confirm && ['stop', 'restart', 'update', 'apply', 'backup', 'restore', 'kick'].includes(name)) {
@@ -61,8 +88,9 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   for (const button of actionButtons) button.addEventListener('click', () => action(button.dataset.action));
   async function loadBackups() {
     const backups = await api.request('backups');
+    $('save-backup-summary').textContent = `${backups.length} 份 · ${(backups.reduce((total, backup) => total + backup.bytes, 0) / 1024 / 1024).toFixed(1)} MB`;
     $('manager-backups').replaceChildren();
-    if (!backups.length) $('manager-backups').textContent = '暂无备份';
+    if (!backups.length) $('manager-backups').textContent = '暂无存档备份。创建备份后，可在这里下载或恢复。';
     for (const backup of backups) {
       const row = document.createElement('div'); row.className = 'backup-row';
       const label = document.createElement('span');
@@ -74,7 +102,11 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
     }
   }
   async function loadLogs() {
-    const result = await api.request(`logs?channel=${encodeURIComponent($('manager-log-channel').value)}`);
+    const request = ++logRequest;
+    let result;
+    try { result = await api.request(`logs?channel=${encodeURIComponent(logChannel)}`); }
+    catch (caught) { if (request === logRequest) throw caught; return; }
+    if (request !== logRequest) return;
     const panel = $('manager-logs');
     const bottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 30;
     panel.textContent = result.text || '暂无日志';
@@ -119,27 +151,35 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
         if (task.state !== 'running') lastTask = task.id;
       }
       players(value.players);
-      if ($('manager-log-details').open) await loadLogs();
-      if ($('manager-backup-details').open) await loadBackups();
+      if (!$('game-page').hidden && !$('game-overview').hidden) await loadLogs();
+      if (!$('game-page').hidden && !$('game-saves').hidden) {
+        if (!settingsLoaded) await loadBackupSettings();
+        await loadBackups();
+      }
     } catch (caught) {
       error(caught.message);
       actionButtons.forEach(button => { button.disabled = true; });
       if (caught.status === 401) { stopped = true; $('game-state').textContent = '需登录'; }
     } finally { polling = false; }
   }
-  $('manager-log-channel').addEventListener('change', () => loadLogs().catch(caught => error(caught.message)));
-  $('manager-log-details').addEventListener('toggle', () => { if ($('manager-log-details').open) loadLogs().catch(caught => error(caught.message)); });
-  $('manager-backup-details').addEventListener('toggle', async () => {
-    if (!$('manager-backup-details').open) return;
-    const controls = [...$('backup-settings').querySelectorAll('input, button')];
-    controls.forEach(control => { control.disabled = true; });
-    try {
-      const settings = await api.request('settings');
-      $('backup-interval').value = settings.backupIntervalHours; $('backup-retention').value = settings.backupRetention;
-      await loadBackups();
-    } catch (caught) { error(caught.message); }
-    finally { controls.forEach(control => { control.disabled = false; }); }
+  for (const button of $('manager-log-channel').querySelectorAll('button')) button.addEventListener('click', () => {
+    if (logChannel === button.dataset.logChannel) return;
+    logChannel = button.dataset.logChannel;
+    for (const option of $('manager-log-channel').querySelectorAll('button')) {
+      const selected = option === button;
+      option.classList.toggle('selected', selected);
+      option.setAttribute('aria-pressed', String(selected));
+    }
+    $('manager-logs').textContent = '正在读取日志…';
+    loadLogs().catch(caught => error(caught.message));
   });
+  async function loadBackupSettings() {
+    const settings = await api.request('settings');
+    $('backup-interval').value = settings.backupIntervalHours;
+    $('backup-retention').value = settings.backupRetention;
+    settingsLoaded = true;
+    $('backup-settings').querySelectorAll('input, button').forEach(control => { control.disabled = false; });
+  }
   $('backup-settings').addEventListener('submit', async event => {
     event.preventDefault();
     try { await api.request('settings', { method: 'PUT', body: { backupIntervalHours: Number($('backup-interval').value), backupRetention: Number($('backup-retention').value) } }); notify('备份计划已保存'); }
@@ -152,6 +192,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   });
   const timer = setInterval(refresh, 5000);
   document.addEventListener('visibilitychange', refresh);
+  window.addEventListener('hashchange', refresh);
   window.addEventListener('pagehide', () => clearInterval(timer), { once: true });
   refresh();
   return { refresh };

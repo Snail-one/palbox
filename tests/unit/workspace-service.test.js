@@ -1,8 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { WorkspaceService } from '../../src/application/workspace-service.js';
-import { createRepository, KEY } from '../../src/services/storage.js';
 import template from '../../src/domain/template.js';
+
+const KEY = 'workspace';
+const createRepository = getStorage => ({
+  load() { const raw = getStorage().getItem(KEY); return raw == null ? null : JSON.parse(raw); },
+  save(value) {
+    try { getStorage().setItem(KEY, JSON.stringify(value)); }
+    catch { throw new Error('保存失败，请复制配置备份。'); }
+  }
+});
 
 function setup(initial = null) {
   const data = new Map(initial === null ? [] : [[KEY, JSON.stringify(initial)]]);
@@ -19,7 +27,7 @@ function setup(initial = null) {
   return { service, data, storage, fail: () => { fail = true; } };
 }
 
-test('兼容现有 v1 存储键与记录，加载不会覆盖源文件', () => {
+test('兼容现有 v1 工作空间记录，加载不会覆盖源文件', () => {
   const old = { version: 1, activeId: 'old', profiles: [{ id: 'old', name: '旧配置', source: '; keep\n' + template, updatedAt: '2026-01-01' }] };
   const { service, data } = setup(old);
   assert.equal(service.active.id, 'old');
@@ -57,7 +65,7 @@ test('保存失败回滚已保存源文件，不影响可供复制的编辑结�
   assert.match(service.message, /复制/);
 });
 
-test('损坏本地记录进入临时空间，禁止后续操作覆盖原始数据', () => {
+test('损坏的仓库记录进入临时空间，禁止后续操作覆盖原始数据', () => {
   const data = new Map([[KEY, '{broken']]);
   const repository = createRepository(() => ({ getItem: key => data.get(key), setItem: (key, value) => data.set(key, value) }));
   const service = new WorkspaceService({ repository, template });
@@ -115,7 +123,7 @@ test('旧配置首次保存前捕获输入基准，保存失败与重试不会�
   assert.equal(loaded.initialSource, old.profiles[0].source);
 });
 
-test('损坏的输入基准不能用于覆盖本地记录', () => {
+test('损坏的输入基准不能用于覆盖已有记录', () => {
   for (const initialSource of [7, 'OptionSettings=(A="broken)']) {
     const initial = { version: 1, activeId: 'bad', profiles: [{ id: 'bad', name: '损坏', source: template, initialSource }] };
     const { service, data } = setup(initial);

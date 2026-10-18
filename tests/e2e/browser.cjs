@@ -4,35 +4,43 @@ const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { once } = require('node:events');
 
 
-let url = process.env.PALBOX_BASE_URL;
-let server;
+let url;
+const fixtures = [];
 const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
 
 (async () => {
   const Config = await import('../../src/domain/config.js');
-  if (!url) {
-    const { createServer } = await import('../../server/http-server.js');
-    server = createServer();
-    server.listen(0, '127.0.0.1');
-    await once(server, 'listening');
-    url = `http://127.0.0.1:${server.address().port}`;
+  const { managementFixture } = await import('../helpers/management-fixture.js');
+  async function fixture(workspace) {
+    const f = await managementFixture(); fixtures.push(f);
+    if (workspace) { f.manager.store.workspace = structuredClone(workspace); await f.manager.store.persist(); }
+    return f;
   }
+  const primary = await fixture(); url = primary.base;
   await fs.mkdir(output, { recursive: true });
   const browser = await chromium.launch({ headless: true });
   const errors = [];
   let count = 0;
   const context = await browser.newContext({ viewport: { width: 1440, height: 1050 }, permissions: ['clipboard-read', 'clipboard-write'] });
+  await context.addInitScript(() => {
+    Storage.prototype.getItem = Storage.prototype.setItem = () => { throw new Error('浏览器本地存储已禁用'); };
+  });
+  await context.request.post(url + '/api/login', { data: { password: primary.password } });
   const page = await context.newPage();
   page.on('pageerror', error => errors.push(error.message));
   const ok = label => { count++; console.log(`PASS ${label}`); };
   const text = selector => page.locator(selector).textContent();
-  const current = () => page.evaluate(() => {
-    const w = JSON.parse(localStorage.getItem('palbox.workspace.v1'));
+  async function workspaceFor(target) {
+    await target.waitForFunction(() => document.getElementById('change-caption')?.textContent !== '保存中');
+    const response = await target.request.get(new URL('/api/workspace', target.url()).href);
+    return (await response.json()).workspace;
+  }
+  const current = async () => {
+    const w = await workspaceFor(page);
     return w.profiles.find(p => p.id === w.activeId);
-  });
+  };
   const raw = (source, key) => Config.parse(source).entries.find(e => e.key === key)?.raw;
   const confirm = async name => {
     if (name !== undefined) await page.locator('#dialog-name').fill(name);
@@ -54,7 +62,7 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
     await scrollToFraction(target, 0.5);
   };
   try {
-    await page.goto(url);
+    await page.goto(url + '/#configuration');
     await page.locator('#field-ServerName').waitFor();
     assert.equal(await text('#parameter-count'), '122');
     assert.equal(await page.locator('#sidebar-import').count(), 0);
@@ -367,13 +375,15 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
     ok('自动保存后刷新直接恢复，非法草稿仍触发关闭提醒');
 
     await page.goto(url + '/tests/index.html');
-    assert.equal(await text('#test-summary'), '30 / 30 项测试通过');
+    assert.equal(await text('#test-summary'), '26 / 26 项测试通过');
     ok('浏览器中运行同一套核心测试全部通过');
 
     const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+    const mobileFixture = await fixture();
+    await mobileContext.request.post(mobileFixture.base + '/api/login', { data: { password: mobileFixture.password } });
     const mobile = await mobileContext.newPage();
     mobile.on('pageerror', error => errors.push(error.message));
-    await mobile.goto(url);
+    await mobile.goto(mobileFixture.base + '/#configuration');
     await mobile.locator('#field-ServerName').waitFor();
     assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await mobile.screenshot({ path: path.join(output, 'mobile.png'), fullPage: false });
@@ -407,9 +417,11 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
     ok('手机布局、侧栏管理和高级表格无页面横向溢出');
 
     const importContext = await browser.newContext();
+    const importFixture = await fixture();
+    await importContext.request.post(importFixture.base + '/api/login', { data: { password: importFixture.password } });
     const imported = await importContext.newPage();
     imported.on('pageerror', error => errors.push(error.message));
-    await imported.goto(url);
+    await imported.goto(importFixture.base + '/#configuration');
     await imported.locator('#import-button').click();
     await imported.locator('#drop-zone').evaluate((zone, source) => {
       const transfer = new DataTransfer();
@@ -432,7 +444,7 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
     assert.equal(Config.parse(importedOutput).entries.length, 2);
     assert.equal(raw(importedOutput, 'ServerName'), '"粘贴世界"');
     assert.equal(raw(importedOutput, 'ExpRate'), '4.000000');
-    const readImportedWorkspace = () => imported.evaluate(() => JSON.parse(localStorage.getItem('palbox.workspace.v1')));
+    const readImportedWorkspace = () => workspaceFor(imported);
     const inputWorkspace = await readImportedWorkspace();
     const inputProfile = inputWorkspace.profiles.find(p => p.id === inputWorkspace.activeId);
     const inputSource = 'OptionSettings=(ServerName="粘贴世界",ExpRate=4)';
@@ -479,15 +491,16 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
     const legacySource = '; 保留旧注释\n[/Script/Pal.PalGameWorldSettings]\nOptionSettings=(ServerName="已有服务器",ExpRate=2,LegacyCustom=(A,B))\n';
     const legacy = { version: 1, activeId: 'existing-id', profiles: [{ id: 'existing-id', name: '已有配置', source: legacySource, updatedAt: '2026-01-01T00:00:00Z' }] };
     const legacyContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] });
-    await legacyContext.addInitScript(workspace => localStorage.setItem('palbox.workspace.v1', JSON.stringify(workspace)), legacy);
+    const legacyFixture = await fixture(legacy);
+    await legacyContext.request.post(legacyFixture.base + '/api/login', { data: { password: legacyFixture.password } });
     const legacyPage = await legacyContext.newPage();
     legacyPage.on('pageerror', error => errors.push(error.message));
-    await legacyPage.goto(url);
+    await legacyPage.goto(legacyFixture.base + '/#configuration');
     await legacyPage.locator('#field-ServerName').waitFor();
     assert.equal(await legacyPage.locator('#profile-title').textContent(), '已有配置');
     assert.equal(await legacyPage.locator('#field-ExpRate').count(), 0);
     assert.equal(await legacyPage.locator('#unknown-count').textContent(), '1');
-    assert.equal(await legacyPage.evaluate(() => localStorage.getItem('palbox.workspace.v1')), JSON.stringify(legacy));
+    assert.equal(JSON.stringify(await workspaceFor(legacyPage)), JSON.stringify(legacy));
     await legacyPage.locator('#header-copy-button').click();
     await legacyPage.waitForFunction(() => document.getElementById('toast').textContent.includes('已复制'));
     assert.equal(await legacyPage.evaluate(() => navigator.clipboard.readText()), legacySource.replace('ExpRate=2,', 'ExpRate=2.000000,'));
@@ -496,52 +509,65 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
     await legacyPage.locator('#field-ExpRate').focus();
     await legacyPage.locator('#search').focus();
     assert.equal(await legacyPage.locator('#change-caption').textContent(), '已保存');
-    assert.equal(await legacyPage.evaluate(() => localStorage.getItem('palbox.workspace.v1')), JSON.stringify(legacy));
+    assert.equal(JSON.stringify(await workspaceFor(legacyPage)), JSON.stringify(legacy));
     await legacyPage.locator('#tab-advanced').click();
     assert.equal(await legacyPage.getByRole('textbox', { name: 'ExpRate 的原始值', exact: true }).inputValue(), '2.000000');
     await legacyContext.close();
     ok('已有 v1 工作空间直接恢复，ID、注释、参数顺序和原始数据保持不变');
 
     const failedContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] });
-    await failedContext.addInitScript(() => {
-      Storage.prototype.setItem = function () { throw new DOMException('Quota exceeded', 'QuotaExceededError'); };
-    });
+    const failedFixture = await fixture();
+    await failedContext.request.post(failedFixture.base + '/api/login', { data: { password: failedFixture.password } });
+    await failedContext.route('**/api/workspace', route => route.request().method() === 'PUT'
+      ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试保存失败，请复制配置备份。' }) })
+      : route.continue());
     const failed = await failedContext.newPage();
     failed.on('pageerror', error => errors.push(error.message));
-    await failed.goto(url);
+    await failed.goto(failedFixture.base + '/#configuration');
     await failed.locator('#field-ServerName').waitFor();
-    assert.equal(await failed.locator('#storage-error').isVisible(), true);
     await failed.locator('#field-ServerName').fill('存储失败仍可复制');
-    assert.equal(await failed.locator('#change-caption').textContent(), '保存失败');
+    await failed.waitForFunction(() => document.getElementById('change-caption').textContent === '保存失败');
+    assert.equal(await failed.locator('#storage-error').isVisible(), true);
     assert.equal(await failed.locator('#change-caption').getAttribute('data-state'), 'error');
     assert.equal(await failed.locator('#field-ServerName').inputValue(), '存储失败仍可复制');
     await failed.locator('#header-copy-button').click();
     await failed.waitForFunction(() => document.getElementById('toast').textContent.includes('已复制'));
     assert.equal(raw(await failed.evaluate(() => navigator.clipboard.readText()), 'ServerName'), '"存储失败仍可复制"');
     await failedContext.close();
-    ok('真实存储失败时提示明确、编辑保留、仍可复制');
+    ok('服务器保存失败时提示明确、编辑保留、仍可复制');
 
     const corruptContext = await browser.newContext();
-    await corruptContext.addInitScript(() => localStorage.setItem('palbox.workspace.v1', '{broken'));
+    const corruptFixture = await fixture();
+    await corruptContext.request.post(corruptFixture.base + '/api/login', { data: { password: corruptFixture.password } });
+    await corruptContext.route('**/api/workspace', route => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: '无法读取服务器配置。' }) }));
     const corrupt = await corruptContext.newPage();
     corrupt.on('pageerror', error => errors.push(error.message));
-    await corrupt.goto(url);
-    await corrupt.locator('#field-ServerName').waitFor();
-    await corrupt.locator('#field-ServerName').fill('损坏数据不能覆盖');
-    assert.equal(await corrupt.evaluate(() => localStorage.getItem('palbox.workspace.v1')), '{broken');
-    assert.equal(await corrupt.locator('#storage-error').isVisible(), true);
+    await corrupt.goto(corruptFixture.base + '/#configuration');
+    await corrupt.locator('#storage-error').waitFor();
+    assert.match(await corrupt.locator('#storage-error').textContent(), /无法读取服务器配置/);
+    assert.equal(await corrupt.locator('#field-ServerName').count(), 0);
+    assert.equal(corruptFixture.manager.store.revision, 1);
     await corruptContext.close();
-    ok('损坏的存储保持原值，阻止静默覆盖');
+    ok('服务器配置读取失败时显示错误，不回退到本地编辑');
+
+    const unavailable = await context.newPage();
+    await unavailable.route('**/api/bootstrap', route => route.fulfill({ status: 404, body: 'Not found' }));
+    await unavailable.goto(url);
+    await unavailable.locator('#storage-error').waitFor();
+    assert.match(await unavailable.locator('#storage-error').textContent(), /无法连接 Palbox 管理服务/);
+    assert.equal(await unavailable.locator('#field-ServerName').count(), 0);
+    await unavailable.close();
+    ok('管理接口缺失时显示错误，不启动本地网页');
 
     assert.deepEqual(errors, []);
     ok('所有场景无未捕获浏览器异常');
     console.log(`\n${count} browser scenarios passed. Artifacts: ${output}`);
   } finally {
     await browser.close();
-    if (server?.listening) await new Promise(resolve => server.close(resolve));
+    await Promise.all(fixtures.splice(0).map(f => f.close()));
   }
 })().catch(async error => {
   console.error(error);
-  if (server?.listening) await new Promise(resolve => server.close(resolve));
+  await Promise.allSettled(fixtures.splice(0).map(f => f.close()));
   process.exitCode = 1;
 });

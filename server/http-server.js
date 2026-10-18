@@ -35,8 +35,8 @@ export function createServer({ root = projectRoot, api } = {}) {
     if (pathname.startsWith('/api/')) {
       if (api) { await api(request, response, pathname); return; }
       if (pathname === '/api/bootstrap' && request.method === 'GET') {
-        response.writeHead(200, { ...headers, 'Content-Type': 'application/json' });
-        response.end(JSON.stringify({ mode: 'local' })); return;
+        response.writeHead(503, { ...headers, 'Content-Type': 'application/json' });
+        response.end(JSON.stringify({ error: '管理服务尚未初始化。' })); return;
       }
       send(404, 'Not found'); return;
     }

@@ -148,11 +148,11 @@ select:focus {
   color: var(--accent);
 }
 
-.local-card {
+.server-card {
   box-shadow: 0 6px 16px #24232112;
 }
 
-.local-card-icon {
+.server-card-icon {
   color: #ff9c59;
 }
 
@@ -496,14 +496,14 @@ legend,
 .profile-item,
 .profile-item.selected,
 .profile-item small,
-.local-card strong,
-.local-card p,
+.server-card strong,
+.server-card p,
 .docs-link,
 .docs-link:hover,
 .sidebar-foot,
 .breadcrumb,
 .breadcrumb strong,
-.local-status,
+.connection-status,
 .avatar,
 .eyebrow,
 .page-heading p,
@@ -580,7 +580,7 @@ textarea::placeholder {
   color: #111111;
 }
 
-.local-card {
+.server-card {
   background: #fff;
   border-color: var(--line);
 }

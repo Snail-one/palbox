@@ -1,17 +1,15 @@
 import { createApp } from './app.js';
 import { createCatalog } from './domain/catalog.js';
-import { createRepository } from './services/storage.js';
 import { createClipboard } from './services/clipboard.js';
 import { readConfigFile, validateImport } from './services/config-files.js';
 import { createManagementClient, createRemoteRepository } from './services/management-api.js';
 
 async function start() {
-  const bootstrap = await fetch('/api/bootstrap', { cache: 'no-store' }).then(r => { if (r.status === 404) return { mode: 'local' }; if (!r.ok) throw new Error('无法连接 Palbox 服务。'); return r.json(); });
-  const api = bootstrap.mode === 'managed' ? createManagementClient({ fetch: window.fetch.bind(window), csrf: bootstrap.csrf }) : null;
-  if (api && !bootstrap.authenticated) { window.location.replace('/login.html'); return; }
-  const repository = api
-    ? createRemoteRepository({ api, ...await api.request('workspace') })
-    : createRepository(() => window.localStorage);
+  const bootstrap = await fetch('/api/bootstrap', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('无法连接 Palbox 管理服务。'); return r.json(); });
+  if (bootstrap.mode !== 'managed') throw new Error('请启动 Palbox 管理服务。');
+  if (!bootstrap.authenticated) { window.location.replace('/login.html'); return; }
+  const api = createManagementClient({ fetch: window.fetch.bind(window), csrf: bootstrap.csrf });
+  const repository = createRemoteRepository({ api, ...await api.request('workspace') });
   createApp({
     document, window, catalog: createCatalog(bootstrap.template ? { source: bootstrap.template } : {}), repository, management: api,
     clipboard: createClipboard({ navigator, document }),

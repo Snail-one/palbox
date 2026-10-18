@@ -106,7 +106,7 @@ test('SteamCMD、进程、配置应用、备份恢复与故障状态真实联动
   assert.equal((await f.request('/api/status')).status, 200);
 });
 
-test('管理入口可独立初始化并响应 SIGTERM，密码不以明文存盘', { skip: process.platform !== 'linux', timeout: 15000 }, async t => {
+test('默认入口直接启动管理面板、可独立初始化并响应 SIGTERM，密码不以明文存盘', { skip: process.platform !== 'linux', timeout: 15000 }, async t => {
   const { spawn } = await import('node:child_process');
   const { mkdtemp, rm, stat } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
@@ -118,7 +118,7 @@ test('管理入口可独立初始化并响应 SIGTERM，密码不以明文存盘
   const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
   const password = 'index-test-password-123';
   const child = spawn(process.execPath, [fileURLToPath(new URL('../../server/index.js', import.meta.url))], {
-    env: { ...process.env, HOST: '127.0.0.1', PORT: String(port), PALBOX_MODE: 'managed', PALBOX_DATA_DIR: directory, PALBOX_ADMIN_PASSWORD: password, PALBOX_AUTO_INSTALL: 'false', PALBOX_AUTO_START: 'false' },
+    env: { ...process.env, HOST: '127.0.0.1', PORT: String(port), PALBOX_DATA_DIR: directory, PALBOX_ADMIN_PASSWORD: password, PALBOX_AUTO_INSTALL: 'false', PALBOX_AUTO_START: 'false' },
     stdio: ['ignore', 'pipe', 'pipe']
   });
   let output = ''; child.stdout.on('data', data => { output += data; }); child.stderr.on('data', data => { output += data; });

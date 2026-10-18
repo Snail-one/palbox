@@ -43,7 +43,7 @@ COPY server ./server
 COPY docker/entrypoint.sh /usr/local/bin/palbox-entrypoint
 RUN chmod 755 /usr/local/bin/palbox-entrypoint
 
-ENV NODE_ENV=production PALBOX_MODE=managed HOST=0.0.0.0 PORT=8080 \
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080 \
     PALBOX_DATA_DIR=/data PALBOX_STEAMCMD=/opt/steamcmd/steamcmd.sh \
     PALBOX_AUTO_INSTALL=true PALBOX_AUTO_START=true HOME=/home/node
 
