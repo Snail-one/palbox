@@ -1,16 +1,15 @@
+import { updateModifiedBadge } from './modified-badge.js';
+
 export function createFieldFeedback({ dom, editor, onChanged }) {
   function show(key, control, errorNode) {
     const error = editor.error(key);
     control.setAttribute('aria-invalid', String(Boolean(error)));
     if (errorNode) errorNode.textContent = error;
-    const label = control.closest('.field')?.querySelector('.field-label');
-    label?.querySelector('.modified-dot')?.remove();
-    if (editor.isModified(key)) {
-      const dot = dom.el('span', 'modified-dot');
-      dot.title = '本次已修改';
-      label?.append(dot);
-    }
-    control.closest('tr')?.classList.toggle('modified', editor.isModified(key));
+    const row = control.closest('tr');
+    const label = control.closest('.field')?.querySelector('.field-label') || row?.querySelector('.parameter-heading') || row?.firstElementChild;
+    const modified = editor.isModified(key);
+    updateModifiedBadge(dom, label, modified);
+    row?.classList.toggle('modified', modified);
     onChanged();
   }
   return {

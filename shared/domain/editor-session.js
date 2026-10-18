@@ -11,10 +11,10 @@ export class EditorSession {
   #drafts = new Map();
   #sourceDraft = null;
 
-  constructor(source, { validate = () => null, formatOutput = (key, raw) => raw } = {}) {
+  constructor(source, { validate = () => null, formatOutput = (key, raw) => raw, baselineSource = source } = {}) {
     this.#validate = validate;
     this.#formatOutput = formatOutput;
-    this.reset(source);
+    this.reset(source, { baselineSource });
   }
 
   get entries() { return this.#doc.entries; }
@@ -26,10 +26,11 @@ export class EditorSession {
     return this.errorCount ? '请先修正标记的输入错误。' : null;
   }
 
-  reset(source) {
+  reset(source, { baselineSource = source } = {}) {
     const doc = parse(source);
+    const baseline = baselineSource === source ? doc : parse(baselineSource);
     this.#doc = doc;
-    this.#baseline = doc;
+    this.#baseline = baseline;
     this.#changes.clear();
     this.#errors.clear();
     this.#drafts.clear();
@@ -45,12 +46,17 @@ export class EditorSession {
     const output = new Map(this.entries.map(({ key }) => [key, this.outputRaw(key)]));
     return serialize(this.#doc, output, { download: true });
   }
-  isModified(key) { return this.#baseline.entries.find(entry => entry.key === key)?.raw !== this.raw(key); }
+  isModified(key) {
+    const before = this.#baseline.entries.find(entry => entry.key === key)?.raw;
+    const after = this.raw(key);
+    if (before === undefined || after === undefined) return before !== after;
+    return this.#formatOutput(key, before) !== this.#formatOutput(key, after);
+  }
 
   changedKeys() {
-    const before = new Map(this.#baseline.entries.map(entry => [entry.key, entry.raw]));
-    const after = new Map(this.entries.map(entry => [entry.key, this.raw(entry.key)]));
-    return [...new Set([...before.keys(), ...after.keys()])].filter(key => before.get(key) !== after.get(key));
+    const before = this.#baseline.entries.map(entry => entry.key);
+    const after = this.entries.map(entry => entry.key);
+    return [...new Set([...before, ...after])].filter(key => this.isModified(key));
   }
 
   update(key, raw, draft = raw) {

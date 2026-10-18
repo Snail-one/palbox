@@ -151,12 +151,19 @@
   font-weight: 550;
   line-height: 1.5;
   min-width: 0;
+  flex-wrap: wrap;
 }
 
-.field-label .modified-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
+.modified-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border: 1px solid #edc5aa;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: 500 10px/1.6 system-ui, sans-serif;
+  white-space: nowrap;
   flex-shrink: 0;
 }
 

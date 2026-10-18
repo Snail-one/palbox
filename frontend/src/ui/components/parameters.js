@@ -2,6 +2,7 @@ import { createFieldFeedback } from './field-feedback.js';
 import { createParameterEvidence } from './parameter-evidence.js';
 import { createAdminPasswordControl } from './admin-password.js';
 import { encodeString } from '../../../../shared/domain/config.js';
+import { updateModifiedBadge } from './modified-badge.js';
 
 export function createParameterView({ dom, editor, catalog, view, onChanged }) {
   const { $, el, icon, empty } = dom;
@@ -31,8 +32,12 @@ export function createParameterView({ dom, editor, catalog, view, onChanged }) {
       if (field) {
         const heading = el('div', 'parameter-heading');
         heading.append(el('span', 'parameter-label', field.label), createParameterEvidence(dom, field, `raw-desc-${entry.key}`));
+        updateModifiedBadge(dom, heading, isModified(entry.key));
         name.append(heading);
-      } else name.append(el('small', 'unknown-tag', '未识别参数 · 用途尚未核实'));
+      } else {
+        name.append(el('small', 'unknown-tag', '未识别参数 · 用途尚未核实'));
+        updateModifiedBadge(dom, name, isModified(entry.key));
+      }
       const cell = el('td');
       const wrap = el('div', 'input-wrap');
       const secret = catalog.fields[entry.key]?.secret;

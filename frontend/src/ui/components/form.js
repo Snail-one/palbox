@@ -2,6 +2,7 @@ import * as config from '../../../../shared/domain/config.js';
 import { createFieldFeedback } from './field-feedback.js';
 import { createParameterEvidence } from './parameter-evidence.js';
 import { createAdminPasswordControl } from './admin-password.js';
+import { updateModifiedBadge } from './modified-badge.js';
 
 export function createFormView({ dom, editor, catalog, view, onCategory, onChanged }) {
   const { $, el, icon, empty, document } = dom;
@@ -21,13 +22,10 @@ export function createFormView({ dom, editor, catalog, view, onCategory, onChang
       $('category-nav').append(button);
     }
   }
-  function labelWithDot(field) {
+  function fieldLabel(field) {
     const label = el('label', 'field-label', field.label);
     label.htmlFor = `field-${field.key}`;
-    if (isModified(field.key)) {
-      const dot = el('span', 'modified-dot');
-      dot.title = '本次已修改'; label.append(dot);
-    }
+    updateModifiedBadge(dom, label, isModified(field.key));
     return label;
   }
   function renderFields() {
@@ -44,7 +42,7 @@ export function createFormView({ dom, editor, catalog, view, onCategory, onChang
       const f = catalog.fields[entry.key];
       const value = raw(entry.key);
       const box = el('div', `field${f.wide ? ' wide' : ''}${f.type === 'boolean' ? ' boolean-field' : ''}`);
-      const label = labelWithDot(f);
+      const label = fieldLabel(f);
       const keyLabel = el('div', 'field-key', entry.key);
       const descriptionId = `desc-${entry.key}`;
       const heading = el('div', 'parameter-heading');

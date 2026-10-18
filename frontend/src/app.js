@@ -15,7 +15,8 @@ import { createManagementPanel } from './ui/management-panel.js';
 export function createApp({ document, window, catalog, repository, clipboard, files, management }) {
   const dom = createDom(document);
   const workspace = new WorkspaceService({ repository, template: catalog.template });
-  const editor = new EditorSession(workspace.active.source, { validate: catalog.validate, formatOutput: catalog.formatOutput });
+  const editor = new EditorSession(workspace.active.source, { validate: catalog.validate, formatOutput: catalog.formatOutput, baselineSource: workspace.initialSource });
+  function resetEditor() { editor.reset(workspace.active.source, { baselineSource: workspace.initialSource }); }
   const notifications = createNotifications(dom);
   const ask = createDialog(dom);
   const isDirty = () => editor.sourceDraft !== null || editor.errorCount > 0 || editor.source() !== workspace.active.source || !workspace.persisted || repository.pending || Boolean(repository.error);
@@ -76,14 +77,14 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
   navigation.refresh();
   async function saveProfileSource(id, source) {
     if (!workspace.updateSource(id, source)) throw new Error(workspace.message || '保存失败，请复制备份后重试。');
-    if (id === workspace.active.id) { editor.reset(workspace.active.source); panel.render(); }
+    if (id === workspace.active.id) { resetEditor(); panel.render(); }
     profiles.render();
     summary.render();
     if (repository.flush && !(await repository.flush())) throw new Error(repository.error || '保存失败，请复制备份后重试。');
     notifications.toast('配置源码已保存');
   }
   function changedProfile(successMessage, { source = false } = {}) {
-    editor.reset(workspace.active.source);
+    resetEditor();
     const success = persist();
     render();
     navigation.closeSidebar();
@@ -152,7 +153,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
       try { workspace.remove(id, { fallbackSource, fallbackOrigin }); }
       catch (error) { notifications.toast(error.message, true); return; }
       if (!fromList) { changedProfile('配置已删除'); return; }
-      if (activeRemoved) editor.reset(workspace.active.source);
+      if (activeRemoved) resetEditor();
       const success = persist();
       profiles.render();
       if (activeRemoved) panel.render();

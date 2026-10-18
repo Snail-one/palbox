@@ -6,7 +6,52 @@ import { parse } from '../../shared/domain/config.js';
 import template from '../../shared/domain/template.js';
 
 const catalog = createCatalog();
-const session = (source = template) => new EditorSession(source, { validate: catalog.validate, formatOutput: catalog.formatOutput });
+const session = (source = template, baselineSource = source) => new EditorSession(source, { validate: catalog.validate, formatOutput: catalog.formatOutput, baselineSource });
+
+test('修改标记在保存、重新加载和切换配置后保留，改回初值后移除', () => {
+  const original = session();
+  const serverName = original.raw('ServerName');
+  const expRate = original.raw('ExpRate');
+  original.update('ServerName', '"新的世界"');
+  original.update('ExpRate', '2');
+  const saved = original.source();
+  const reloaded = session(saved, template);
+  assert.equal(reloaded.isModified('ServerName'), true);
+  assert.equal(reloaded.isModified('ExpRate'), true);
+  assert.equal(reloaded.changedKeys().length, 2);
+  const other = 'OptionSettings=(ServerName="另一套配置",ExpRate=3)';
+  reloaded.reset(other, { baselineSource: other });
+  assert.equal(reloaded.isModified('ServerName'), false);
+  reloaded.reset(saved, { baselineSource: template });
+  assert.equal(reloaded.isModified('ServerName'), true);
+  reloaded.update('ExpRate', 'invalid');
+  assert.equal(reloaded.isModified('ExpRate'), true, '非法草稿不会覆盖上一次有效修改');
+  reloaded.update('ExpRate', expRate);
+  assert.equal(reloaded.isModified('ExpRate'), false);
+  reloaded.update('ServerName', serverName);
+  assert.deepEqual(reloaded.changedKeys(), []);
+});
+
+test('源码修改和未识别参数共用初始基准，恢复输入清除全部标记', () => {
+  const initial = 'OptionSettings=(ExpRate=1.000000,FutureFlag=True)';
+  const editor = session('OptionSettings=(ExpRate=2.000000,FutureFlag=False)', initial);
+  assert.equal(editor.isModified('FutureFlag'), true);
+  editor.applySource('OptionSettings=(ExpRate=3.000000,FutureAdded=123)');
+  assert.equal(editor.isModified('FutureAdded'), true);
+  assert.deepEqual(new Set(editor.changedKeys()), new Set(['ExpRate', 'FutureFlag', 'FutureAdded']));
+  editor.applySource(initial);
+  assert.deepEqual(editor.changedKeys(), []);
+  editor.reset(initial, { baselineSource: initial });
+  assert.deepEqual(editor.changedKeys(), []);
+});
+
+test('已识别数值仅补齐小数位不标记修改，未知字段仍比较原始值', () => {
+  const initial = 'OptionSettings=(ExpRate=2,FutureValue=2)';
+  const editor = session('OptionSettings=(ExpRate=2.000000,FutureValue=2.0)', initial);
+  assert.equal(editor.isModified('ExpRate'), false);
+  assert.equal(editor.isModified('FutureValue'), true);
+  assert.deepEqual(editor.changedKeys(), ['FutureValue']);
+});
 
 test('官方说明、社区解释与完全未识别分开统计，社区说明不冒充官方', () => {
   const community = [
