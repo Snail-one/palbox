@@ -1,0 +1,22 @@
+services:
+  palbox:
+    build: .
+    image: palbox:local
+    platform: linux/amd64
+    restart: unless-stopped
+    stop_grace_period: 120s
+    ports:
+      - "${PALBOX_WEB_BIND:-127.0.0.1}:${PALBOX_WEB_PORT:-8080}:8080/tcp"
+      - "${PALBOX_GAME_PORT:-8211}:${PALBOX_GAME_PORT:-8211}/udp"
+    environment:
+      PALBOX_ADMIN_PASSWORD: "${PALBOX_ADMIN_PASSWORD:?请在 .env 设置至少 12 位的管理密码}"
+      PALBOX_GAME_PORT: "${PALBOX_GAME_PORT:-8211}"
+      PALBOX_AUTO_INSTALL: "${PALBOX_AUTO_INSTALL:-true}"
+      PALBOX_AUTO_START: "${PALBOX_AUTO_START:-true}"
+      PALBOX_GAME_ARGS: "${PALBOX_GAME_ARGS:-[]}"
+      PALBOX_SECURE_COOKIE: "${PALBOX_SECURE_COOKIE:-false}"
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      TZ: "${TZ:-Asia/Shanghai}"
+    volumes:
+      - "${PALBOX_DATA_PATH:-/srv/palbox}:/data"

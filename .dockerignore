@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+!.env.example
+node_modules
+test-results
+playwright-report
+data
+.cache
+.agents
+.codex
+.aws
+*.log

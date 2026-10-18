@@ -53,6 +53,16 @@ flowchart TD
 
 ## 服务与验证
 
-`server/index.js` 只处理端口和启动错误；`server/http-server.js` 提供可测试的 `createServer()`。它只发布 `public`、浏览器源码和浏览器测试资源，不发布服务端、Node 测试或工作区元数据；路径和符号链接必须保持在对应发布目录中。
+`server/index.js` 负责运行模式、管理初始化、启动任务和退出时保存停服；`server/http-server.js` 提供可测试的 `createServer()`。它只发布 `public`、浏览器源码和浏览器测试资源，不发布服务端、Node 测试或工作区元数据；路径和符号链接必须保持在对应发布目录中。
 
 `npm test` 运行单元和 HTTP 集成测试。`npm run test:e2e` 独立启动本机服务，检查真实浏览器交互并在结束后释放服务。共用配置用例同时由 Node.js 单元测试和浏览器测试页面执行。
+
+## 管理模式
+
+`PALBOX_MODE=managed` 启用 `server/management`。`files.js` 提供写入临时文件、fsync 和原子替换；`store.js` 在服务器保存工作空间并检查版本冲突；`auth.js` 管理 scrypt 密码校验、HttpOnly 会话和 CSRF 验证；`api.js` 提供固定的 JSON API 与备份下载，不提供任意命令执行。
+
+`runtime.js` 管理 SteamCMD 和游戏进程组，使用参数数组启动子进程，处理 REST API、日志轮换、就绪等待和停服。`manager.js` 串行执行后台任务，处理应用配置、停服备份、归档路径校验、临时目录恢复与定时计划。面板进程与游戏进程分开管理，游戏停服不会关闭网页。
+
+浏览器入口先请求 `/api/bootstrap` 确认模式，管理模式未登录时转入登录页。远程仓库保留同步编辑接口，将服务器写入串行排队，通过订阅状态区别「保存中」「已保存」「保存失败」。服务器确认前会保留离开提醒，失败时保留最新草稿；并发版本冲突不会静默覆盖。配置应用前等待队列写入完成，再携带配置 ID 和版本号提交任务。
+
+原有编辑器只处理预设和草稿；游戏配置的写入必须经过管理任务。`ui/management-panel.js` 通过注入的 API 客户端展示状态、任务、日志、备份和玩家操作。服务端数据位于 `/data`，具体结构见 [Docker 文档](docker.md)。

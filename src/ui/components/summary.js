@@ -1,7 +1,7 @@
 import { decodeString } from '../../domain/config.js';
 import { savedTime } from '../dom.js';
 
-export function createSummary({ dom, editor, workspace, catalog, isDirty }) {
+export function createSummary({ dom, editor, workspace, catalog, isDirty, persistence = {} }) {
   const { $, document } = dom;
   return {
     render() {
@@ -16,10 +16,12 @@ export function createSummary({ dom, editor, workspace, catalog, isDirty }) {
       $('change-count').textContent = editor.changedKeys().length;
       let status = isDirty()
         ? { state: 'pending', label: '未保存', detail: '当前修改尚未保存到浏览器。' }
-        : { state: 'saved', label: '已保存', detail: '所有有效修改已自动保存到当前浏览器。' };
+        : { state: 'saved', label: '已保存', detail: `所有有效修改已自动保存到${persistence.remote ? '服务器' : '当前浏览器'}。` };
+      if (persistence.pending) status = { state: 'pending', label: '保存中', detail: '正在将有效修改保存到服务器。' };
       if (editor.sourceDraft !== null) status = { state: 'pending', label: '待应用', detail: '源码修改尚未应用，应用成功后会自动保存。' };
       if (editor.errorCount) status = { state: 'error', label: '输入有误', detail: `${editor.errorCount} 项输入需要修正，已保留上一次有效值。` };
       if (!workspace.persisted) status = { state: 'error', label: '保存失败', detail: '自动保存失败，请复制配置备份。' };
+      if (persistence.error) status = { state: 'error', label: '保存失败', detail: persistence.error };
       const badge = $('change-caption');
       if (badge.textContent !== status.label) badge.textContent = status.label;
       badge.dataset.state = status.state;
