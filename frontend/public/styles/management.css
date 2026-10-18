@@ -18,7 +18,7 @@
 .configuration-apply { display: flex; align-items: center; gap: 10px; border-right: 1px solid var(--line); padding-right: 12px; }
 .configuration-apply .save-status, .configuration-apply .button { white-space: nowrap; }
 .configuration-state { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 74px; }
-#game-config-state { padding: 3px 9px; border-radius: 999px; font-size: 10px; font-weight: 600; }
+#game-config-state, .server-primary-actions #game-state { flex-shrink: 0; padding: 5px 9px; font-size: 11px; }
 #game-config-state[data-state="written"] { background: #eef4ff; border-color: #cddcf5; color: #365f97; }
 .configuration-tools { display: flex; align-items: center; padding: 3px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
 .configuration-tools .button { min-height: 30px; padding: 6px 10px; border: 0; border-radius: 5px; background: transparent; box-shadow: none; gap: 6px; }
@@ -32,7 +32,6 @@
 .server-primary-actions { display: contents; }
 .server-primary-actions [data-action="force-stop"] { color: var(--red); }
 .server-primary-actions #game-state, .server-primary-actions [data-action="update"] { margin-inline-start: 16px; }
-.server-primary-actions #game-state { flex-shrink: 0; padding: 5px 9px; font-size: 11px; }
 .management-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; margin: 0; }
 .server-metric { min-width: 0; }
 .server-metric + .server-metric { padding-left: 16px; border-left: 1px solid var(--line); }
