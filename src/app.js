@@ -70,7 +70,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
       notifications.toast('完整 INI 配置已复制到剪贴板');
     } catch { notifications.toast('复制失败，请允许剪贴板访问，或在「高级编辑 → 输出源码」中手动复制。', true); }
   }
-  const navigation = createNavigation({ dom, window, isDirty, onSave: save });
+  const navigation = createNavigation({ dom, window, isDirty, onSave: save, managed: Boolean(management) });
   const panel = createEditorPanel({ dom, editor, catalog, ask, notify: notifications.toast, onChanged: () => save({ automatic: true }), ready });
   function changedProfile(successMessage) {
     editor.reset(workspace.active.source);

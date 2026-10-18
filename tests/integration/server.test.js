@@ -15,7 +15,7 @@ test('Node.js 静态服务', async t => {
       const response = await fetch(base + route);
       assert.equal(response.status, 200);
       assert.match(response.headers.get('content-type'), /text\/html/);
-      assert.match(await response.text(), /帕鲁配置工作台/);
+      assert.match(await response.text(), /<title>Palbox · 幻兽帕鲁管理<\/title>/);
     }
   });
   await t.test('样式、脚本、图标和浏览器测试页面可访问', async () => {

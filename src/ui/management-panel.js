@@ -4,18 +4,31 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   section.className = 'management-panel';
   section.setAttribute('aria-label', '帕鲁服务管理');
   section.innerHTML = `
-    <div class="management-heading"><div><div class="eyebrow">PALWORLD SERVER</div><h2>服务管理 <span id="game-state" class="save-status" data-state="pending">连接中</span> <span id="game-config-state" class="save-status" data-state="pending">待生效</span></h2></div><button id="manager-logout" class="button secondary">退出登录</button></div>
+    <div class="management-heading"><h2>服务器概况 <span id="game-state" class="save-status" data-state="pending">连接中</span></h2><a class="button secondary" href="#configuration">管理配置 →</a></div>
     <div class="management-metrics"><span>版本 <strong id="game-version">—</strong></span><span>在线 <strong id="game-players">—</strong></span><span>FPS <strong id="game-fps">—</strong></span><span>运行 <strong id="game-uptime">—</strong></span><span>游戏端口 <strong id="game-port">8211</strong></span></div>
-    <div class="management-actions"><button class="button secondary" data-action="install">安装服务端</button><button class="button secondary" data-action="start">启动</button><button class="button secondary" data-action="stop">停止</button><button class="button secondary" data-action="restart">重启</button><button class="button secondary" data-action="update">更新服务端</button><button class="button primary" data-action="apply">应用配置</button><button class="button secondary" data-action="save-world">保存世界</button><button class="button secondary" data-action="backup">创建备份</button></div>
-    <p class="management-note">配置自动保存在服务器；应用配置后才会写入游戏。运行中的游戏服应用配置或创建备份时，会先存档并短暂停服。</p>
-    <div id="management-error" class="alert error" role="alert" hidden></div>
-    <p id="management-task" class="management-task" role="status">暂无任务</p>
+    <div class="management-actions"><button class="button secondary" data-action="install">安装服务端</button><button class="button secondary" data-action="start">启动</button><button class="button secondary" data-action="stop">停止</button><button class="button secondary" data-action="restart">重启</button><button class="button secondary" data-action="update">更新服务端</button><button class="button secondary" data-action="save-world">保存世界</button><button class="button secondary" data-action="backup">创建备份</button></div>
+    <p class="management-note">管理游戏服务与世界存档。创建备份时会先存档并短暂停服，完成后恢复运行。</p>
     <div class="management-details">
       <details id="manager-log-details"><summary>运行日志</summary><label>日志类型 <select id="manager-log-channel"><option value="game">游戏日志</option><option value="steamcmd">安装与更新</option><option value="palbox">面板日志</option></select></label><pre id="manager-logs" tabindex="0">暂无日志</pre></details>
       <details id="manager-backup-details"><summary>备份与恢复</summary><form id="backup-settings"><label>自动备份间隔（小时，0 关闭）<input id="backup-interval" disabled type="number" min="0" max="168" required></label><label>每类保留数量<input id="backup-retention" disabled type="number" min="1" max="100" required></label><button class="button secondary" type="submit" disabled>保存计划</button></form><div id="manager-backups">暂无备份</div></details>
       <details id="manager-player-details"><summary>在线玩家与广播</summary><form id="manager-announce"><label class="sr-only" for="announce-message">广播内容</label><input id="announce-message" maxlength="500" required placeholder="向服务器玩家广播…"><button class="button secondary" type="submit">发送广播</button></form><div id="manager-players-list">游戏服尚未连接</div></details>
     </div>`;
-  $('storage-error').after(section);
+  $('game-page').append(section);
+  const deployment = document.createElement('section');
+  deployment.className = 'configuration-deployment';
+  deployment.setAttribute('aria-label', '配置应用');
+  deployment.innerHTML = `<div><h2>应用到游戏 <span id="game-config-state" class="save-status" data-state="pending">连接中</span></h2><p>有效修改自动保存到服务器。应用后写入游戏；运行中的服务器会先存档、停服、备份，再应用并重启。</p></div><button class="button primary" data-action="apply" disabled>应用配置</button>`;
+  $('configuration-page').prepend(deployment);
+  const feedback = document.createElement('div');
+  feedback.className = 'management-feedback';
+  feedback.innerHTML = `<div id="management-error" class="alert error" role="alert" hidden></div><p id="management-task" class="management-task" role="status">暂无任务</p>`;
+  $('storage-error').after(feedback);
+  const logout = document.createElement('button');
+  logout.id = 'manager-logout'; logout.className = 'button secondary'; logout.textContent = '退出登录';
+  document.querySelector('.topbar').append(logout);
+  document.querySelector('.bottom-note > span:last-child').textContent = '配置自动保存 · 应用后在游戏中生效';
+  const actionButtons = [...section.querySelectorAll('[data-action]'), ...deployment.querySelectorAll('[data-action]')];
+  actionButtons.forEach(button => { button.disabled = true; });
   document.querySelector('.local-status').textContent = '服务管理模式';
   document.querySelector('.local-card strong').textContent = '保存在你的服务器';
   document.querySelector('.local-card p').textContent = '配置、存档与备份持久保存，换设备也能继续管理。';
@@ -45,7 +58,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
       await refresh();
     } catch (caught) { error(caught.message); }
   }
-  for (const button of section.querySelectorAll('[data-action]')) button.addEventListener('click', () => action(button.dataset.action));
+  for (const button of actionButtons) button.addEventListener('click', () => action(button.dataset.action));
   async function loadBackups() {
     const backups = await api.request('backups');
     $('manager-backups').replaceChildren();
@@ -93,7 +106,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
       $('game-fps').textContent = value.metrics?.serverfps ?? '—';
       $('game-uptime').textContent = value.metrics ? `${Math.floor(value.metrics.uptime / 60)} 分钟` : '—';
       $('game-port').textContent = value.port;
-      for (const button of section.querySelectorAll('[data-action]')) {
+      for (const button of actionButtons) {
         const name = button.dataset.action;
         button.disabled = Boolean(value.task) || (name === 'install' && value.installed) || (['start', 'update', 'restart'].includes(name) && !value.installed) || (name === 'start' && value.running) || (['stop', 'restart', 'save-world'].includes(name) && !value.running);
         if (name === 'apply') button.textContent = value.running ? '应用并重启' : '应用配置';
@@ -110,6 +123,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
       if ($('manager-backup-details').open) await loadBackups();
     } catch (caught) {
       error(caught.message);
+      actionButtons.forEach(button => { button.disabled = true; });
       if (caught.status === 401) { stopped = true; $('game-state').textContent = '需登录'; }
     } finally { polling = false; }
   }

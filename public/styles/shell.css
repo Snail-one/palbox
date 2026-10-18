@@ -72,6 +72,11 @@
   font-size: 13px;
 }
 
+.workspace-nav { display: grid; gap: 6px; }
+.workspace-link { display: flex; align-items: center; gap: 11px; padding: 12px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; }
+.workspace-link:not(.sidebar-active):hover { background: #f6f6f6; }
+#configuration-profiles { min-height: 0; overflow: auto; }
+
 .tiny-dot {
   display: inline-block;
   width: 6px;
