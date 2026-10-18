@@ -56,7 +56,13 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
   }
   async function selectProfile(name) {
     await configurationPage(page, 'profiles');
-    await page.locator('#profile-list').getByRole('button', { name }).click();
+    await page.getByRole('group', { name }).getByRole('button', { name: '选择', exact: true }).click();
+    await page.locator('#view-advanced').waitFor();
+    assert.equal(await page.locator('#mode-source').getAttribute('aria-pressed'), 'true');
+    assert.ok((await page.locator('#source-editor').inputValue()).includes('OptionSettings='));
+    assert.match(await page.locator('#source-origin').textContent(), /^来源：/);
+    await page.locator('#editor-mode-form').click();
+    await page.locator('#view-form').waitFor();
   }
   const scrollToFraction = (target, fraction) => target.evaluate(value => window.scrollTo(0, (document.documentElement.scrollHeight - innerHeight) * value), fraction);
   const checkPinnedActions = async target => {
@@ -367,6 +373,19 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
     const beforeListActions = await workspaceFor(page);
     const targetProfile = beforeListActions.profiles.find(profile => profile.name === '二号世界');
     const listRow = page.locator(`[data-profile-id="${targetProfile.id}"]`);
+    await listRow.locator('.profile-select').click();
+    await page.locator('#source-view-dialog').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#source-view-description').textContent(), /来源：/);
+    assert.equal(await page.locator('#source-view-text').isEditable(), true);
+    assert.equal(await page.locator('#source-view-save').isVisible(), true);
+    await page.locator('#source-view-ok').click();
+    assert.equal((await workspaceFor(page)).activeId, beforeListActions.activeId);
+    const defaultRow = page.getByRole('group', { name: '我的帕鲁世界', exact: true });
+    await defaultRow.locator('.profile-select').click();
+    await page.locator('#source-view-dialog').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#source-view-text').isEditable(), false);
+    assert.equal(await page.locator('#source-view-save').isVisible(), false);
+    await page.locator('#source-view-ok').click();
     await listRow.getByRole('button', { name: '重命名', exact: true }).click();
     await confirm('列表重命名');
     assert.equal(await text('#profile-title'), '三号世界');
@@ -384,6 +403,15 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
     assert.equal(await text('#profile-count'), '3');
     assert.equal((await workspaceFor(page)).activeId, beforeListActions.activeId);
     assert.equal(new URL(page.url()).hash, '#configuration/profiles');
+    await listRow.locator('.profile-select').click();
+    await page.locator('#source-view-dialog').waitFor({ state: 'visible' });
+    const popupEditedSource = (await page.locator('#source-view-text').inputValue()) + '\n; 弹窗编辑已保存\n';
+    await page.locator('#source-view-text').fill(popupEditedSource);
+    await page.locator('#source-view-save').click();
+    await page.locator('#source-view-dialog').waitFor({ state: 'hidden' });
+    const afterPopupSave = await workspaceFor(page);
+    assert.equal(afterPopupSave.activeId, beforeListActions.activeId);
+    assert.equal(afterPopupSave.profiles.find(profile => profile.id === targetProfile.id).source, popupEditedSource);
     await configurationPage(page, 'form');
     ok('配置列表隐藏信息卡，按条目重命名、复制和删除，不切换当前配置');
 

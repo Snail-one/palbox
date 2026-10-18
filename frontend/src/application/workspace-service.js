@@ -31,7 +31,7 @@ export class WorkspaceService {
       this.#message = `${error.message} 当前使用临时工作空间，可以编辑并复制；请先备份或修复原始数据。`;
     }
     if (!this.#workspace) {
-      this.#workspace = createWorkspace(this.#profile('我的帕鲁世界', template));
+      this.#workspace = createWorkspace(this.#profile('我的帕鲁世界', template, '内置模板'));
       if (!this.#blocked) this.persist();
     }
   }
@@ -41,7 +41,7 @@ export class WorkspaceService {
   get initialSource() { return this.active.initialSource ?? this.active.source; }
   get persisted() { return this.#persisted; }
   get message() { return this.#message; }
-  #profile(name, source) { return createProfile(name, source, this.#identity); }
+  #profile(name, source, origin) { return createProfile(name, source, { ...this.#identity, origin }); }
 
   persist() {
     if (this.#blocked) throw new Error(this.#message);
@@ -62,9 +62,9 @@ export class WorkspaceService {
     this.#workspace.activeId = id;
   }
 
-  add(name, source = this.#template, { select = true } = {}) {
+  add(name, source = this.#template, { select = true, origin } = {}) {
     parse(source);
-    const profile = this.#profile(name, source);
+    const profile = this.#profile(name, source, origin);
     this.profiles.push(profile);
     if (select) this.select(profile.id);
     this.#persisted = false;
@@ -78,11 +78,11 @@ export class WorkspaceService {
     this.#persisted = false;
   }
 
-  remove(id = this.active.id, { fallbackSource = this.#template } = {}) {
+  remove(id = this.active.id, { fallbackSource = this.#template, fallbackOrigin } = {}) {
     if (!this.profiles.some(profile => profile.id === id)) throw new Error('配置不存在。');
     const activeRemoved = id === this.active.id;
     const remaining = this.profiles.filter(profile => profile.id !== id);
-    if (!remaining.length) { parse(fallbackSource); remaining.push(this.#profile('我的帕鲁世界', fallbackSource)); }
+    if (!remaining.length) { parse(fallbackSource); remaining.push(this.#profile('我的帕鲁世界', fallbackSource, fallbackOrigin)); }
     this.#workspace.profiles = remaining;
     if (activeRemoved) this.select(remaining[0].id);
     this.#persisted = false;
@@ -90,20 +90,24 @@ export class WorkspaceService {
 
   removeActive() { this.remove(); }
 
-  saveSource(source) {
+  updateSource(id, source) {
+    const profile = this.profiles.find(candidate => candidate.id === id);
+    if (!profile) throw new Error('配置不存在。');
     parse(source);
     // Capture legacy profiles before their first edit; later saves keep this baseline.
-    this.active.initialSource ??= this.active.source;
-    const previous = { ...this.active };
-    this.active.source = source;
-    this.active.updatedAt = this.#identity.now?.() ?? new Date().toISOString();
+    profile.initialSource ??= profile.source;
+    const previous = { ...profile };
+    profile.source = source;
+    profile.updatedAt = this.#identity.now?.() ?? new Date().toISOString();
     try {
       if (this.persist()) return true;
     } catch (error) {
-      Object.assign(this.active, previous);
+      Object.assign(profile, previous);
       throw error;
     }
-    Object.assign(this.active, previous);
+    Object.assign(profile, previous);
     return false;
   }
+
+  saveSource(source) { return this.updateSource(this.active.id, source); }
 }

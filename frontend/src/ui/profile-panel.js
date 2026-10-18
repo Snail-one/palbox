@@ -1,22 +1,48 @@
-export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, isDirty, clipboard, notify, actions }) {
+export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, isDirty, clipboard, notify, onSaveSource, actions }) {
   const { $, el, icon, empty } = dom;
   const sourceDialog = $('source-view-dialog');
   const sourceText = $('source-view-text');
   const sourceDescription = $('source-view-description');
+  let editingProfile = null;
+  let sourceReadOnly = false;
   function closeSourceDialog() { sourceDialog.close(); }
-  function openSourceDialog() {
-    sourceText.value = workspace.active.source;
-    sourceDescription.textContent = `「${workspace.active.name}」的输入源码（只读）。修改请使用「高级编辑 → 输入源码」。`;
+  function openSourceDialog(profile = workspace.active) {
+    const active = profile.id === workspace.active.id;
+    const origin = profile.origin || '已有配置';
+    // Only the game's own default file is protected; an imported file that happens
+    // to be named DefaultPalWorldSettings.ini is an independent, editable copy.
+    sourceReadOnly = origin.startsWith('官方默认配置');
+    editingProfile = profile;
+    sourceText.value = profile.source;
+    sourceText.readOnly = sourceReadOnly;
+    $('source-view-mode').textContent = sourceReadOnly ? 'UTF-8 · 只读' : 'UTF-8 · 可编辑';
+    $('source-view-save').hidden = sourceReadOnly;
+    $('source-view-save').disabled = sourceReadOnly;
+    $('source-view-error').hidden = true;
+    sourceDescription.textContent = `「${profile.name}」的输入源码。来源：${origin}。${sourceReadOnly ? '游戏默认配置文件在预览中只读；如需修改，请点击「选择」后进入编辑器。' : active ? '保存后会替换当前配置的输入源码，未应用的源码草稿将被覆盖。' : '保存后更新该配置，不会切换当前配置。'}`;
     sourceDialog.showModal();
     sourceText.scrollTop = 0;
   }
-  $('view-profile-source').addEventListener('click', openSourceDialog);
+  $('view-profile-source').addEventListener('click', () => openSourceDialog());
   $('source-view-close').addEventListener('click', closeSourceDialog);
   $('source-view-ok').addEventListener('click', closeSourceDialog);
-  sourceDialog.addEventListener('close', () => { sourceText.value = ''; });
+  sourceDialog.addEventListener('close', () => { editingProfile = null; sourceText.value = ''; });
   $('source-view-copy').addEventListener('click', async () => {
     try { await clipboard.write(sourceText.value); notify('配置源码已复制'); }
     catch { notify('复制失败，请手动选择源码复制', true); }
+  });
+  $('source-view-save').addEventListener('click', async () => {
+    if (!editingProfile || sourceReadOnly) return;
+    const button = $('source-view-save');
+    button.disabled = true;
+    $('source-view-error').hidden = true;
+    try {
+      await onSaveSource(editingProfile.id, sourceText.value);
+      closeSourceDialog();
+    } catch (error) {
+      $('source-view-error').textContent = error.message;
+      $('source-view-error').hidden = false;
+    } finally { button.disabled = false; }
   });
   $('new-profile').addEventListener('click', async () => {
     if (!(await beforeLeave())) return;
@@ -45,6 +71,8 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
     render() {
       empty($('profile-list'));
       $('profile-count').textContent = workspace.profiles.length;
+      $('profile-origin').textContent = `来源：${workspace.active.origin || '已有配置'}`;
+      $('profile-origin').title = workspace.active.origin || '已有配置';
       for (const profile of workspace.profiles) {
         const selected = profile.id === workspace.active.id;
         const row = el('div', `profile-item${selected ? ' selected' : ''}`);
@@ -56,11 +84,21 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
         button.setAttribute('aria-label', profile.name);
         if (selected) button.setAttribute('aria-current', 'true');
         const text = el('span', 'profile-item-text');
-        text.append(el('strong', '', profile.name), el('small', '', `${selected ? '当前配置 · ' : ''}PalWorldSettings.ini`));
+        const origin = profile.origin || '已有配置';
+        const originText = el('small', 'profile-origin', `来源：${origin}`);
+        originText.title = origin;
+        text.append(el('strong', '', profile.name), el('small', '', `${selected ? '当前配置 · ' : ''}PalWorldSettings.ini`), originText);
         button.append(icon('file'), text);
         if (selected) button.append(icon('arrow'));
-        button.addEventListener('click', () => actions.select(profile.id));
+        button.addEventListener('click', () => openSourceDialog(profile));
         const tools = el('div', 'profile-item-actions');
+        const choose = el('button', 'button secondary');
+        choose.type = 'button';
+        choose.dataset.profileAction = 'select';
+        choose.disabled = selected;
+        choose.append(icon('check'), el('span', '', selected ? '已选择' : '选择'));
+        choose.addEventListener('click', () => { if (!selected) actions.select(profile.id); });
+        tools.append(choose);
         for (const [name, label, symbol, handler] of [
           ['rename', '重命名', 'edit', () => rename(profile)],
           ['duplicate', '创建副本', 'copy', () => duplicate(profile, true)],

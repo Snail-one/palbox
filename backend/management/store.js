@@ -48,17 +48,19 @@ export class ManagementStore {
       this.pendingDefault = saved.pendingDefault || null;
     } else {
       let source;
+      let origin;
       let pendingDefault = false;
-      try { source = await readFile(path.join(this.directory, 'server/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini'), 'utf8'); parse(source); }
+      try { source = await readFile(path.join(this.directory, 'server/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini'), 'utf8'); parse(source); origin = '当前游戏配置（PalWorldSettings.ini）'; }
       catch (error) {
         if (error.code !== 'ENOENT') throw error;
         source = await this.defaultTemplate({ optional: true });
         if (source === null) {
           source = managedTemplate(this.gamePort, '[/Script/Pal.PalGameWorldSettings]\nOptionSettings=()\n');
+          origin = '安装前占位配置';
           pendingDefault = true;
-        }
+        } else origin = '官方默认配置（DefaultPalWorldSettings.ini）';
       }
-      this.workspace = createWorkspace(createProfile('我的帕鲁世界', source));
+      this.workspace = createWorkspace(createProfile('我的帕鲁世界', source, { origin }));
       this.revision = 1;
       // Before installation, keep only the settings required to manage the game.
       // Replace this untouched placeholder once the official file is installed.
@@ -92,6 +94,7 @@ export class ManagementStore {
       const workspace = structuredClone(this.workspace);
       const imported = workspace.profiles.find(candidate => candidate.id === profile.id);
       imported.source = source; imported.initialSource = source; imported.updatedAt = new Date().toISOString();
+      imported.origin = '官方默认配置（DefaultPalWorldSettings.ini）';
       const revision = this.revision + 1;
       await jsonWrite(this.file, { workspace, revision });
       this.workspace = workspace; this.revision = revision; this.pendingDefault = null;
@@ -107,8 +110,9 @@ export class ManagementStore {
       const candidate = structuredClone(workspace);
       for (const profile of candidate.profiles) {
         const previous = this.workspace.profiles.find(p => p.id === profile.id);
-        // A later edit cannot accidentally replace the original input baseline.
+        // A later edit cannot accidentally replace the original input baseline or origin.
         profile.initialSource = previous?.initialSource ?? previous?.source ?? profile.initialSource ?? profile.source;
+        if (previous?.origin) profile.origin = previous.origin;
       }
       const next = this.revision + 1;
       const pendingDefault = this.pendingDefault && candidate.profiles.some(profile => profile.id === this.pendingDefault.id && profile.source === this.pendingDefault.source) ? this.pendingDefault : null;

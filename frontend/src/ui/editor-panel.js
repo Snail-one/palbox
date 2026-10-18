@@ -2,7 +2,7 @@ import { createFormView } from './components/form.js';
 import { createParameterView } from './components/parameters.js';
 import { createSourceEditor } from './components/source-editor.js';
 
-export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged, ready, onViewChanged }) {
+export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged, ready, onViewChanged, workspace }) {
   const { $ } = dom;
   // Navigation/filter state is local to the UI; it never enters saved profiles.
   const view = { group: 'server', mode: 'form', advanced: 'table', search: '', unknownOnly: false, unverifiedOnly: false };
@@ -17,6 +17,9 @@ export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged
   const source = createSourceEditor({ dom, editor, ask, notify, onChanged });
 
   function render() {
+    const origin = workspace.active?.origin || '已有配置';
+    $('source-origin').textContent = `来源：${origin}`;
+    $('source-origin').title = origin;
     $('view-form').hidden = view.mode !== 'form';
     $('view-advanced').hidden = view.mode !== 'advanced';
     $('table-container').hidden = view.advanced !== 'table';
@@ -77,6 +80,11 @@ export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged
   return { render, setMode(mode) {
     if (view.mode === mode) return;
     view.mode = mode;
+    render();
+  }, showSource() {
+    if (view.mode === 'advanced' && view.advanced === 'source') return;
+    view.mode = 'advanced';
+    view.advanced = 'source';
     render();
   } };
 }

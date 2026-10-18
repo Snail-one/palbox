@@ -1,6 +1,7 @@
 export function createImportDialog({ dom, readFile, validate, beforeOpen, onOpened, onImport }) {
   const { $ } = dom;
   let readVersion = 0;
+  let selectedFileName = '';
   function showError(error) {
     $('import-error').textContent = error.message;
     $('import-error').hidden = false;
@@ -12,6 +13,7 @@ export function createImportDialog({ dom, readFile, validate, beforeOpen, onOpen
     $('import-name').value = '';
     $('file-input').value = '';
     $('import-error').hidden = true;
+    selectedFileName = '';
     $('import-dialog').showModal();
     onOpened();
   }
@@ -24,6 +26,7 @@ export function createImportDialog({ dom, readFile, validate, beforeOpen, onOpen
       $('import-text').value = text;
       $('import-name').value = file.name.replace(/\.(ini|txt)$/i, '') || '导入的配置';
       $('import-error').hidden = true;
+      selectedFileName = file.name.replace(/[\r\n]+/g, ' ').slice(0, 140);
     } catch (error) {
       if (version === readVersion && $('import-dialog').open) showError(error);
     }
@@ -33,6 +36,7 @@ export function createImportDialog({ dom, readFile, validate, beforeOpen, onOpen
   $('import-cancel').addEventListener('click', close);
   $('import-dialog').addEventListener('cancel', () => { readVersion++; });
   $('file-input').addEventListener('change', () => selectFile($('file-input').files[0]));
+  $('import-text').addEventListener('input', () => { selectedFileName = ''; });
   $('drop-zone').addEventListener('keydown', event => {
     if (event.target !== $('drop-zone')) return;
     if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); $('file-input').click(); }
@@ -50,7 +54,8 @@ export function createImportDialog({ dom, readFile, validate, beforeOpen, onOpen
   $('import-confirm').addEventListener('click', () => {
     try {
       const source = validate($('import-text').value);
-      onImport($('import-name').value.trim() || '导入的配置', source);
+      const origin = selectedFileName ? `导入文件：${selectedFileName}` : '粘贴导入的配置';
+      onImport($('import-name').value.trim() || '导入的配置', source, origin);
       close();
     } catch (error) { showError(error); }
   });

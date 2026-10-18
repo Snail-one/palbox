@@ -53,6 +53,29 @@ test('新建、复制、重命名、切换与删除通过工作空间服务完�
   assert.equal(service.active.source, template);
 });
 
+test('可更新任意配置的源码并保留输入基准', () => {
+  const { service } = setup();
+  const active = service.active;
+  const copy = service.add('副本', template, { select: false, origin: '复制自「我的帕鲁世界」' });
+  const baseline = copy.initialSource;
+  const next = template.replace('ExpRate=1.000000', 'ExpRate=3');
+  assert.equal(service.updateSource(copy.id, next), true);
+  assert.equal(service.active.id, active.id);
+  assert.equal(service.profiles.find(profile => profile.id === copy.id).source, next);
+  assert.equal(copy.initialSource, baseline);
+  assert.throws(() => service.updateSource(copy.id, 'not a config'), /配置内容为空|未找到目标段落/);
+  assert.equal(service.profiles.find(profile => profile.id === copy.id).source, next);
+});
+
+test('新建配置可记录来源并在保存后保留', () => {
+  const { service, data } = setup();
+  const profile = service.add('来源配置', template, { select: false, origin: '导入文件：world.ini' });
+  assert.equal(profile.origin, '导入文件：world.ini');
+  assert.equal(service.persist(), true);
+  const saved = JSON.parse(data.get(KEY));
+  assert.equal(saved.profiles.find(candidate => candidate.id === profile.id).origin, '导入文件：world.ini');
+});
+
 test('保存失败回滚已保存源文件，不影响可供复制的编辑结果', () => {
   const { service, data, fail } = setup();
   const before = service.active.source;

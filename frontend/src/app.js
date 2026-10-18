@@ -71,33 +71,48 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
   }
   let panel;
   const navigation = createNavigation({ dom, window, isDirty, onSave: save, onConfigurationView: mode => panel?.setMode(mode) });
-  panel = createEditorPanel({ dom, editor, catalog, ask, notify: notifications.toast, onChanged: () => save({ automatic: true }), ready, onViewChanged: navigation.openEditor });
+  panel = createEditorPanel({ dom, editor, catalog, ask, notify: notifications.toast, onChanged: () => save({ automatic: true }), ready, onViewChanged: navigation.openEditor, workspace });
   navigation.refresh();
-  function changedProfile(successMessage) {
+  async function saveProfileSource(id, source) {
+    if (!workspace.updateSource(id, source)) throw new Error(workspace.message || '保存失败，请复制备份后重试。');
+    if (id === workspace.active.id) { editor.reset(workspace.active.source); panel.render(); }
+    profiles.render();
+    summary.render();
+    if (repository.flush && !(await repository.flush())) throw new Error(repository.error || '保存失败，请复制备份后重试。');
+    notifications.toast('配置源码已保存');
+  }
+  function changedProfile(successMessage, { source = false } = {}) {
     editor.reset(workspace.active.source);
     const success = persist();
     render();
     navigation.closeSidebar();
-    navigation.openEditor();
+    navigation.openEditor(source ? 'advanced' : 'form');
+    if (source) panel?.showSource();
     if (success && successMessage) notifications.toast(successMessage);
   }
-  const profiles = createProfilePanel({ dom, workspace, ask, beforeLeave, ready, isDirty, clipboard, notify: notifications.toast, actions: {
+  const profiles = createProfilePanel({ dom, workspace, ask, beforeLeave, ready, isDirty, clipboard, notify: notifications.toast, onSaveSource: saveProfileSource, actions: {
     async select(id) {
-      if (id === workspace.active.id) { navigation.closeSidebar(); navigation.openEditor(); return; }
+      if (id === workspace.active.id) {
+        navigation.closeSidebar();
+        navigation.openEditor('advanced');
+        panel?.showSource();
+        return;
+      }
       if (!(await beforeLeave())) { navigation.openEditor(); return; }
       workspace.select(id);
-      changedProfile();
+      changedProfile(undefined, { source: true });
     },
     async create(name) {
       try {
         const { source } = await management.request('default-configuration');
-        workspace.add(name, source);
+        workspace.add(name, source, { origin: '官方默认配置（DefaultPalWorldSettings.ini）' });
         changedProfile('已从官方默认配置创建');
       } catch (error) { notifications.toast(error.message, true); }
     },
     duplicate(name, id = workspace.active.id, { fromList = false } = {}) {
-      const source = id === workspace.active.id ? editor.source() : workspace.profiles.find(profile => profile.id === id).source;
-      workspace.add(name, source, { select: !fromList });
+      const sourceProfile = workspace.profiles.find(profile => profile.id === id) ?? workspace.active;
+      const source = id === workspace.active.id ? editor.source() : sourceProfile.source;
+      workspace.add(name, source, { select: !fromList, origin: `复制自「${sourceProfile.name}」` });
       if (!fromList) { changedProfile('已创建独立副本'); return; }
       const success = persist();
       profiles.render();
@@ -112,12 +127,13 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
     },
     async remove(id = workspace.active.id, { fromList = false } = {}) {
       let fallbackSource;
+      let fallbackOrigin;
       if (workspace.profiles.length === 1) {
-        try { ({ source: fallbackSource } = await management.request('default-configuration')); }
+        try { ({ source: fallbackSource } = await management.request('default-configuration')); fallbackOrigin = '官方默认配置（DefaultPalWorldSettings.ini）'; }
         catch (error) { notifications.toast(error.message, true); return; }
       }
       const activeRemoved = id === workspace.active.id;
-      workspace.remove(id, { fallbackSource });
+      workspace.remove(id, { fallbackSource, fallbackOrigin });
       if (!fromList) { changedProfile('配置已删除'); return; }
       if (activeRemoved) editor.reset(workspace.active.source);
       const success = persist();
@@ -127,8 +143,8 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
       if (success) notifications.toast('配置已删除');
     }
   } });
-  createImportDialog({ dom, readFile: files.read, validate: files.validate, beforeOpen: beforeLeave, onOpened: navigation.closeSidebar, onImport(name, source) {
-    workspace.add(name, source);
+  createImportDialog({ dom, readFile: files.read, validate: files.validate, beforeOpen: beforeLeave, onOpened: navigation.closeSidebar, onImport(name, source, origin) {
+    workspace.add(name, source, { origin });
     changedProfile('导入成功，所有原始参数均已保留');
   } });
   dom.$('restore-input-button').addEventListener('click', async () => {
