@@ -7,10 +7,6 @@
     padding-right: 55px;
   }
 
-  .page-heading {
-    margin-bottom: 34px;
-  }
-
   .fields-grid {
     gap: 0 34px;
   }
@@ -254,27 +250,13 @@
     padding: 27px 20px 20px;
   }
 
-  .page-heading {
-    margin-bottom: 23px;
-    align-items: center;
-  }
-
   .eyebrow {
     font-size: 8px;
     letter-spacing: 1.5px;
   }
 
-  .page-heading p {
-    font-size: 11px;
-  }
-
   h1 {
     font-size: 24px;
-  }
-
-  .heading-sparkle {
-    font-size: 26px;
-    margin-left: 6px;
   }
 
   .profile-title-row h2 {
@@ -415,19 +397,6 @@
     padding: 0 14px;
   }
 
-  .page-heading {
-    gap: 8px;
-  }
-
-  .page-heading>.button {
-    padding: 8px 10px;
-    font-size: 10px;
-  }
-
-  .page-heading>.button .icon {
-    width: 13px;
-  }
-
   .eyebrow {
     font-size: 7px;
     letter-spacing: 1.2px;
@@ -436,16 +405,6 @@
   h1 {
     font-size: 21px;
     letter-spacing: -.7px;
-  }
-
-  .heading-sparkle {
-    font-size: 24px;
-    margin-left: 3px;
-  }
-
-  .page-heading p {
-    font-size: 10px;
-    margin-top: 5px;
   }
 
   .profile-overview {

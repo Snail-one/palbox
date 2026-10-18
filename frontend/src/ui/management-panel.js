@@ -17,8 +17,9 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   section.setAttribute('aria-label', '帕鲁服务管理');
   section.id = 'server-service';
   section.innerHTML = `
-    <div class="management-heading server-heading"><div><h2>游戏服务 <span id="game-state" class="save-status" data-state="pending">连接中</span></h2><p id="server-state-note" class="management-note">正在获取服务器状态…</p></div><a class="button secondary" href="#configuration">管理配置 →</a></div>
-    <div class="server-controls"><div class="management-actions server-primary-actions"><button class="button primary" data-action="install" hidden>安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop" hidden>停止</button><button class="button secondary" data-action="restart" hidden>重启</button></div><div class="server-meta"><span>版本 <strong id="game-version">—</strong></span><span>游戏端口 <strong id="game-port">8211</strong> UDP</span></div></div>
+    <div class="management-heading server-heading"><div><h2>游戏服务 <span id="game-state" class="save-status" data-state="pending">连接中</span></h2><p id="server-state-note" class="management-note">正在获取服务器状态…</p></div><div class="management-actions server-heading-actions"><button type="button" id="show-task-history" class="button secondary" aria-haspopup="dialog" aria-controls="task-history">任务记录</button><a class="button secondary" href="#configuration">管理配置 →</a></div></div>
+    <div class="management-feedback"><div id="management-error" class="alert error" role="alert" hidden></div><p id="management-task" class="management-task" role="status" hidden></p></div>
+    <div class="server-controls"><div class="management-actions server-primary-actions"><button class="button primary" data-action="install" hidden>安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop" hidden>停止</button><button class="button secondary" data-action="restart" hidden>重启</button></div><div class="server-meta"><span>游戏版本 <strong id="game-version">读取中</strong></span><span id="game-build-meta" hidden>Steam Build <strong id="game-build">—</strong></span><span>游戏端口 <strong id="game-port">8211</strong> UDP</span></div></div>
     <dl class="management-metrics" aria-label="服务器运行信息"><div class="server-metric"><dt>在线玩家</dt><dd id="game-players" class="metric-value">—</dd></div><div class="server-metric"><dt>服务器 FPS</dt><dd id="game-fps" class="metric-value">—</dd></div><div class="server-metric"><dt>运行时间</dt><dd id="game-uptime" class="metric-value">—</dd></div></dl>
     <details id="server-maintenance" class="server-maintenance"><summary>维护与设置</summary><div class="server-maintenance-body"><div class="management-actions"><button class="button secondary" id="check-update" disabled>检查更新</button><button class="button secondary" data-action="update">更新服务端</button><button class="button secondary" id="edit-game-args" disabled>启动参数</button><button class="button secondary" id="edit-install-args" disabled>安装参数</button></div><p id="update-status" class="management-note">更新前会自动备份，运行中的游戏服务将短暂停服。</p><div class="server-force-stop"><span>正常停止无效时使用</span><button class="button secondary" data-action="force-stop">强制停止</button></div></div></details>`;
   $('game-overview').append(section);
@@ -28,11 +29,14 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   logs.setAttribute('aria-label', '运行日志');
   logs.innerHTML = `<div class="management-heading log-heading"><h2>运行日志</h2><div class="segmented log-type-buttons" id="manager-log-channel" role="group" aria-label="日志类型"><button type="button" class="selected" data-log-channel="all" aria-pressed="true">全部日志</button><button type="button" data-log-channel="game" aria-pressed="false">游戏日志</button><button type="button" data-log-channel="steamcmd" aria-pressed="false">安装与更新</button><button type="button" data-log-channel="palbox" aria-pressed="false">面板日志</button></div></div><p id="manager-log-status" class="management-note" role="status">正在连接实时日志…</p><pre id="manager-logs" tabindex="0">正在读取日志…</pre>`;
   $('game-overview').append(logs);
-  const history = document.createElement('section');
-  history.className = 'management-panel';
-  history.setAttribute('aria-label', '任务记录');
-  history.innerHTML = '<details id="task-history"><summary>任务记录</summary><div id="task-history-list" aria-live="polite">暂无任务记录。</div></details>';
-  $('game-overview').append(history);
+  const history = document.createElement('dialog');
+  history.id = 'task-history';
+  history.className = 'task-history-dialog';
+  history.setAttribute('aria-labelledby', 'task-history-title');
+  history.innerHTML = '<div class="management-heading"><h2 id="task-history-title">任务记录</h2><button type="button" id="close-task-history" class="icon-button" aria-label="关闭任务记录"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div id="task-history-list">暂无任务记录。</div>';
+  document.body.append(history);
+  $('show-task-history').addEventListener('click', () => history.showModal());
+  $('close-task-history').addEventListener('click', () => history.close());
   const playerPanel = document.createElement('section');
   playerPanel.className = 'management-panel';
   playerPanel.setAttribute('aria-label', '在线玩家与广播');
@@ -60,10 +64,6 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   deployment.hidden = $('configuration-page').hidden || $('configuration-editor').hidden;
   deployment.innerHTML = `<div><h2>应用到游戏 <span id="game-config-state" class="save-status" data-state="pending">连接中</span></h2><p>有效修改自动保存到服务器。应用后写入游戏；运行中的服务器会先存档、停服、备份，再应用并重启。</p></div><button class="button primary" data-action="apply" disabled>应用配置</button>`;
   $('configuration-page').prepend(deployment);
-  const feedback = document.createElement('div');
-  feedback.className = 'management-feedback';
-  feedback.innerHTML = `<div id="management-error" class="alert error" role="alert" hidden></div><p id="management-task" class="management-task" role="status">暂无任务</p>`;
-  $('storage-error').after(feedback);
   const logout = document.createElement('button');
   logout.id = 'manager-logout'; logout.className = 'button secondary'; logout.textContent = '退出登录';
   document.querySelector('.topbar-session').append(logout);
@@ -74,6 +74,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   let polling = false;
   let stopped = false;
   let lastTask;
+  let activeTaskId;
   let lastStatus;
   let settingsRequest = null;
   let settingsCache = null;
@@ -86,7 +87,24 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   let closeLogs = null;
   let activeLogChannel = null;
   let pageActive = true;
-  function error(message) { $('management-error').textContent = message; $('management-error').hidden = !message; }
+  function overviewVisible() { return !$('game-page').hidden && !$('game-overview').hidden; }
+  function error(message) {
+    const changed = $('management-error').textContent !== message;
+    $('management-error').textContent = message;
+    $('management-error').hidden = !message;
+    if (message && changed && !overviewVisible()) notify(message, true);
+  }
+  function showTask(task, submitted = false) {
+    const label = names[task.action] || task.action;
+    const state = { running: '执行中', succeeded: '已完成', failed: '失败', interrupted: '已中断' }[task.state] || task.state;
+    const message = task.state === 'running' ? `${label}：${task.message}` : `${label} · ${state}`;
+    $('management-task').textContent = message;
+    $('management-task').hidden = false;
+    if (task.state === 'running') activeTaskId = task.id;
+    const completed = task.state !== 'running' && activeTaskId === task.id;
+    if ((submitted || completed) && !overviewVisible() && task.state !== 'failed') notify(message, task.state === 'interrupted');
+    if (completed) activeTaskId = null;
+  }
   async function action(name, payload = {}, confirm = true) {
     if (confirm && ['stop', 'force-stop', 'restart', 'update', 'apply', 'backup', 'restore', 'restore-native', 'kick'].includes(name)) {
       const descriptions = {
@@ -105,7 +123,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
       if (name === 'apply') payload = { ...payload, ...await getConfiguration() };
       error('');
       const task = await api.request('tasks', { method: 'POST', body: { action: name, ...payload } });
-      $('management-task').textContent = `${names[name]}：${task.message}`;
+      showTask(task, true);
       await refresh();
     } catch (caught) { error(caught.message); }
   }
@@ -124,7 +142,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   const saveImport = createSaveImportDialog({ dom, api, onImport: async id => {
     error('');
     const task = await api.request('tasks', { method: 'POST', body: { action: 'import-save', id } });
-    $('management-task').textContent = `${names['import-save']}：${task.message}`;
+    showTask(task, true);
     await refresh();
   } });
   for (const button of actionButtons) button.addEventListener('click', () => button.dataset.action === 'import-save' ? saveImport.open() : action(button.dataset.action));
@@ -298,11 +316,13 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
       const game = $('game-state');
       game.textContent = !value.installed ? '未安装' : value.running ? (value.ready ? '运行中' : value.task?.action === 'start' || value.task?.action === 'install' || value.task?.action === 'apply' || value.task?.action === 'restart' ? '启动中' : '接口异常') : '已停止';
       game.dataset.state = value.running && value.ready ? 'saved' : 'pending';
-      $('server-state-note').textContent = value.task ? `${names[value.task.action] || value.task.action}：${value.task.message}` : !value.installed ? '先安装服务端，再启动你的帕鲁世界。' : !value.running ? '服务端已就绪，可以启动。' : value.ready ? '服务运行正常' : '游戏进程运行中，管理接口暂未就绪';
+      $('server-state-note').textContent = !value.installed ? '先安装服务端，再启动你的帕鲁世界。' : !value.running ? '服务端已就绪，可以启动。' : value.ready ? '服务运行正常' : '游戏进程运行中，管理接口暂未就绪';
       const config = $('game-config-state');
       config.textContent = value.configuration === 'pending' ? '待生效' : value.running && value.ready ? '已生效' : '已写入';
       config.dataset.state = value.configuration === 'pending' ? 'pending' : 'saved';
-      $('game-version').textContent = value.info?.version || '—';
+      $('game-version').textContent = value.version || value.info?.version || (value.installed ? '启动后获取' : '未安装');
+      $('game-build').textContent = value.installedBuild || '—';
+      $('game-build-meta').hidden = !value.installedBuild;
       $('game-players').textContent = value.metrics ? `${value.metrics.currentplayernum} / ${value.metrics.maxplayernum}` : '—';
       $('game-fps').textContent = value.metrics?.serverfps ?? '—';
       $('game-uptime').textContent = uptimeLabel(value.metrics?.uptime);
@@ -321,8 +341,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
       renderHistory(value.tasks);
       const task = value.task || value.tasks[0];
       if (task) {
-        const state = { running: '执行中', succeeded: '已完成', failed: '失败', interrupted: '已中断' }[task.state];
-        $('management-task').textContent = `${names[task.action] || task.action} · ${state} · ${task.message}`;
+        showTask(task);
         if (task.state === 'failed' && task.id !== lastTask) error(task.message);
         if (task.state !== 'running') lastTask = task.id;
       }

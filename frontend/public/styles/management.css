@@ -11,9 +11,12 @@
 .configuration-deployment h2 { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 14px; }
 .configuration-deployment p { font-size: 11px; line-height: 1.8; margin-top: 6px; }
 .configuration-deployment > .button { flex-shrink: 0; }
-.management-feedback { margin-bottom: 20px; }
+.management-feedback:has(> :not([hidden])) { margin-top: 12px; }
 .management-feedback .management-task { margin: 0; }
+.management-feedback .alert { margin: 0 0 8px; }
 #manager-logout { flex-shrink: 0; }
+.server-heading { flex-wrap: wrap; }
+.server-heading-actions { flex-shrink: 0; }
 .server-heading .management-note { margin: 6px 0 0; }
 .server-controls { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
 .server-meta { display: flex; flex-wrap: wrap; gap: 14px; color: var(--muted); font-size: 11px; }
@@ -47,9 +50,12 @@
 .save-management .management-heading { flex-wrap: wrap; }
 .save-management h3 { font-size: 13px; }
 .save-management .management-heading .management-note { margin: 6px 0 0; }
-#task-history summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+.task-history-dialog { width: min(760px, calc(100vw - 28px)); }
+.task-history-dialog .management-heading { align-items: center; }
+.task-history-dialog h2 { margin: 0; }
 #task-history-list { margin-top: 12px; font-size: 11px; }
 #task-history-list .backup-row { align-items: flex-start; }
+#task-history-list .backup-row:last-child { border-bottom: 0; }
 .save-backup-plan { border-top: 1px solid var(--line); padding-top: 18px; margin-top: 18px; }
 .save-backup-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); padding-top: 18px; margin-top: 20px; }
 #save-backup-summary, #manager-backups { font-size: 11px; }
@@ -67,7 +73,12 @@
 .player-actions { display: flex; gap: 8px; }
 #manager-banned-list, #manager-players-list { font-size: 12px; }
 #banned-management .management-heading { flex-wrap: wrap; }
-#manager-logs { max-height: 52vh; min-height: 240px; overflow: auto; padding: 14px; border-radius: 6px; background: #202124; color: #f4f4f5; font: 11px/1.7 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 10px; }
+.main-shell:has(#game-page:not([hidden]) #game-overview:not([hidden])) { display: grid; grid-template-rows: auto minmax(min-content, 1fr); height: 100dvh; }
+main:has(#game-page:not([hidden]) #game-overview:not([hidden])) { display: flex; flex-direction: column; width: 100%; margin: 0 auto; }
+#game-page, #game-overview { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+#game-overview > .management-panel { flex-shrink: 0; }
+#game-logs { display: flex; flex-direction: column; flex: 1; margin-bottom: 0; min-width: 0; }
+#manager-logs { flex: 1; height: 0; min-height: clamp(160px, 25dvh, 240px); min-width: 0; overflow: auto; padding: 14px; border-radius: 6px; background: #202124; color: #f4f4f5; font: 11px/1.7 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; margin: 10px 0 0; }
 .log-heading { flex-wrap: wrap; }
 .log-type-buttons button.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: none; }
 @media (max-width: 1100px) {
@@ -94,5 +105,6 @@
   .management-heading { align-items: start; }
   .management-heading h2 { font-size: 15px; }
   .management-actions .button { flex: 1 0 40%; }
+  .server-heading-actions { width: 100%; }
   .management-heading > .button { flex-shrink: 0; font-size: 10px; padding: 7px; }
 }

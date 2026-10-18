@@ -1,22 +1,7 @@
-.page-heading {
-  flex-wrap: wrap;
-}
-
 .page-actions {
   display: flex;
   gap: 8px;
   margin-left: auto;
-}
-
-.heading-sparkle {
-  display: inline-flex;
-  vertical-align: middle;
-}
-
-.heading-sparkle>.icon {
-  width: 28px;
-  height: 28px;
-  stroke-width: 1.3;
 }
 
 .sidebar-foot .icon {
@@ -66,11 +51,6 @@
     width: 13px;
   }
 
-  .heading-sparkle>.icon {
-    width: 23px;
-    height: 23px;
-  }
-
   .field-label {
     font-size: 13px;
   }
@@ -110,8 +90,7 @@ select:focus {
   box-shadow: 0 4px 12px #c64a0c25;
 }
 
-.brand-dot,
-.heading-sparkle {
+.brand-dot {
   color: var(--accent);
 }
 
@@ -169,10 +148,6 @@ select:focus {
 .eyebrow {
   font-weight: 650;
   letter-spacing: 2px;
-}
-
-.page-heading p {
-  font-size: 13px;
 }
 
 h1 {
@@ -497,7 +472,6 @@ legend,
 .connection-status,
 .avatar,
 .eyebrow,
-.page-heading p,
 .secondary,
 .secondary:hover,
 .profile-details,

@@ -87,6 +87,7 @@ export class Manager {
     this.busy = null;
     this.closing = false;
     this.updateCache = null;
+    this.versionCache = null;
   }
   async initialize() {
     for (const sub of ['palbox', 'server', 'logs', ...categories.map(c => `backups/${c}`)]) await mkdir(path.join(this.directory, sub), { recursive: true, mode: 0o700 });
@@ -197,6 +198,7 @@ export class Manager {
         task.message = '正在通过 SteamCMD 下载服务端，请查看安装日志';
         await this.runtime.install(); await this.ensureConfig();
         this.updateCache = null;
+        this.versionCache = null;
         if (payload.start) await this.runtime.start();
         break;
       case 'update': {
@@ -206,6 +208,7 @@ export class Manager {
         task.message = '正在更新并校验服务端文件';
         await this.runtime.install();
         this.updateCache = null;
+        this.versionCache = null;
         if (running) await this.runtime.start();
         break;
       }
@@ -389,15 +392,23 @@ export class Manager {
   }
   async status() {
     const installed = await this.runtime.installed();
+    const installedBuild = installed ? await this.installedBuild() : null;
+    if (!installed || this.versionCache?.build !== installedBuild) this.versionCache = null;
     let disk = null;
     try { disk = await readFile(this.runtime.config, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
     const desired = output(this.store.active().source);
     let configuration = disk && output(disk) === desired ? 'applied' : 'pending';
     if (this.runtime.game && (!this.runtime.runningSource || output(this.runtime.runningSource) !== desired)) configuration = 'pending';
-    const status = { installed, running: Boolean(this.runtime.game), ready: this.runtime.ready, configuration, startedAt: this.runtime.startedAt, lastExit: this.runtime.lastExit, task: this.busy, tasks: this.tasks, revision: this.store.revision, port: this.runtime.port, metrics: null, info: null, players: [] };
+    const status = { installed, installedBuild, version: this.versionCache?.version || null, running: Boolean(this.runtime.game), ready: this.runtime.ready, configuration, startedAt: this.runtime.startedAt, lastExit: this.runtime.lastExit, task: this.busy, tasks: this.tasks, revision: this.store.revision, port: this.runtime.port, metrics: null, info: null, players: [] };
     if (this.runtime.game) {
       const results = await Promise.allSettled([this.runtime.rest('info'), this.runtime.rest('metrics'), this.runtime.rest('players')]);
-      if (results[0].status === 'fulfilled') { status.info = results[0].value; status.ready = this.runtime.ready = true; }
+      if (results[0].status === 'fulfilled') {
+        status.info = results[0].value; status.ready = this.runtime.ready = true;
+        if (typeof status.info?.version === 'string' && status.info.version.trim()) {
+          status.version = status.info.version.trim();
+          this.versionCache = { build: installedBuild, version: status.version };
+        }
+      }
       else status.ready = this.runtime.ready = false;
       if (results[1].status === 'fulfilled') status.metrics = results[1].value;
       if (results[2].status === 'fulfilled') status.players = results[2].value.players || [];

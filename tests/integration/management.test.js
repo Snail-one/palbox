@@ -158,7 +158,7 @@ test('SteamCMD、进程、配置应用、备份恢复与故障状态真实联动
   await f.manager.operation;
   assert.equal(f.manager.tasks[0].state, 'succeeded', f.manager.tasks[0].message);
   let status = await f.manager.status();
-  assert.equal(status.ready, true); assert.equal(status.info.version, 'test-1.0'); assert.equal(status.players[0].userId, 'steam_test');
+  assert.equal(status.ready, true); assert.equal(status.info.version, 'test-1.0'); assert.equal(status.version, 'test-1.0'); assert.equal(status.players[0].userId, 'steam_test');
   assert.equal((await f.task('restart')).state, 'succeeded');
   assert.ok(f.runtime.game); assert.equal(f.runtime.ready, true);
   const snapshot = f.manager.store.snapshot();
