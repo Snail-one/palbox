@@ -100,7 +100,7 @@ export class Manager {
       }
       case 'start': await this.ensureConfig(); await this.runtime.start(); break;
       case 'stop': await this.runtime.stop(); break;
-      case 'restart': await this.runtime.stop({ requireSave: true }); await this.runtime.start(); break;
+      case 'restart': await this.requireRunning(); await this.runtime.stop({ requireSave: true }); await this.runtime.start(); break;
       case 'apply': {
         const snapshot = this.store.snapshot();
         if (payload.revision !== snapshot.revision || payload.profileId !== snapshot.workspace.activeId) throw failure('配置已变更，请等待自动保存完成后重新应用。', 409);

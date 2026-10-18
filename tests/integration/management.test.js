@@ -52,6 +52,8 @@ test('SteamCMD、进程、配置应用、备份恢复与故障状态真实联动
   assert.equal(f.manager.tasks[0].state, 'succeeded', f.manager.tasks[0].message);
   let status = await f.manager.status();
   assert.equal(status.ready, true); assert.equal(status.info.version, 'test-1.0'); assert.equal(status.players[0].userId, 'steam_test');
+  assert.equal((await f.task('restart')).state, 'succeeded');
+  assert.ok(f.runtime.game); assert.equal(f.runtime.ready, true);
   const snapshot = f.manager.store.snapshot();
   snapshot.workspace.profiles[0].source = snapshot.workspace.profiles[0].source.replace('ExpRate=1.000000', 'ExpRate=2');
   await f.manager.store.update(snapshot.workspace, snapshot.revision);
@@ -99,6 +101,10 @@ test('SteamCMD、进程、配置应用、备份恢复与故障状态真实联动
   assert.equal((await f.task('stop')).state, 'succeeded');
   assert.equal((await f.manager.status()).running, false);
   assert.equal((await f.request('/api/status')).status, 200);
+  const notRunning = await f.task('restart');
+  assert.equal(notRunning.state, 'failed');
+  assert.match(notRunning.message, /尚未运行/);
+  assert.equal((await f.manager.status()).running, false);
 });
 
 test('启动脚本要求自设首次密码、重启沿用原密码，密码不以明文输出或存盘', { skip: process.platform !== 'linux', timeout: 15000 }, async t => {
