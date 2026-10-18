@@ -15,10 +15,10 @@ export function createManagementClient({ fetch, csrf = '' }) {
       source.onerror = () => onError?.(new Error(source.readyState === EventSource.CLOSED ? '日志连接已关闭，请刷新页面或重新登录。' : '日志连接中断，正在重新连接…'));
       return () => source.close();
     },
-    async request(path, { method = 'GET', body } = {}) {
+    async request(path, { method = 'GET', body, timeout = 20000 } = {}) {
       const response = await fetch('/api/' + path, {
         method, credentials: 'same-origin', cache: 'no-store',
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(timeout),
         headers: { 'Content-Type': 'application/json', 'X-Palbox-CSRF': token },
         body: body === undefined ? undefined : JSON.stringify(body)
       });

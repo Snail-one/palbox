@@ -19,16 +19,15 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   section.id = 'server-service';
   section.innerHTML = `
     <div class="management-heading server-heading"><div><h2>游戏服务 <span id="game-state" class="save-status" data-state="pending">连接中</span></h2><p id="server-state-note" class="management-note">正在获取服务器状态…</p></div><div class="management-actions server-heading-actions"><button type="button" id="show-task-history" class="button secondary" aria-haspopup="dialog" aria-controls="task-history">任务记录</button><a class="button secondary" href="#configuration">管理配置 →</a></div></div>
-    <div class="management-feedback"><div id="management-error" class="alert error" role="alert" hidden></div><p id="management-task" class="management-task" role="status" hidden></p></div>
+    <div class="management-feedback"><p id="management-task" class="management-task" role="status" hidden></p></div>
     <div class="server-controls">
       <div class="management-actions server-primary-actions">
         <button class="button primary" data-action="install" hidden>安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop" hidden>停止</button><button class="button secondary" data-action="restart" hidden>重启</button>
-        <button class="button secondary" id="check-update" disabled>检查更新</button><button class="button secondary" data-action="update" title="更新前会自动备份，运行中的游戏服务将短暂停服。">更新服务端</button><button class="button secondary" id="edit-game-args" disabled>启动参数</button><button class="button secondary" id="edit-install-args" disabled>安装参数</button><button class="button secondary" data-action="force-stop" title="仅在正常停止无效时使用，可能丢失最近一次未保存的进度。">强制停止</button>
+        <button class="button secondary" data-action="update" title="更新前会自动备份，运行中的游戏服务将短暂停服。">更新服务端</button><button class="button secondary" id="edit-game-args" disabled>启动参数</button><button class="button secondary" id="edit-install-args" disabled>安装参数</button><button class="button secondary" data-action="force-stop" title="仅在正常停止无效时使用，可能丢失最近一次未保存的进度。">强制停止</button>
       </div>
     </div>
-    <p id="update-status" class="management-note" role="status" hidden></p>
     <dl class="management-metrics" aria-label="服务器运行信息">
-      <div class="server-metric"><dt>游戏版本</dt><dd id="game-version" class="metric-value metric-text">读取中</dd><dd id="game-build-meta" class="server-metric-note" hidden>Steam Build <span id="game-build">—</span></dd></div>
+      <div class="server-metric"><dt>游戏版本</dt><dd id="game-version" class="metric-value metric-text">读取中</dd><dd id="game-build-meta" class="server-metric-note" hidden>Steam Build <span id="game-build">—</span></dd><dd class="server-metric-update"><span class="update-check"><button class="button secondary" id="check-update" disabled>检查更新</button><span id="update-status" class="update-bubble" hidden><span id="update-status-text" role="status"></span><button type="button" id="update-status-close" class="update-bubble-close" aria-label="关闭提示">×</button></span></span></dd></div>
       <div class="server-metric"><dt>在线玩家</dt><dd id="game-players" class="metric-value">—</dd></div>
       <div class="server-metric"><dt>服务器 FPS</dt><dd id="game-fps" class="metric-value">—</dd></div>
       <div class="server-metric"><dt>游戏端口</dt><dd class="metric-value"><span id="game-port">8211</span><span class="metric-unit">UDP</span></dd></div>
@@ -39,7 +38,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   logs.id = 'game-logs';
   logs.className = 'management-panel';
   logs.setAttribute('aria-label', '运行日志');
-  logs.innerHTML = `<div class="management-heading log-heading"><h2>运行日志</h2><div class="segmented log-type-buttons" id="manager-log-channel" role="group" aria-label="日志类型"><button type="button" class="selected" data-log-channel="all" aria-pressed="true">全部日志</button><button type="button" data-log-channel="game" aria-pressed="false">游戏日志</button><button type="button" data-log-channel="steamcmd" aria-pressed="false">安装与更新</button><button type="button" data-log-channel="palbox" aria-pressed="false">面板日志</button></div></div><p id="manager-log-status" class="management-note" role="status">正在连接实时日志…</p><pre id="manager-logs" tabindex="0">正在读取日志…</pre>`;
+  logs.innerHTML = `<div class="management-heading log-heading"><h2>运行日志</h2><div class="log-controls"><div class="segmented log-type-buttons" id="manager-log-channel" role="group" aria-label="日志类型"><button type="button" class="selected" data-log-channel="all" aria-pressed="true">全部日志</button><button type="button" data-log-channel="game" aria-pressed="false">游戏日志</button><button type="button" data-log-channel="steamcmd" aria-pressed="false">安装与更新</button><button type="button" data-log-channel="palbox" aria-pressed="false">面板日志</button></div><label class="log-toggle" title="显示面板每 5 秒状态轮询产生的 REST 访问记录"><input type="checkbox" id="show-polling-logs"> 显示状态轮询</label></div></div><p id="manager-log-status" class="management-note" role="status">正在连接实时日志…</p><pre id="manager-logs" tabindex="0">正在读取日志…</pre>`;
   $('game-overview').append(logs);
   const history = document.createElement('dialog');
   history.id = 'task-history';
@@ -57,7 +56,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   bannedPanel.id = 'banned-management';
   bannedPanel.className = 'management-panel';
   bannedPanel.setAttribute('aria-label', '已封禁玩家');
-  bannedPanel.innerHTML = `<div class="management-heading"><h2>已封禁玩家 <span id="banned-player-count" class="subtle-tag">—</span></h2><div class="management-actions"><button class="button secondary" id="ban-player" disabled>按 ID 封禁</button><button class="button secondary" id="unban-player" disabled>按 ID 解封</button></div></div><p id="banned-player-note" class="management-note">本服封禁名单，游戏服务运行后可封禁或解封。</p><div id="banned-player-error" class="alert error" role="status" hidden></div><div id="manager-banned-list">正在读取封禁名单…</div>`;
+  bannedPanel.innerHTML = `<div class="management-heading"><h2>已封禁玩家 <span id="banned-player-count" class="subtle-tag">—</span></h2><div class="management-actions"><button class="button secondary" id="ban-player" disabled>按 ID 封禁</button><button class="button secondary" id="unban-player" disabled>按 ID 解封</button></div></div><p id="banned-player-note" class="management-note">本服封禁名单，游戏服务运行后可封禁或解封。</p><div id="manager-banned-list">正在读取封禁名单…</div>`;
   $('game-players-view').append(playerPanel, bannedPanel);
   const saves = document.createElement('section');
   saves.id = 'save-management';
@@ -84,25 +83,28 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   let stopped = false;
   let lastTask;
   let activeTaskId;
-  let taskHideTimer;
   let lastStatus;
   let settingsRequest = null;
   let settingsCache = null;
   let checkingUpdate = false;
   let loadingBans = false;
+  let lastBanError = '';
   let bannedCache = null;
   let bannedRenderKey = '';
   let logChannel = 'all';
+  let showPollingLogs = false;
+  let lastLogText = '';
   let logGeneration = 0;
   let closeLogs = null;
   let activeLogChannel = null;
   let pageActive = true;
   function overviewVisible() { return !$('game-page').hidden && !$('game-overview').hidden; }
+  let lastErrorMessage = '';
   function error(message) {
-    const changed = $('management-error').textContent !== message;
-    $('management-error').textContent = message;
-    $('management-error').hidden = !message;
-    if (message && changed && !overviewVisible()) notify(message, true);
+    if (!message) { lastErrorMessage = ''; return; }
+    if (message === lastErrorMessage) return;
+    lastErrorMessage = message;
+    notify(message, true);
   }
   function showTask(task, submitted = false) {
     const running = task.state === 'running';
@@ -113,23 +115,15 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     const label = names[task.action] || task.action;
     const state = { running: '执行中', succeeded: '已完成', failed: '失败', interrupted: '已中断' }[task.state] || task.state;
     const message = running ? `${label}：${task.message}` : `${label} · ${state}`;
-    clearTimeout(taskHideTimer);
-    taskHideTimer = null;
     $('management-task').textContent = message;
     if (running) {
       activeTaskId = task.id;
       $('management-task').hidden = false;
-    } else if (task.state === 'succeeded') {
-      // 正常完成不占用状态栏：服务状态、按钮和任务记录已反映结果。
-      $('management-task').hidden = true;
     } else {
-      $('management-task').hidden = false;
-      taskHideTimer = setTimeout(() => {
-        $('management-task').hidden = true;
-        taskHideTimer = null;
-      }, 6000);
+      // 完成/失败/中断通过气泡或任务记录反馈，状态栏只显示执行中的任务。
+      $('management-task').hidden = true;
     }
-    if ((submitted || completed) && !overviewVisible() && task.state !== 'failed') notify(message, task.state === 'interrupted');
+    if ((submitted || completed) && !overviewVisible() && !['failed', 'interrupted'].includes(task.state)) notify(message);
     if (completed) {
       activeTaskId = null;
       if (task.defaultsImported && task.state === 'succeeded') onDefaultsImported?.();
@@ -218,7 +212,8 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   }
   function renderLogs(text) {
     const panel = $('manager-logs');
-    const content = filterPollingLogs(text) || '暂无日志';
+    lastLogText = text || '';
+    const content = (showPollingLogs ? lastLogText : filterPollingLogs(lastLogText)) || '暂无日志';
     if (panel.textContent === content) return;
     const bottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 30;
     const scrollTop = panel.scrollTop;
@@ -231,6 +226,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     closeLogs?.();
     closeLogs = null;
     activeLogChannel = null;
+    lastLogText = '';
   }
   function syncLogs() {
     if (!pageActive || stopped || document.hidden || $('game-page').hidden || $('game-overview').hidden) { stopLogs(); return; }
@@ -334,12 +330,12 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     loadingBans = true;
     try {
       const value = await api.request('banned-players');
+      lastBanError = '';
       bannedCache = value;
       renderBans(value);
-      $('banned-player-error').hidden = true;
     } catch (caught) {
-      $('banned-player-error').textContent = `无法读取封禁名单：${caught.message}`;
-      $('banned-player-error').hidden = false;
+      const message = `无法读取封禁名单：${caught.message}`;
+      if (message !== lastBanError) { lastBanError = message; notify(message, true); }
       if (!bannedCache) { $('banned-player-count').textContent = '—'; $('manager-banned-list').textContent = '封禁名单暂不可用'; }
     } finally { loadingBans = false; }
   }
@@ -349,7 +345,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     if (polling || stopped || document.hidden) return;
     polling = true;
     try {
-      const value = await api.request('status'); lastStatus = value;
+      const value = await api.request('status'); lastStatus = value; lastErrorMessage = '';
       const game = $('game-state');
       game.textContent = !value.installed ? '未安装' : value.running ? (value.ready ? '运行中' : value.task?.action === 'start' || value.task?.action === 'install' || value.task?.action === 'apply' || value.task?.action === 'restart' ? '启动中' : '接口异常') : '已停止';
       game.dataset.state = value.running && value.ready ? 'saved' : 'pending';
@@ -394,7 +390,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       const task = value.task || value.tasks[0];
       if (task) {
         showTask(task);
-        if (task.state === 'failed' && task.id !== lastTask) error(task.message);
+        if (['failed', 'interrupted'].includes(task.state) && task.id !== lastTask) error(task.message);
         if (task.state !== 'running') lastTask = task.id;
       }
       players(value.players);
@@ -418,7 +414,12 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       option.setAttribute('aria-pressed', String(selected));
     }
     $('manager-logs').textContent = '正在读取日志…';
+    lastLogText = '';
     syncLogs();
+  });
+  $('show-polling-logs').addEventListener('change', event => {
+    showPollingLogs = event.currentTarget.checked;
+    if (lastLogText) renderLogs(lastLogText);
   });
   function loadSettings() {
     settingsRequest ??= api.request('settings').then(settings => {
@@ -431,20 +432,41 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     }).catch(caught => { settingsRequest = null; throw caught; });
     return settingsRequest;
   }
+  let updateStatusTimer;
+  function hideUpdateStatus() {
+    clearTimeout(updateStatusTimer);
+    updateStatusTimer = null;
+    $('update-status').hidden = true;
+  }
+  function showUpdateStatus(message, { error = false, timeout = 9000 } = {}) {
+    const status = $('update-status');
+    clearTimeout(updateStatusTimer);
+    $('update-status-text').textContent = message;
+    status.classList.toggle('error', error);
+    status.hidden = false;
+    $('check-update').title = message;
+    if (timeout) updateStatusTimer = setTimeout(() => { status.hidden = true; }, timeout);
+  }
+  $('update-status-close').addEventListener('click', hideUpdateStatus);
+  document.addEventListener('click', event => {
+    const status = $('update-status');
+    if (status.hidden) return;
+    if (status.contains(event.target) || $('check-update').contains(event.target)) return;
+    hideUpdateStatus();
+  });
   $('check-update').addEventListener('click', async () => {
     if (checkingUpdate) return;
     checkingUpdate = true;
-    const status = $('update-status');
-    status.hidden = false;
-    status.textContent = '正在检查 Steam 最新版本…';
+    showUpdateStatus('正在检查 Steam 最新版本…', { timeout: 0 });
     $('check-update').disabled = true;
     try {
-      const value = await api.request('update-check');
-      if (!value.installed) status.textContent = '服务端尚未安装。';
-      else if (value.error) status.textContent = `更新检查失败：${value.error}`;
-      else if (value.updateAvailable) status.textContent = `发现新版本：已安装 build ${value.installedBuild}，Steam 最新 build ${value.latestBuild}。可点击「更新服务端」。`;
-      else status.textContent = `已是最新版本（build ${value.installedBuild}）。`;
-    } catch (caught) { status.textContent = `更新检查失败：${caught.message}`; }
+      // SteamCMD may need longer than the default API timeout.
+      const value = await api.request('update-check', { timeout: 150000 });
+      if (!value.installed) showUpdateStatus('服务端尚未安装。');
+      else if (value.error) showUpdateStatus(`更新检查失败：${value.error}`, { error: true, timeout: 12000 });
+      else if (value.updateAvailable) showUpdateStatus(`发现新版本：已安装 build ${value.installedBuild}，Steam 最新 build ${value.latestBuild}。可点击「更新服务端」。`);
+      else showUpdateStatus(`已是最新版本（build ${value.installedBuild}）。`);
+    } catch (caught) { showUpdateStatus(`更新检查失败：${caught.message}`, { error: true, timeout: 12000 }); }
     finally {
       checkingUpdate = false;
       $('check-update').disabled = !lastStatus?.installed || Boolean(lastStatus?.task);

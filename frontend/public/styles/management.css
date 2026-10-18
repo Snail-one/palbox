@@ -32,6 +32,18 @@
 .server-controls { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
 .server-primary-actions { width: 100%; }
 .server-primary-actions [data-action="force-stop"] { color: var(--red); }
+.update-check { position: relative; display: inline-flex; }
+.update-bubble { position: absolute; z-index: 40; top: calc(100% + 9px); left: 0; display: block; width: max-content; max-width: min(320px, calc(100vw - 40px)); padding: 8px 30px 8px 11px; border: 1px solid #efd3b8; border-radius: 7px; background: #fffdf9; box-shadow: 0 8px 24px #0000001f; color: var(--muted); font-size: 11px; line-height: 1.6; white-space: normal; overflow-wrap: anywhere; text-align: left; transform-origin: 18px 0; animation: update-bubble-in .16s ease-out; }
+.update-bubble-close { position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: inherit; font-size: 14px; line-height: 1; opacity: .55; }
+.update-bubble-close:hover { opacity: 1; background: #00000008; }
+@keyframes update-bubble-in { from { opacity: 0; scale: .96; } to { opacity: 1; scale: 1; } }
+.update-bubble::before { content: ''; position: absolute; top: -6px; left: 16px; width: 10px; height: 10px; background: inherit; border-left: 1px solid #efd3b8; border-top: 1px solid #efd3b8; transform: rotate(45deg); }
+.update-bubble.error { border-color: #eed5cf; background: #fff5f1; color: var(--red); }
+.update-bubble.error::before { border-color: #eed5cf; background: #fff5f1; }
+@media (max-width: 760px) {
+  .update-bubble { position: fixed; top: auto; bottom: calc(76px + env(safe-area-inset-bottom)); left: 50%; width: min(340px, calc(100vw - 28px)); max-width: none; transform: translateX(-50%); }
+  .update-bubble::before { display: none; }
+}
 .management-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; margin: 18px 0 0; padding-top: 16px; border-top: 1px solid var(--line); }
 .server-metric { min-width: 0; }
 .server-metric + .server-metric { padding-left: 16px; border-left: 1px solid var(--line); }
@@ -41,6 +53,8 @@
 .server-metric .metric-value.metric-text { font-size: 16px; line-height: 1.6; }
 .server-metric .server-metric-note { margin-top: 6px; font-size: 10px; color: var(--muted); overflow-wrap: anywhere; }
 .server-metric .metric-unit { margin-left: 6px; font-size: 10px; font-weight: 400; color: var(--muted); }
+.server-metric-update { margin-top: 8px; }
+.server-metric-update .button { min-height: 30px; padding: 5px 10px; font-size: 10px; }
 @media (max-width: 1000px) {
   .management-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .management-metrics .server-metric:first-child { grid-column: span 2; }
@@ -94,6 +108,9 @@ main:has(#game-page:not([hidden])) { display: flex; flex-direction: column; }
 #game-logs > .management-heading, #game-logs > #manager-log-status { flex: 0 0 auto; }
 #manager-logs { flex: 1 1 auto; height: auto; min-height: 200px; max-height: max(220px, calc(100dvh - 520px)); min-width: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 14px; border-radius: 6px; background: #202124; color: #f4f4f5; font: 11px/1.7 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; margin: 10px 0 0; }
 .log-heading { flex-wrap: wrap; }
+.log-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.log-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.management-panel .log-toggle input { width: auto; min-width: 0; margin: 0; padding: 0; border: 0; }
 .log-type-buttons button.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: none; }
 @media (max-width: 1400px) {
   .topbar { height: auto; min-height: 65px; flex-wrap: wrap; padding-top: 12px; padding-bottom: 12px; }
