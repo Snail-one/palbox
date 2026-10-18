@@ -70,7 +70,11 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
   async function remove(profile, fromList = false) {
     const discardsEdits = profile.id === workspace.active.id && isDirty();
     const lastEditable = workspace.profiles.filter(candidate => !candidate.locked).length === 1;
-    const yes = await ask({ title: '删除这套配置？', description: `「${profile.name}」将从配置库中删除${discardsEdits ? '，包括尚未保存的更改' : ''}。${lastEditable ? '删除后会创建一套新的可编辑配置。' : '其他配置不受影响。'}`, confirm: '删除配置', danger: true, symbol: 'trash' });
+    const hasLocked = workspace.profiles.some(candidate => candidate.locked);
+    const afterDelete = lastEditable
+      ? hasLocked ? '删除后将只保留「游戏默认配置」。' : '删除后会创建一套新的可编辑配置。'
+      : '其他配置不受影响。';
+    const yes = await ask({ title: '删除这套配置？', description: `「${profile.name}」将从配置库中删除${discardsEdits ? '，包括尚未保存的更改' : ''}。${afterDelete}`, confirm: '删除配置', danger: true, symbol: 'trash' });
     if (yes) actions.remove(profile.id, { fromList });
   }
   $('rename-profile').addEventListener('click', () => rename(workspace.active));

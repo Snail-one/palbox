@@ -1,5 +1,5 @@
 import { parse } from '../../../shared/domain/config.js';
-import { createProfile, createWorkspace, validateWorkspace, DERIVED_DEFAULT_ORIGIN } from '../../../shared/domain/workspace.js';
+import { createProfile, createWorkspace, validateWorkspace } from '../../../shared/domain/workspace.js';
 
 /** Coordinates persistence through an injected { load, save } repository. */
 export class WorkspaceService {
@@ -85,14 +85,15 @@ export class WorkspaceService {
     if (removed.locked) throw new Error('游戏默认配置不能删除。');
     const activeRemoved = id === this.active.id;
     const remaining = this.profiles.filter(profile => profile.id !== id);
-    if (!remaining.some(profile => !profile.locked)) {
-      const locked = remaining.find(profile => profile.locked);
-      const source = fallbackSource ?? locked?.source ?? this.#template;
+    // Keeping the server-owned game-default entry is enough; do not recreate a
+    // deleted editable profile when that entry is still available.
+    if (!remaining.length) {
+      const source = fallbackSource ?? this.#template;
       parse(source);
-      remaining.push(this.#profile('我的帕鲁世界', source, fallbackOrigin ?? (locked ? DERIVED_DEFAULT_ORIGIN : '内置模板')));
+      remaining.push(this.#profile('我的帕鲁世界', source, fallbackOrigin ?? '内置模板'));
     }
     this.#workspace.profiles = remaining;
-    if (activeRemoved) this.select(remaining.find(profile => !profile.locked).id);
+    if (activeRemoved) this.select((remaining.find(profile => !profile.locked) ?? remaining[0]).id);
     this.#persisted = false;
   }
 

@@ -141,16 +141,12 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
       let fallbackSource;
       let fallbackOrigin;
       const editable = workspace.profiles.filter(profile => !profile.locked);
-      if (editable.length === 1 && editable[0].id === id) {
+      const hasLocked = workspace.profiles.some(profile => profile.locked);
+      if (editable.length === 1 && editable[0].id === id && !hasLocked) {
         try {
           ({ source: fallbackSource } = await management.request('default-configuration'));
           fallbackOrigin = DERIVED_DEFAULT_ORIGIN;
-        } catch (error) {
-          const locked = workspace.profiles.find(profile => profile.locked);
-          if (!locked) { notifications.toast(error.message, true); return; }
-          fallbackSource = locked.source;
-          fallbackOrigin = DERIVED_DEFAULT_ORIGIN;
-        }
+        } catch (error) { notifications.toast(error.message, true); return; }
       }
       const activeRemoved = id === workspace.active.id;
       try { workspace.remove(id, { fallbackSource, fallbackOrigin }); }

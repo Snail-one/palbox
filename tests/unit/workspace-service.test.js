@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { WorkspaceService } from '../../frontend/src/application/workspace-service.js';
-import { DERIVED_DEFAULT_ORIGIN, OFFICIAL_DEFAULT_ORIGIN } from '../../shared/domain/workspace.js';
+import { OFFICIAL_DEFAULT_ORIGIN } from '../../shared/domain/workspace.js';
 import template from '../../shared/domain/template.js';
 
 const KEY = 'workspace';
@@ -211,7 +211,7 @@ test('游戏默认配置可选择并修改参数，但不能重命名或删除',
   assert.equal(service.active.id, 'locked');
 });
 
-test('删除最后一个可编辑配置时从游戏默认配置创建可编辑副本', () => {
+test('删除最后一个可编辑配置时保留并选中游戏默认配置', () => {
   const lockedSource = 'OptionSettings=(ExpRate=1)';
   const initial = {
     version: 1,
@@ -223,15 +223,15 @@ test('删除最后一个可编辑配置时从游戏默认配置创建可编辑�
   };
   const { service } = setup(initial);
   service.remove('editable');
-  assert.equal(service.profiles.length, 2);
-  assert.ok(service.profiles.some(profile => profile.id === 'locked'));
-  assert.notEqual(service.active.id, 'locked');
+  assert.equal(service.profiles.length, 1);
+  assert.equal(service.profiles[0].id, 'locked');
+  assert.equal(service.active.id, 'locked');
   assert.equal(service.active.source, lockedSource);
-  assert.equal(service.active.origin, DERIVED_DEFAULT_ORIGIN);
+  assert.equal(service.active.origin, OFFICIAL_DEFAULT_ORIGIN);
   assert.equal(service.persisted, false);
 });
 
-test('删除最后一个可编辑配置时优先使用服务端提供的新默认配置', () => {
+test('游戏默认配置存在时删除最后一个可编辑配置不会新建副本', () => {
   const initial = {
     version: 1,
     activeId: 'editable',
@@ -242,8 +242,10 @@ test('删除最后一个可编辑配置时优先使用服务端提供的新默�
   };
   const { service } = setup(initial);
   service.remove('editable', { fallbackSource: 'OptionSettings=(ExpRate=9)', fallbackOrigin: '基于官方默认配置（DefaultPalWorldSettings.ini）' });
-  assert.equal(service.active.source, 'OptionSettings=(ExpRate=9)');
-  assert.equal(service.active.origin, DERIVED_DEFAULT_ORIGIN);
+  assert.equal(service.profiles.length, 1);
+  assert.equal(service.active.id, 'locked');
+  assert.equal(service.active.source, 'OptionSettings=(ExpRate=1)');
+  assert.equal(service.profiles.some(profile => profile.source.includes('ExpRate=9')), false);
 });
 
 test('损坏的输入基准不能用于覆盖已有记录', () => {
