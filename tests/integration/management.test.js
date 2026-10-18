@@ -11,8 +11,9 @@ test('管理 API 登录、权限、并发保存与路径边界', { skip: process
   const f = await managementFixture(); t.after(() => f.close());
   assert.deepEqual(await (await f.request('/api/bootstrap', { authenticated: false })).json(), { mode: 'managed', authenticated: false });
   assert.equal((await f.request('/api/workspace', { authenticated: false })).status, 401);
-  assert.equal((await f.request('/api/login', { method: 'POST', body: { password: 'wrong' }, authenticated: false })).status, 401);
-  assert.equal((await f.request('/api/login', { method: 'POST', body: { password: f.password }, authenticated: false, headers: { Origin: 'https://evil.invalid' } })).status, 403);
+  assert.equal((await f.request('/api/login', { method: 'POST', body: { username: f.username, password: 'wrong' }, authenticated: false })).status, 401);
+  assert.equal((await f.request('/api/login', { method: 'POST', body: { username: 'wrong-user', password: f.password }, authenticated: false })).status, 401);
+  assert.equal((await f.request('/api/login', { method: 'POST', body: { username: f.username, password: f.password }, authenticated: false, headers: { Origin: 'https://evil.invalid' } })).status, 403);
   const session = await f.login();
   assert.ok(session.cookie.includes('palbox_session='));
   const bootstrap = await (await f.request('/api/bootstrap')).json();
@@ -34,6 +35,49 @@ test('管理 API 登录、权限、并发保存与路径边界', { skip: process
   for (const route of ['/data/palbox/settings.json', '/server/management/auth.js', '/.env']) assert.equal((await f.request(route)).status, 404);
   assert.equal((await f.request('/api/logout', { method: 'POST', body: {} })).status, 200);
   assert.equal((await f.request('/api/status')).status, 401);
+});
+
+test('启动参数通过设置接口保存，并在启动和重启时生效', { skip: process.platform !== 'linux' }, async t => {
+  const f = await managementFixture(); t.after(() => f.close()); await f.login();
+  const settings = () => f.request('/api/settings');
+  const put = body => f.request('/api/settings', { method: 'PUT', body });
+  assert.deepEqual(await (await settings()).json(), { backupRetention: 10, gameArgs: [] });
+  assert.deepEqual(f.runtime.args, []);
+  for (const body of [
+    {}, { gameArgs: '-x' }, { gameArgs: [1] }, { gameArgs: [''] }, { gameArgs: ['   '] },
+    { gameArgs: ['-port=8211'] }, { gameArgs: ['-Port 8211'] }, { gameArgs: ['foo -port=8211'] },
+    { gameArgs: ['bad\narg'] }, { gameArgs: ['bad\rarg'] }, { gameArgs: ['bad\0arg'] },
+    { gameArgs: Array.from({ length: 33 }, () => '-x') }, { gameArgs: ['x'.repeat(201)] },
+    { gameArgs: Array.from({ length: 10 }, () => 'x'.repeat(200)) }
+  ]) assert.equal((await put(body)).status, 400, JSON.stringify(body).slice(0, 80));
+  assert.deepEqual(await (await settings()).json(), { backupRetention: 10, gameArgs: [] });
+  assert.deepEqual(f.runtime.args, []);
+  const args = ['-useperfthreads', '-NoAsyncLoadingThread', '--name=two words'];
+  const saved = await put({ gameArgs: args });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(await saved.json(), { backupRetention: 10, gameArgs: args });
+  assert.deepEqual(f.runtime.args, args);
+  assert.deepEqual(JSON.parse(await readFile(path.join(f.directory, 'palbox/settings.json'), 'utf8')).gameArgs, args);
+  assert.equal((await put({ gameArgs: ['-portrait'] })).status, 200);
+  assert.deepEqual(f.runtime.args, ['-portrait']);
+  assert.equal((await put({ gameArgs: args })).status, 200);
+  assert.equal((await f.task('install')).state, 'succeeded');
+  assert.equal((await f.task('start')).state, 'succeeded');
+  assert.deepEqual(JSON.parse(await readFile(f.argvFile, 'utf8')), ['-port=8211', ...args]);
+  const pid = f.runtime.game.pid;
+  const nextArgs = ['-useperfthreads', '--name=after save'];
+  assert.equal((await put({ gameArgs: nextArgs })).status, 200);
+  assert.equal(f.runtime.game.pid, pid);
+  assert.deepEqual(JSON.parse(await readFile(f.argvFile, 'utf8')), ['-port=8211', ...args]);
+  const restarted = await f.task('restart');
+  assert.equal(restarted.state, 'succeeded', restarted.message);
+  assert.notEqual(f.runtime.game.pid, pid);
+  assert.deepEqual(JSON.parse(await readFile(f.argvFile, 'utf8')), ['-port=8211', ...nextArgs]);
+  const retention = await put({ backupRetention: 5 });
+  assert.equal(retention.status, 200);
+  assert.deepEqual(await retention.json(), { backupRetention: 5, gameArgs: nextArgs });
+  assert.deepEqual(f.runtime.args, nextArgs);
+  assert.equal((await f.task('stop')).state, 'succeeded');
 });
 
 test('SteamCMD、进程、配置应用、备份恢复与故障状态真实联动', { skip: process.platform !== 'linux' }, async t => {
@@ -107,7 +151,7 @@ test('SteamCMD、进程、配置应用、备份恢复与故障状态真实联动
   assert.equal((await f.manager.status()).running, false);
 });
 
-test('启动脚本要求自设首次密码、重启沿用原密码，密码不以明文输出或存盘', { skip: process.platform !== 'linux', timeout: 15000 }, async t => {
+test('首次访问通过网页初始化管理员，重启沿用账号，密码不以明文输出或存盘', { skip: process.platform !== 'linux', timeout: 20000 }, async t => {
   const { spawn } = await import('node:child_process');
   const { mkdtemp, rm, stat } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
@@ -117,8 +161,9 @@ test('启动脚本要求自设首次密码、重启沿用原密码，密码不�
   const directory = await mkdtemp(path.join(tmpdir(), 'palbox-index-'));
   const probe = createServer(); probe.listen(0, '127.0.0.1'); await once(probe, 'listening');
   const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
+  const username = 'index-admin';
   const password = 'index-test-password-123';
-  const env = { ...process.env, PATH: path.dirname(process.execPath) + path.delimiter + process.env.PATH, HOST: '127.0.0.1', PORT: String(port), PALBOX_DATA_DIR: directory, PALBOX_AUTO_INSTALL: 'false', PALBOX_AUTO_START: 'false' };
+  const env = { ...process.env, PATH: path.dirname(process.execPath) + path.delimiter + process.env.PATH, HOST: '127.0.0.1', PORT: String(port), PALBOX_DATA_DIR: directory, PALBOX_AUTO_INSTALL: 'false', PALBOX_AUTO_START: 'false', PALBOX_GAME_ARGS: 'not-json' };
   delete env.PALBOX_ADMIN_PASSWORD;
   delete env.PALBOX_ADMIN_PASSWORD_FILE;
   const children = [];
@@ -143,24 +188,71 @@ test('启动脚本要求自设首次密码、重启沿用原密码，密码不�
     assert.match(run.output, /已启动/);
     assert.equal(run.output.includes(password), false);
   }
-  const missing = launch();
-  assert.equal((await missing.closed)[0], 1);
-  assert.match(missing.output, /首次启动请设置至少 12 位的 PALBOX_ADMIN_PASSWORD/);
-  await assert.rejects(access(path.join(directory, 'palbox/settings.json')), { code: 'ENOENT' });
-  const initialized = launch({ PALBOX_ADMIN_PASSWORD: password });
+  const post = (route, value, headers = {}) => fetch(`http://127.0.0.1:${port}${route}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(value)
+  });
+  const settingsFile = path.join(directory, 'palbox/settings.json');
+  // 旧的环境变量即使存在也必须被忽略，服务照常启动并等待网页初始化。
+  const initialized = launch({ PALBOX_ADMIN_PASSWORD: password, PALBOX_ADMIN_PASSWORD_FILE: '/nonexistent/palbox-password' });
   await ready(initialized);
   assert.equal((await fetch(`http://127.0.0.1:${port}/healthz`)).status, 200);
-  assert.equal((await (await fetch(`http://127.0.0.1:${port}/api/bootstrap`)).json()).mode, 'managed');
-  const settings = await readFile(path.join(directory, 'palbox/settings.json'), 'utf8');
+  assert.deepEqual(await (await fetch(`http://127.0.0.1:${port}/api/bootstrap`)).json(), { mode: 'managed', authenticated: false, setupRequired: true });
+  await assert.rejects(access(settingsFile), { code: 'ENOENT' });
+  assert.equal((await post('/api/setup', { username, password: 'short' })).status, 400);
+  assert.equal((await post('/api/setup', { username: '   ', password })).status, 400);
+  assert.equal((await post('/api/setup', { username, password }, { Origin: 'https://evil.invalid' })).status, 403);
+  const created = await post('/api/setup', { username, password });
+  assert.equal(created.status, 201);
+  assert.deepEqual(await created.json(), { ok: true });
+  assert.equal((await post('/api/setup', { username, password })).status, 409);
+  assert.deepEqual(await (await fetch(`http://127.0.0.1:${port}/api/bootstrap`)).json(), { mode: 'managed', authenticated: false });
+  const settings = await readFile(settingsFile, 'utf8');
+  assert.equal(settings.includes(username), true);
   assert.equal(settings.includes(password), false);
-  assert.equal((await stat(path.join(directory, 'palbox/settings.json'))).mode & 0o777, 0o600);
+  assert.equal((await stat(settingsFile)).mode & 0o777, 0o600);
+  assert.equal((await post('/api/login', { username: 'wrong-user', password })).status, 401);
+  assert.equal((await post('/api/login', { username, password })).status, 200);
   initialized.child.kill('SIGTERM');
   assert.equal((await initialized.closed)[0], 0);
   const restarted = launch();
   await ready(restarted);
-  const login = await fetch(`http://127.0.0.1:${port}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
-  assert.equal(login.status, 200);
-  assert.equal(await readFile(path.join(directory, 'palbox/settings.json'), 'utf8'), settings);
+  assert.deepEqual(await (await fetch(`http://127.0.0.1:${port}/api/bootstrap`)).json(), { mode: 'managed', authenticated: false });
+  assert.equal((await post('/api/login', { username, password })).status, 200);
+  assert.equal(await readFile(settingsFile, 'utf8'), settings);
   restarted.child.kill('SIGTERM');
   assert.equal((await restarted.closed)[0], 0);
+});
+
+test('不支持旧版 settings.json 与损坏的管理员记录', { skip: process.platform !== 'linux' }, async t => {
+  const { mkdtemp, mkdir, writeFile, readFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { Manager } = await import('../../server/management/manager.js');
+  const directory = await mkdtemp(path.join(tmpdir(), 'palbox-legacy-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const file = path.join(directory, 'palbox/settings.json');
+  await mkdir(path.dirname(file), { recursive: true });
+  const legacy = JSON.stringify({ admin: { salt: 'ab'.repeat(16), hash: 'a'.repeat(128) }, backupRetention: 10 });
+  await writeFile(file, legacy);
+  await assert.rejects(new Manager({ directory }).initialize(), /旧版 settings\.json 缺少管理员用户名/);
+  assert.equal(await readFile(file, 'utf8'), legacy);
+  await writeFile(file, 'null');
+  await assert.rejects(new Manager({ directory }).initialize(), /损坏/);
+  await writeFile(file, '{');
+  await assert.rejects(new Manager({ directory }).initialize(), /无法读取或解析/);
+  await writeFile(file, JSON.stringify({ admin: { username: 'admin', salt: 'ab'.repeat(16), hash: 'a'.repeat(128) }, backupRetention: 10, gameArgs: ['-port=1'] }));
+  await assert.rejects(new Manager({ directory }).initialize(), /启动参数无效/);
+});
+
+test('首次初始化并发提交只创建一次管理员', { skip: process.platform !== 'linux' }, async t => {
+  const f = await managementFixture({ setup: false }); t.after(() => f.close());
+  const payload = { username: 'admin', password: 'test-management-password-123' };
+  assert.equal((await f.request('/api/login', { method: 'POST', body: payload, authenticated: false })).status, 409);
+  const results = await Promise.all([
+    f.request('/api/setup', { method: 'POST', body: payload, authenticated: false }),
+    f.request('/api/setup', { method: 'POST', body: payload, authenticated: false })
+  ]);
+  assert.deepEqual(results.map(response => response.status).sort(), [201, 409]);
+  const settings = JSON.parse(await readFile(path.join(f.directory, 'palbox/settings.json'), 'utf8'));
+  assert.equal(settings.admin.username, 'admin');
+  assert.equal((await f.request('/api/login', { method: 'POST', body: payload, authenticated: false })).status, 200);
 });

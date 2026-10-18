@@ -17,7 +17,7 @@ async function body(request, limit = 8 * 1024 * 1024) {
 }
 
 export function createManagementApi(manager, options = {}) {
-  const auth = new Authentication(manager.settings.admin, options);
+  const auth = new Authentication(() => manager.settings?.admin ?? null, options);
   return async function api(request, response, pathname) {
     const json = (status, value) => {
       response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
@@ -26,14 +26,28 @@ export function createManagementApi(manager, options = {}) {
     try {
       if (pathname === '/api/bootstrap' && request.method === 'GET') {
         const session = auth.session(request);
-        json(200, { mode: 'managed', authenticated: Boolean(session), csrf: session?.csrf, template: session ? managedTemplate(manager.runtime.port) : undefined }); return;
+        json(200, { mode: 'managed', authenticated: Boolean(session), ...(manager.needsSetup() ? { setupRequired: true } : {}), csrf: session?.csrf, template: session ? managedTemplate(manager.runtime.port) : undefined }); return;
+      }
+      if (pathname === '/api/setup' && request.method === 'POST') {
+        auth.verifyOrigin(request);
+        const input = await body(request, 4096);
+        await manager.setupAdmin(input.username, input.password);
+        json(201, { ok: true }); return;
       }
       if (pathname === '/api/login' && request.method === 'POST') {
         auth.verifyOrigin(request);
         const input = await body(request, 4096);
-        json(200, auth.login(request, input.password, response)); return;
+        json(200, auth.login(request, input.username, input.password, response)); return;
       }
       auth.require(request, !['GET', 'HEAD'].includes(request.method));
+      if (pathname === '/api/save-import' && request.method === 'POST') {
+        if (manager.closing) throw failure('管理服务正在关闭。', 503);
+        if (manager.busy) throw failure('已有任务正在执行，请稍后再试。', 409);
+        request.setTimeout(0);
+        const staged = await manager.imports.receive(request);
+        if (response.destroyed) { await manager.imports.remove(staged.id); return; }
+        json(201, staged); return;
+      }
       if (pathname === '/api/logout' && request.method === 'POST') { auth.logout(request, response); json(200, { ok: true }); return; }
       if (pathname === '/api/workspace') {
         if (request.method === 'GET') { json(200, manager.store.snapshot()); return; }

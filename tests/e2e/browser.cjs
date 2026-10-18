@@ -27,7 +27,7 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
   await context.addInitScript(() => {
     Storage.prototype.getItem = Storage.prototype.setItem = () => { throw new Error('浏览器本地存储已禁用'); };
   });
-  await context.request.post(url + '/api/login', { data: { password: primary.password } });
+  await context.request.post(url + '/api/login', { data: { username: primary.username, password: primary.password } });
   const page = await context.newPage();
   page.on('pageerror', error => errors.push(error.message));
   const ok = label => { count++; console.log(`PASS ${label}`); };
@@ -392,7 +392,7 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
 
     const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
     const mobileFixture = await fixture();
-    await mobileContext.request.post(mobileFixture.base + '/api/login', { data: { password: mobileFixture.password } });
+    await mobileContext.request.post(mobileFixture.base + '/api/login', { data: { username: mobileFixture.username, password: mobileFixture.password } });
     const mobile = await mobileContext.newPage();
     mobile.on('pageerror', error => errors.push(error.message));
     await mobile.goto(mobileFixture.base + '/#configuration');
@@ -431,7 +431,7 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
 
     const importContext = await browser.newContext();
     const importFixture = await fixture();
-    await importContext.request.post(importFixture.base + '/api/login', { data: { password: importFixture.password } });
+    await importContext.request.post(importFixture.base + '/api/login', { data: { username: importFixture.username, password: importFixture.password } });
     const imported = await importContext.newPage();
     imported.on('pageerror', error => errors.push(error.message));
     await imported.goto(importFixture.base + '/#configuration');
@@ -506,7 +506,7 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
     const legacy = { version: 1, activeId: 'existing-id', profiles: [{ id: 'existing-id', name: '已有配置', source: legacySource, updatedAt: '2026-01-01T00:00:00Z' }] };
     const legacyContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] });
     const legacyFixture = await fixture(legacy);
-    await legacyContext.request.post(legacyFixture.base + '/api/login', { data: { password: legacyFixture.password } });
+    await legacyContext.request.post(legacyFixture.base + '/api/login', { data: { username: legacyFixture.username, password: legacyFixture.password } });
     const legacyPage = await legacyContext.newPage();
     legacyPage.on('pageerror', error => errors.push(error.message));
     await legacyPage.goto(legacyFixture.base + '/#configuration');
@@ -531,7 +531,7 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
 
     const failedContext = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] });
     const failedFixture = await fixture();
-    await failedContext.request.post(failedFixture.base + '/api/login', { data: { password: failedFixture.password } });
+    await failedContext.request.post(failedFixture.base + '/api/login', { data: { username: failedFixture.username, password: failedFixture.password } });
     await failedContext.route('**/api/workspace', route => route.request().method() === 'PUT'
       ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试保存失败，请复制配置备份。' }) })
       : route.continue());
@@ -552,7 +552,7 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
 
     const corruptContext = await browser.newContext();
     const corruptFixture = await fixture();
-    await corruptContext.request.post(corruptFixture.base + '/api/login', { data: { password: corruptFixture.password } });
+    await corruptContext.request.post(corruptFixture.base + '/api/login', { data: { username: corruptFixture.username, password: corruptFixture.password } });
     await corruptContext.route('**/api/workspace', route => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: '无法读取服务器配置。' }) }));
     const corrupt = await corruptContext.newPage();
     corrupt.on('pageerror', error => errors.push(error.message));

@@ -8,22 +8,25 @@
 
 需要能运行 Docker Compose 的 Linux amd64 主机，以及帕鲁服务端需要的 CPU、内存和磁盘空间。官方列出推荐 4 核以上、16 GB 内存，较多玩家建议超过 32 GB，默认游戏端口为 UDP 8211：[官方运行要求](https://docs.palworldgame.com/getting-started/requirements/)。
 
-```sh
-cp .env.example .env
-```
+所有容器配置都直接写在项目根目录的 `compose.yaml` 中，不再读取 `.env`。首次启动前编辑该文件：
 
-编辑 `.env`，将 `PALBOX_ADMIN_PASSWORD` 改成自己生成的至少 12 位随机密码，确认 `PALBOX_DATA_PATH`。例如使用 `openssl rand -hex 24` 生成密码。随后启动：
+- 确认 `volumes` 中的宿主机数据目录，默认 `/srv/palbox`。
+- 修改 `PALBOX_GAME_PORT` 时，同步修改 `ports` 中游戏端口映射的宿主机一侧。
+
+随后启动：
 
 ```sh
 docker compose up -d --build
 docker compose logs -f palbox
 ```
 
-默认面板地址为 <http://127.0.0.1:8080>。用上述管理密码登录。首次启动自动安装并启动游戏服，安装进度查看页面的「运行日志 → 安装与更新」。安装失败后面板仍可访问，可查看日志并点击「安装服务端」重试。游戏管理员密码与面板登录密码独立，新的管理配置会生成随机游戏管理员密码并启用 REST API。
+默认面板地址为 <http://127.0.0.1:8080>。**首次访问**会进入初始化页面，设置管理员用户名和至少 12 位密码，随后用该账号登录。首次启动自动安装并启动游戏服，安装进度查看页面的「运行日志 → 安装与更新」。安装失败后面板仍可访问，可查看日志并点击「安装服务端」重试。游戏管理员密码与面板登录密码独立，新的管理配置会生成随机游戏管理员密码并启用 REST API。
 
-默认网页只绑定宿主机回环地址。需要从内网访问时，将 `PALBOX_WEB_BIND` 改成服务器内网 IP 或 `0.0.0.0`；公网使用 HTTPS 反向代理，并设置 `PALBOX_SECURE_COOKIE=true`。游戏 REST API 仅由管理后端通过容器内的回环地址访问，不映射到宿主机。
+默认网页只绑定宿主机回环地址。需要从内网访问时，将 `compose.yaml` 中 `ports` 的 `127.0.0.1` 改成服务器内网 IP 或 `0.0.0.0`；公网使用 HTTPS 反向代理，并设置 `PALBOX_SECURE_COOKIE=true`。游戏 REST API 仅由管理后端通过容器内的回环地址访问，不映射到宿主机。
 
-已有 `settings.json` 时沿用其中的密码哈希，修改 `PALBOX_ADMIN_PASSWORD` 不会重置已有面板密码。镜像入口以 root 处理挂载目录归属后，通过 gosu 切换到 `PUID/PGID` 指定的普通用户，游戏和 Node 均以该用户运行。
+初始化完成前，任何能访问面板端口的人都可以抢先创建管理员。请先在本机或可信内网完成初始化，再把端口暴露到更大范围。
+
+已有 `settings.json` 时沿用其中的管理员账号。旧版 `settings.json`（`admin` 只有 `salt`/`hash`、没有 `username`）不兼容当前版本：启动会失败并提示先备份数据目录、删除对应的 `palbox/settings.json` 后重新初始化；配置库、存档、备份和日志不受影响。镜像入口以 root 处理挂载目录归属后，通过 gosu 切换到普通用户，游戏和 Node 均以该用户运行；默认使用 `1000:1000`，需要时可通过可选的 `PUID`/`PGID` 环境变量覆盖。
 
 修改 Dockerfile 后，重新构建并更新容器：
 
@@ -50,8 +53,9 @@ docker compose up -d --build
 │       └── Logs/
 ├── palbox/
 │   ├── workspace.json                 配置库、输入基准与保存版本
-│   ├── settings.json                  登录密码哈希、完整备份保留设置
-│   └── tasks.json                     最近 40 个任务
+│   ├── settings.json                  管理员用户名、密码哈希、完整备份保留设置、启动参数
+│   ├── tasks.json                     最近 40 个任务
+│   └── imports/                       导入存档的临时暂存（1 小时后清理）
 ├── backups/
 │   ├── manual/
 │   ├── scheduled/                     升级前的定时归档（保留）
@@ -75,7 +79,9 @@ docker compose up -d --build
 
 自动保存不直接修改游戏的 INI 文件。点击「应用配置」会先校验当前配置；如果游戏正在运行，会保存世界、正常停服、备份、写入 INI，再启动并等待 REST API 就绪。停服失败时中止后续文件修改。游戏处于停止状态时只备份并写入配置，不自动启动。
 
-应用管理配置需要 `RESTAPIEnabled=True`、非空 `AdminPassword` 和有效的 `RESTAPIPort`。已导入且关闭 REST API 的配置需要先调整这几个参数；不会静默覆盖用户导入的配置。`PALBOX_GAME_PORT` 控制游戏进程的实际监听端口和 Compose 映射，INI 中的 `PublicPort` 只负责公布端口。
+应用管理配置需要 `RESTAPIEnabled=True`、非空 `AdminPassword` 和有效的 `RESTAPIPort`。已导入且关闭 REST API 的配置需要先调整这几个参数；不会静默覆盖用户导入的配置。`PALBOX_GAME_PORT` 控制游戏进程的实际监听端口，修改时要同步修改 `compose.yaml` 中 `ports` 的宿主机端口；INI 中的 `PublicPort` 只负责公布端口。
+
+游戏启动参数在「游戏管理 → 服务器概况 → 游戏服务」中设置，每行一个参数，保存到 `palbox/settings.json` 的 `gameArgs`。保存不会自动重启游戏服，将在下次启动或重启时生效；更新、应用配置、备份恢复等流程触发的自动重启同样使用新参数。`-port` 由 `PALBOX_GAME_PORT` 管理，不能在启动参数中填写。
 
 「恢复输入配置」恢复面板中最初输入或导入的完整内容并自动保存，保留注释、未知字段与顺序；点击应用才影响游戏。已有 INI 配置可通过「配置管理」导入。服务端第一次建立配置库时，如果 `/data/server/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini` 已存在，则将它作为初始输入；否则创建管理模板。
 
@@ -85,6 +91,7 @@ docker compose up -d --build
 - 更新：先正常停服并创建更新前备份，再执行 SteamCMD `app_update 2394010 validate`；原先运行的游戏服会重新启动。
 - 官方自动备份：由 `bIsUseBackupSaveData=True` 启用，游戏运行中自行生成，无需面板停服。面板展示 `SaveGames/0/<世界 ID>/backup/world/<时间>/` 中完整的世界和玩家备份，支持在线下载。官方保留档位为每 30 秒 5 份、每 10 分钟 6 份、每 1 小时 12 份、每 1 天 7 份：[官方说明](https://docs.palworldgame.com/settings-and-operation/configuration/#about-bisusebackupsavedata)。
 - 恢复官方备份：确认备份属于当前世界，复制并验证后保存、停服，先创建完整备份再替换世界和玩家存档。保留当前配置与官方备份历史，原先运行的游戏会重新启动。
+- 导入存档：上传 `.tar.gz` / `.tgz` 官方存档（最大 1 GB，只能包含一个世界），支持快照根目录、`SaveGames/0/<世界 ID>` 和 `Pal/Saved/SaveGames/0/<世界 ID>` 布局。确认后立即保存世界、停服、创建完整备份并替换世界/玩家存档，完成后按原状态启动；`PalWorldSettings.ini`、`WorldOption.sav` 和官方备份历史保持不变。暂存文件位于 `palbox/imports/`，成功后删除，超过 1 小时自动清理。
 - 创建完整备份：人工触发，运行中会先存档并停服，压缩完成后重新启动。面板不再执行定时停服备份，升级时会移除旧计划；已有定时归档继续保留。
 - 恢复备份：校验归档路径和文件类型，先保存并备份当前世界，在临时目录解压后整体替换 `Pal/Saved`。恢复后面板预设不变，可能显示「待生效」。可从页面下载备份留存。
 - 保留数量：每类完整归档分别保留最近 1 到 100 份，默认 10 份，不影响游戏维护的官方备份；恢复时正在使用的备份不会被恢复前备份的清理操作删除。
@@ -94,23 +101,25 @@ docker compose up -d --build
 
 执行 `docker compose stop` 会先停止接收新管理请求，再尝试保存并停止游戏进程；Compose 预留 120 秒退出时间。
 
-## 环境变量
+## 配置项
 
-| 变量 | 默认值 | 用途 |
+Docker 部署的全部配置都在 `compose.yaml` 中，不再读取 `.env`。
+
+| 位置 | 默认值 | 用途 |
 | --- | --- | --- |
-| `PALBOX_ADMIN_PASSWORD` | 必填 | 首次初始化的管理密码，至少 12 位 |
-| `PALBOX_ADMIN_PASSWORD_FILE` | 空 | 直接运行镜像时也可从文件读取首次密码 |
-| `PALBOX_DATA_PATH` | `/srv/palbox` | Compose 宿主机持久化目录 |
-| `PALBOX_WEB_BIND` | `127.0.0.1` | Compose 网页监听地址 |
-| `PALBOX_WEB_PORT` | `8080` | Compose 网页宿主机端口 |
-| `PALBOX_GAME_PORT` | `8211` | 游戏监听和宿主机 UDP 端口 |
-| `PALBOX_AUTO_INSTALL` | `true` | 缺少服务端时自动安装 |
-| `PALBOX_AUTO_START` | `true` | 安装完成或容器启动后自动启动游戏 |
-| `PALBOX_GAME_ARGS` | `[]` | 额外启动参数，JSON 字符串数组 |
-| `PALBOX_SECURE_COOKIE` | `false` | HTTPS 部署时为登录 Cookie 设置 Secure |
-| `PUID` / `PGID` | `1000` / `1000` | 容器内运行用户与挂载数据归属 |
+| `environment.PALBOX_GAME_PORT` | `8211` | 游戏进程监听端口，需同步修改 `ports` 的宿主机端口 |
+| `environment.PALBOX_AUTO_INSTALL` | `true` | 缺少服务端时自动安装 |
+| `environment.PALBOX_AUTO_START` | `true` | 安装完成或容器启动后自动启动游戏 |
+| `environment.PALBOX_SECURE_COOKIE` | `false` | HTTPS 部署时为登录 Cookie 设置 Secure |
+| `PUID` / `PGID`（可选） | `1000` / `1000` | 入口脚本默认使用 `1000:1000`，compose 中不再预置；需要自定义时再在 `environment` 中添加 |
+| `TZ`（可选） | 容器默认时区 | 需要指定时区时再在 `environment` 中添加，镜像已安装 `tzdata` |
+| `ports` 第一项 | `127.0.0.1:8080` | 网页绑定地址和宿主机端口 |
+| `ports` 第二项 | `8211:8211/udp` | 游戏 UDP 端口映射 |
+| `volumes` | `/srv/palbox:/data` | 宿主机数据目录 |
 
-使用现有存档时，先将完整的 `Pal/Saved` 放入 `/srv/palbox/server/Pal/Saved`，不要只复制单个 `Level.sav`。首次部署可设置 `PALBOX_AUTO_START=false`，安装完成后检查输入配置与存档，再手动启动。
+直接运行镜像而不使用 Compose 时，仍可通过环境变量配置端口、自动安装/启动和运行用户；管理员账号统一在首次访问网页时创建，启动参数也在网页中设置，不再通过环境变量提供。`npm start` / `dev.sh` 的开发流程同样使用环境变量配置其他参数。
+
+使用现有存档时，可以在面板「存档管理 → 导入存档」上传官方快照 `.tar.gz`，也可以先将完整的 `Pal/Saved` 放入 `/srv/palbox/server/Pal/Saved`，不要只复制单个 `Level.sav`。首次部署可将 `compose.yaml` 中的 `PALBOX_AUTO_START` 设为 `false`，安装完成后检查输入配置与存档，再手动启动。
 
 ## 验证
 
@@ -118,7 +127,7 @@ docker compose up -d --build
 npm test
 npm run test:e2e
 npm run test:e2e:managed
-PALBOX_ADMIN_PASSWORD=test-compose-validation docker compose config --quiet
+docker compose config --quiet
 ```
 
 管理测试使用真实的临时子进程、HTTP API、文件写入和 tar 压缩恢复；SteamCMD 下载与实际游戏运行由模拟服务替代，测试不需要下载游戏，也不会连接现有游戏服。真实镜像构建和游戏启动仍需要在有 Docker 引擎权限、网络及足够资源的 Linux amd64 主机执行。

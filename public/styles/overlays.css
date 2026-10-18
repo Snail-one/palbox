@@ -12,6 +12,14 @@
   background: #fff5f1;
 }
 
+.alert.warning {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+#save-import-progress { width: 100%; margin: 6px 0 10px; }
+.drop-zone[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
+
 #source-error {
   margin: 12px 24px 0;
 }

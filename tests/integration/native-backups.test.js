@@ -112,12 +112,15 @@ test('旧定时计划自动移除，已有定时归档继续保留', async t => 
   await f.manager.close();
   const settingsFile = path.join(f.directory, 'palbox/settings.json');
   const settings = JSON.parse(await readFile(settingsFile, 'utf8'));
-  await writeFile(settingsFile, JSON.stringify({ ...settings, backupIntervalHours: 1 }));
+  const { gameArgs: _gameArgs, ...withoutArgs } = settings;
+  await writeFile(settingsFile, JSON.stringify({ ...withoutArgs, backupIntervalHours: 1 }));
   await writeFile(path.join(f.directory, 'backups/scheduled/old.tar.gz'), 'old-backup');
   const manager = new Manager({ directory: f.directory }); t.after(() => manager.close());
   await manager.initialize();
-  assert.deepEqual(manager.publicSettings(), { backupRetention: 10 });
-  assert.equal(Object.hasOwn(JSON.parse(await readFile(settingsFile, 'utf8')), 'backupIntervalHours'), false);
+  assert.deepEqual(manager.publicSettings(), { backupRetention: 10, gameArgs: [] });
+  const migrated = JSON.parse(await readFile(settingsFile, 'utf8'));
+  assert.equal(Object.hasOwn(migrated, 'backupIntervalHours'), false);
+  assert.deepEqual(migrated.gameArgs, []);
   assert.equal((await manager.backups())[0].category, 'scheduled');
   await assert.rejects(manager.updateSettings({ backupIntervalHours: 1, backupRetention: 10 }), /定时备份已移除/);
 });

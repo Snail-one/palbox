@@ -1,11 +1,12 @@
 import path from 'node:path';
-import { readFile, mkdir, readdir, stat, rename, rm, lstat } from 'node:fs/promises';
+import { readFile, mkdir, readdir, stat, rename, rm, rmdir, lstat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { Runtime } from './runtime.js';
 import { NativeBackups } from './native-backups.js';
+import { SaveImports } from './save-imports.js';
 import { ManagementStore } from './store.js';
 import { atomicWrite, readJson, jsonWrite, failure } from './files.js';
-import { passwordRecord } from './auth.js';
+import { normalizeUsername, passwordRecord, validUsername } from './auth.js';
 import { EditorSession } from '../../src/domain/editor-session.js';
 import { createCatalog } from '../../src/domain/catalog.js';
 import { parse, decodeString } from '../../src/domain/config.js';
@@ -14,47 +15,114 @@ const catalog = createCatalog();
 const output = source => new EditorSession(source, { formatOutput: catalog.formatOutput }).toIni();
 const categories = ['manual', 'scheduled', 'before-update'];
 const backupId = /^[a-z0-9-]+\.tar\.gz$/;
+const MISSING = Symbol('missing');
+const MAX_GAME_ARGS = 32;
+const MAX_GAME_ARG_LENGTH = 200;
+const MAX_GAME_ARGS_BYTES = 1800;
+const PORT_ARGUMENT = /(?:^|\s)-port(?:=|\s|$)/i;
+
+function gameArgsError(value) {
+  if (!Array.isArray(value)) return '启动参数必须是字符串数组。';
+  if (value.length > MAX_GAME_ARGS) return `启动参数不能超过 ${MAX_GAME_ARGS} 项。`;
+  let bytes = 0;
+  for (const arg of value) {
+    if (typeof arg !== 'string') return '启动参数必须是字符串数组。';
+    if (arg.trim().length === 0) return '启动参数不能包含空行。';
+    if (arg.length > MAX_GAME_ARG_LENGTH) return `单个启动参数不能超过 ${MAX_GAME_ARG_LENGTH} 个字符。`;
+    if (/[\u0000-\u001f\u007f]/.test(arg)) return '启动参数不能包含控制字符。';
+    if (PORT_ARGUMENT.test(arg)) return '不能通过启动参数设置 -port；游戏端口由 PALBOX_GAME_PORT 控制。';
+    bytes += Buffer.byteLength(arg, 'utf8');
+  }
+  if (bytes > MAX_GAME_ARGS_BYTES) return `启动参数总长度不能超过 ${MAX_GAME_ARGS_BYTES} 字节。`;
+  return null;
+}
 
 export class Manager {
-  constructor({ directory, password, runtime, webPort = 8080, ...options }) {
+  constructor({ directory, runtime, webPort = 8080, importLimits = {}, ...options }) {
     this.directory = path.resolve(directory);
-    this.password = password;
+    this.settings = null;
+    this.setupRequired = true;
+    this.setupPending = false;
+    this.settingsUpdates = Promise.resolve();
     this.settingsFile = path.join(this.directory, 'palbox/settings.json');
     this.tasksFile = path.join(this.directory, 'palbox/tasks.json');
     this.store = new ManagementStore(this.directory, options.port || runtime?.port || 8211);
     this.webPort = webPort;
     this.runtime = runtime || new Runtime(this.directory, options);
     this.native = new NativeBackups(this.runtime.saved, this.directory);
+    this.imports = new SaveImports({ directory: this.directory, runtime: this.runtime, native: this.native, limits: importLimits });
     this.tasks = [];
     this.busy = null;
     this.closing = false;
   }
   async initialize() {
     for (const sub of ['palbox', 'server', 'logs', ...categories.map(c => `backups/${c}`)]) await mkdir(path.join(this.directory, sub), { recursive: true, mode: 0o700 });
-    this.settings = await readJson(this.settingsFile, null);
-    if (!this.settings) {
-      if (typeof this.password !== 'string' || this.password.length < 12) throw new Error('首次启动请设置至少 12 位的 PALBOX_ADMIN_PASSWORD。');
-      if (this.password === 'replace-with-a-long-random-password') throw new Error('请将 .env 中的示例管理密码替换成自己的随机密码。');
-      this.settings = { admin: passwordRecord(this.password), backupRetention: 10 };
-      await jsonWrite(this.settingsFile, this.settings);
+    let settings;
+    try { settings = await readJson(this.settingsFile, MISSING); }
+    catch (error) { throw new Error(`settings.json 无法读取或解析。请先备份数据目录，再删除 ${this.settingsFile} 后重新启动，并在网页中重新初始化管理员。`, { cause: error }); }
+    if (settings === MISSING) {
+      this.settings = null;
+      this.setupRequired = true;
+    } else {
+      this.validateSettings(settings);
+      let write = false;
+      if (!Object.hasOwn(settings, 'gameArgs')) { settings.gameArgs = []; write = true; }
+      if (Object.hasOwn(settings, 'backupIntervalHours')) { delete settings.backupIntervalHours; write = true; }
+      this.settings = settings;
+      this.setupRequired = false;
+      if (write) await jsonWrite(this.settingsFile, settings);
     }
-    if (!/^[a-f0-9]{128}$/.test(this.settings.admin?.hash || '') || !/^[a-f0-9]+$/.test(this.settings.admin?.salt || '')) throw new Error('管理密码记录损坏，请检查 settings.json。');
-    if (!Number.isInteger(this.settings.backupRetention) || this.settings.backupRetention < 1 || this.settings.backupRetention > 100) throw new Error('备份保留设置损坏，请检查 settings.json。');
-    if (Object.hasOwn(this.settings, 'backupIntervalHours')) {
-      delete this.settings.backupIntervalHours;
-      await jsonWrite(this.settingsFile, this.settings);
-    }
-    this.password = undefined;
+    this.syncRuntimeArgs();
     await this.store.initialize();
     await this.runtime.initialize();
+    try { await this.imports.initialize(); }
+    catch (error) { this.runtime.log('palbox', `导入暂存目录初始化失败：${error.message}\n`); }
     this.tasks = await readJson(this.tasksFile, []);
     if (!Array.isArray(this.tasks)) throw new Error('任务记录损坏，请检查 tasks.json。');
     for (const task of this.tasks) if (task.state === 'running') { task.state = 'interrupted'; task.message = '面板重启，任务已中断，请检查日志后重试。'; }
     await this.saveTasks();
   }
+  settingsError() {
+    return `settings.json 中的管理员记录或备份设置损坏。请先备份数据目录，再删除 ${this.settingsFile} 后重新启动，并在网页中重新初始化管理员。`;
+  }
+  validateSettings(settings) {
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new Error(this.settingsError());
+    const admin = settings.admin;
+    if (admin && typeof admin === 'object' && !Array.isArray(admin) && !Object.hasOwn(admin, 'username')) {
+      throw new Error(`旧版 settings.json 缺少管理员用户名，无法安全迁移。请先备份数据目录，再删除 ${this.settingsFile} 后重新启动，并在网页中重新初始化管理员。`);
+    }
+    if (!admin || typeof admin !== 'object' || Array.isArray(admin)
+      || admin.username !== normalizeUsername(admin.username) || !validUsername(admin.username)
+      || !/^[a-f0-9]{128}$/.test(admin.hash || '') || !/^[a-f0-9]+$/.test(admin.salt || '')) throw new Error(this.settingsError());
+    if (!Number.isInteger(settings.backupRetention) || settings.backupRetention < 1 || settings.backupRetention > 100) throw new Error(this.settingsError());
+    if (Object.hasOwn(settings, 'gameArgs')) {
+      const message = gameArgsError(settings.gameArgs);
+      if (message) throw new Error(`settings.json 中的启动参数无效：${message}请编辑 ${this.settingsFile} 修正 gameArgs 后重新启动。`);
+    }
+  }
+  needsSetup() { return this.setupRequired; }
+  get backupRetention() { return this.settings?.backupRetention ?? 10; }
+  get gameArgs() { return this.settings?.gameArgs ?? []; }
+  syncRuntimeArgs() { this.runtime.args = [...this.gameArgs]; }
+  async setupAdmin(username, password) {
+    if (!this.setupRequired) throw failure('管理员已初始化，请直接登录。', 409);
+    if (this.setupPending) throw failure('管理员初始化正在进行，请稍后重试。', 409);
+    this.setupPending = true;
+    try {
+      const name = normalizeUsername(username);
+      if (!validUsername(name)) throw failure('管理员用户名须为 1 到 64 个字符，且不能包含控制字符。', 400);
+      if (typeof password !== 'string' || password.length < 12) throw failure('管理密码至少需要 12 位。', 400);
+      if (password.length > 1024) throw failure('管理密码不能超过 1024 位。', 400);
+      const next = { admin: { username: name, ...passwordRecord(password) }, backupRetention: 10, gameArgs: [] };
+      await jsonWrite(this.settingsFile, next);
+      this.settings = next;
+      this.setupRequired = false;
+      return next.admin;
+    } finally { this.setupPending = false; }
+  }
   saveTasks() { return jsonWrite(this.tasksFile, this.tasks.slice(0, 40)); }
   async submit(action, payload = {}) {
-    const allowed = ['install', 'update', 'start', 'stop', 'restart', 'apply', 'backup', 'restore', 'restore-native', 'save-world', 'announce', 'kick'];
+    const allowed = ['install', 'update', 'start', 'stop', 'restart', 'apply', 'backup', 'restore', 'restore-native', 'import-save', 'save-world', 'announce', 'kick'];
     if (!allowed.includes(action)) throw failure('管理操作不存在。', 404);
     if (action === 'backup' && payload.category && payload.category !== 'manual') throw failure('定时备份已交由游戏官方机制，面板仅支持手动完整备份。');
     if (this.closing) throw failure('管理服务正在关闭。', 503);
@@ -133,6 +201,7 @@ export class Manager {
         if (running) await this.runtime.start();
         break;
       }
+      case 'import-save': await this.restoreImported(payload.id, task); break;
       case 'save-world': await this.requireRunning(); await this.runtime.rest('save', {}); break;
       case 'announce':
         await this.requireRunning();
@@ -145,6 +214,56 @@ export class Manager {
     }
   }
   async requireRunning() { if (!this.runtime.game) throw failure('游戏服尚未运行。', 409); }
+  async targetWorld(imported) {
+    const configured = await this.native.configuredWorld();
+    if (configured) return configured;
+    const worlds = await this.native.worlds();
+    if (worlds.length === 1) return worlds[0];
+    if (!worlds.length) return imported.worldId || randomUUID().replaceAll('-', '').toUpperCase();
+    throw failure('无法确定当前世界，请先设置 DedicatedServerName 或只保留一个世界。', 409);
+  }
+  async restoreImported(id, task) {
+    const imported = await this.imports.get(id);
+    if (!(await this.runtime.installed())) throw failure('请先安装帕鲁服务端。', 409);
+    const wasRunning = Boolean(this.runtime.game);
+    let created = null;
+    let swapped = false;
+    let rollbackFailed = false;
+    let failureError = null;
+    try {
+      if (wasRunning) { task.message = '保存世界并停服，准备导入存档'; await this.runtime.stop({ requireSave: true }); }
+      const target = await this.targetWorld(imported);
+      task.message = '正在创建恢复前完整备份';
+      task.backup = await this.backup('manual');
+      const ensured = await this.native.ensureWorld(target);
+      if (ensured.created) created = ensured.directory;
+      task.message = '正在替换世界与玩家存档';
+      await this.native.replaceWorld(target, imported.snapshot, { beforeSwap: async () => {
+        if (await this.targetWorld(imported) !== target) throw failure('当前世界已改变，请刷新后重试。', 409);
+      } });
+      swapped = true;
+    } catch (error) {
+      failureError = error;
+      rollbackFailed = Boolean(error.rollbackFailed);
+    } finally {
+      await this.imports.remove(id).catch(error => this.runtime.log('palbox', `导入临时文件清理失败：${error.message}\n`));
+      if (created && !swapped && !rollbackFailed) await rmdir(created).catch(error => {
+        if (!['ENOTEMPTY', 'EEXIST', 'ENOENT'].includes(error.code)) this.runtime.log('palbox', `空世界目录清理失败：${error.message}\n`);
+      });
+    }
+    if (rollbackFailed) throw failureError;
+    if (failureError) {
+      if (wasRunning && !this.runtime.game && !this.closing) {
+        try { await this.runtime.start(); }
+        catch (error) { this.runtime.log('palbox', `导入失败后启动游戏服失败：${error.message}\n`); }
+      }
+      throw failureError;
+    }
+    if (wasRunning && !this.runtime.game && !this.closing) {
+      try { task.message = '存档已导入，正在启动游戏服'; await this.runtime.start(); }
+      catch (error) { throw failure(`存档已导入，但游戏服启动失败：${error.message}`, 500); }
+    }
+  }
   async backup(category, protectedId = null) {
     // Stop the process before archiving so world/player files belong to one save.
     if (this.runtime.game) throw failure('创建备份前需要停止游戏服。', 409);
@@ -157,7 +276,7 @@ export class Manager {
       await rename(temporary, file);
     } catch (error) { await rm(temporary, { force: true }); throw error; }
     const list = (await this.backups()).filter(b => b.category === category);
-    for (const old of list.slice(this.settings.backupRetention)) if (old.id !== protectedId) await rm(this.backupFile(old.id));
+    for (const old of list.slice(this.backupRetention)) if (old.id !== protectedId) await rm(this.backupFile(old.id));
     return id;
   }
   backupFile(id) {
@@ -230,17 +349,38 @@ export class Manager {
     const enabled = setting ? setting.raw === 'True' : null;
     return { enabled, ...await this.native.list() };
   }
-  publicSettings() { return { backupRetention: this.settings.backupRetention }; }
-  async updateSettings(value) {
+  publicSettings() { return { backupRetention: this.backupRetention, gameArgs: [...this.gameArgs] }; }
+  updateSettings(value) {
+    const update = this.settingsUpdates.then(() => this.applySettings(value));
+    this.settingsUpdates = update.catch(() => {});
+    return update;
+  }
+  async applySettings(value) {
+    if (this.setupRequired) throw failure('请先完成管理员初始化。', 409);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw failure('设置格式不正确。');
     if (Object.hasOwn(value, 'backupIntervalHours')) throw failure('面板定时备份已移除，请使用游戏官方自动备份。');
-    if (!Number.isInteger(value.backupRetention) || value.backupRetention < 1 || value.backupRetention > 100) throw failure('完整备份保留数量须为 1 到 100。');
-    const next = { ...this.settings, backupRetention: value.backupRetention };
-    await jsonWrite(this.settingsFile, next); this.settings = next;
+    const hasRetention = Object.hasOwn(value, 'backupRetention');
+    const hasArgs = Object.hasOwn(value, 'gameArgs');
+    if (!hasRetention && !hasArgs) throw failure('请提供要保存的设置。');
+    const next = { ...this.settings, gameArgs: [...this.gameArgs] };
+    if (hasRetention) {
+      if (!Number.isInteger(value.backupRetention) || value.backupRetention < 1 || value.backupRetention > 100) throw failure('完整备份保留数量须为 1 到 100。');
+      next.backupRetention = value.backupRetention;
+    }
+    if (hasArgs) {
+      const message = gameArgsError(value.gameArgs);
+      if (message) throw failure(message);
+      next.gameArgs = [...value.gameArgs];
+    }
+    await jsonWrite(this.settingsFile, next);
+    this.settings = next;
+    this.syncRuntimeArgs();
     return this.publicSettings();
   }
   async close() {
     this.closing = true;
     await this.runtime.close();
     await this.operation;
+    await this.settingsUpdates;
   }
 }

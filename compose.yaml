@@ -6,17 +6,16 @@ services:
     restart: unless-stopped
     stop_grace_period: 120s
     ports:
-      - "${PALBOX_WEB_BIND:-127.0.0.1}:${PALBOX_WEB_PORT:-8080}:8080/tcp"
-      - "${PALBOX_GAME_PORT:-8211}:${PALBOX_GAME_PORT:-8211}/udp"
+      # 宿主机网页监听地址和端口：需要内网访问时把 127.0.0.1 改成服务器内网 IP 或 0.0.0.0。
+      - "127.0.0.1:8080:8080/tcp"
+      # 游戏 UDP 端口：修改 PALBOX_GAME_PORT 时，这里的宿主机端口也要一起改。
+      - "8211:8211/udp"
     environment:
-      PALBOX_ADMIN_PASSWORD: "${PALBOX_ADMIN_PASSWORD:?请在 .env 设置至少 12 位的管理密码}"
-      PALBOX_GAME_PORT: "${PALBOX_GAME_PORT:-8211}"
-      PALBOX_AUTO_INSTALL: "${PALBOX_AUTO_INSTALL:-true}"
-      PALBOX_AUTO_START: "${PALBOX_AUTO_START:-true}"
-      PALBOX_GAME_ARGS: "${PALBOX_GAME_ARGS:-[]}"
-      PALBOX_SECURE_COOKIE: "${PALBOX_SECURE_COOKIE:-false}"
-      PUID: "${PUID:-1000}"
-      PGID: "${PGID:-1000}"
-      TZ: "${TZ:-Asia/Shanghai}"
+      # 首次打开网页时创建管理员用户名和密码，无需在这里配置登录密码。
+      PALBOX_GAME_PORT: "8211"
+      PALBOX_AUTO_INSTALL: "true"
+      PALBOX_AUTO_START: "true"
+      PALBOX_SECURE_COOKIE: "false"
     volumes:
-      - "${PALBOX_DATA_PATH:-/srv/palbox}:/data"
+      # 宿主机数据目录，存放服务端、存档、备份和日志。
+      - "/srv/palbox:/data"

@@ -3,6 +3,9 @@ import { failure } from './files.js';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
 
+export const normalizeUsername = value => typeof value === 'string' ? value.trim() : '';
+export const validUsername = value => typeof value === 'string' && value.length >= 1 && value.length <= 64 && !/[\p{Cc}\p{Cf}]/u.test(value);
+
 export function passwordRecord(password) {
   const salt = randomBytes(16).toString('hex');
   return { salt, hash: scryptSync(password, salt, 64).toString('hex') };
@@ -16,6 +19,7 @@ export class Authentication {
     this.sessions = new Map();
     this.attempts = new Map();
   }
+  get adminRecord() { return typeof this.record === 'function' ? this.record() : this.record; }
   session(request) {
     const token = request.headers.cookie?.split(';').map(p => p.trim()).find(p => p.startsWith('palbox_session='))?.slice(15);
     if (!token) return null;
@@ -24,7 +28,9 @@ export class Authentication {
     if (!session || session.expires <= Date.now()) { this.sessions.delete(key); return null; }
     return { ...session, key };
   }
-  login(request, password, response) {
+  login(request, username, password, response) {
+    const record = this.adminRecord;
+    if (!record) throw failure('管理面板尚未初始化，请先设置管理员账号。', 409);
     const ip = request.socket.remoteAddress;
     const now = Date.now();
     for (const [key, value] of this.attempts) if (value.until <= now) this.attempts.delete(key);
@@ -32,7 +38,9 @@ export class Authentication {
     if (attempts.count >= 10 || this.attempts.size > 1000) throw failure('尝试过于频繁，请稍后再试。', 429);
     attempts.count++;
     this.attempts.set(ip, attempts);
-    if (typeof password !== 'string' || password.length > 1024 || !timingSafeEqual(scryptSync(password, this.record.salt, 64), Buffer.from(this.record.hash, 'hex'))) throw failure('管理密码不正确。', 401);
+    const nameMatches = normalizeUsername(username) === record.username;
+    const passwordMatches = typeof password === 'string' && password.length <= 1024 && timingSafeEqual(scryptSync(password, record.salt, 64), Buffer.from(record.hash, 'hex'));
+    if (!nameMatches || !passwordMatches) throw failure('用户名或密码不正确。', 401);
     this.attempts.delete(ip);
     for (const [key, value] of this.sessions) if (value.expires <= now) this.sessions.delete(key);
     if (this.sessions.size >= 100) this.sessions.delete(this.sessions.keys().next().value);

@@ -17,6 +17,32 @@ export function createManagementClient({ fetch, csrf = '' }) {
       }
       if (value.csrf) token = value.csrf;
       return value;
+    },
+    upload(path, file, { onProgress } = {}) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/' + path);
+        xhr.withCredentials = true;
+        xhr.timeout = 15 * 60 * 1000;
+        xhr.setRequestHeader('Content-Type', 'application/gzip');
+        xhr.setRequestHeader('X-Palbox-CSRF', token);
+        xhr.upload.onprogress = event => { if (event.lengthComputable && onProgress) onProgress(event.loaded / event.total); };
+        xhr.onload = () => {
+          let value;
+          try { value = JSON.parse(xhr.responseText); } catch { reject(new Error('管理服务返回了无效响应。')); return; }
+          if (xhr.status < 200 || xhr.status >= 300) {
+            const error = new Error(value.error || `请求失败（${xhr.status}）`);
+            error.status = xhr.status;
+            reject(error); return;
+          }
+          if (value.csrf) token = value.csrf;
+          resolve(value);
+        };
+        xhr.onerror = () => reject(new Error('上传失败，请检查网络连接。'));
+        xhr.ontimeout = () => reject(new Error('上传超时，请重试。'));
+        xhr.onabort = () => reject(new Error('上传已取消。'));
+        xhr.send(file);
+      });
     }
   };
 }

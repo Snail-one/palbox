@@ -22,7 +22,7 @@ export function createServer({ root = projectRoot, api } = {}) {
     ['/tests/shared/', path.join(root, 'tests/shared'), new Set(['.js'])],
     ['/', path.join(root, 'public'), new Set(contentTypes.keys())]
   ];
-  return http.createServer(async (request, response) => {
+  const server = http.createServer(async (request, response) => {
     const headers = { 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' };
     const send = (status, text) => {
       response.writeHead(status, { ...headers, 'Content-Type': 'text/plain; charset=utf-8' });
@@ -63,4 +63,6 @@ export function createServer({ root = projectRoot, api } = {}) {
       send(['ENOENT', 'ENOTDIR', 'EISDIR'].includes(error.code) ? 404 : 500, 'Unable to read asset');
     }
   });
+  server.requestTimeout = 30 * 60 * 1000;
+  return server;
 }

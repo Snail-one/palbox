@@ -4,6 +4,8 @@ import path from 'node:path';
 import { parse, decodeString } from '../../src/domain/config.js';
 
 const file = process.argv[2];
+const argvFile = process.argv[3];
+await writeFile(argvFile, JSON.stringify(process.argv.slice(4)));
 const values = new Map(parse(await readFile(file, 'utf8')).entries.map(e => [e.key, e.raw]));
 const password = decodeString(values.get('AdminPassword'));
 const saved = path.resolve(path.dirname(file), '../..');

@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './http-server.js';
 import { Manager } from './management/manager.js';
@@ -12,12 +11,7 @@ function port(value, name) {
 let manager;
 try {
   const listenPort = port(process.env.PORT || '8080', 'PORT');
-  const password = process.env.PALBOX_ADMIN_PASSWORD_FILE
-    ? (await readFile(process.env.PALBOX_ADMIN_PASSWORD_FILE, 'utf8')).trim()
-    : process.env.PALBOX_ADMIN_PASSWORD;
-  const args = JSON.parse(process.env.PALBOX_GAME_ARGS || '[]');
-  if (!Array.isArray(args) || args.some(v => typeof v !== 'string' || v.includes('\0'))) throw new Error('PALBOX_GAME_ARGS 必须是字符串 JSON 数组。');
-  manager = new Manager({ directory: process.env.PALBOX_DATA_DIR || fileURLToPath(new URL('../data', import.meta.url)), password, steamcmd: process.env.PALBOX_STEAMCMD || '/opt/steamcmd/steamcmd.sh', port: port(process.env.PALBOX_GAME_PORT || '8211', 'PALBOX_GAME_PORT'), webPort: listenPort, args });
+  manager = new Manager({ directory: process.env.PALBOX_DATA_DIR || fileURLToPath(new URL('../data', import.meta.url)), steamcmd: process.env.PALBOX_STEAMCMD || '/opt/steamcmd/steamcmd.sh', port: port(process.env.PALBOX_GAME_PORT || '8211', 'PALBOX_GAME_PORT'), webPort: listenPort });
   await manager.initialize();
   const api = createManagementApi(manager, { secureCookie: process.env.PALBOX_SECURE_COOKIE === 'true' });
   const server = createServer({ api });

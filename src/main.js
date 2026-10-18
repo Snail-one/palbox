@@ -7,6 +7,7 @@ import { createManagementClient, createRemoteRepository } from './services/manag
 async function start() {
   const bootstrap = await fetch('/api/bootstrap', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('无法连接 Palbox 管理服务。'); return r.json(); });
   if (bootstrap.mode !== 'managed') throw new Error('请启动 Palbox 管理服务。');
+  if (bootstrap.setupRequired) { window.location.replace('/setup.html'); return; }
   if (!bootstrap.authenticated) { window.location.replace('/login.html'); return; }
   const api = createManagementClient({ fetch: window.fetch.bind(window), csrf: bootstrap.csrf });
   const repository = createRemoteRepository({ api, ...await api.request('workspace') });

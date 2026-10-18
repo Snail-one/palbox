@@ -1,3 +1,5 @@
+import { createSaveImportDialog } from './save-import-dialog.js';
+
 export function createManagementPanel({ dom, api, ask, notify, getConfiguration }) {
   const { $, document } = dom;
   const section = document.createElement('section');
@@ -6,7 +8,13 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   section.innerHTML = `
     <div class="management-heading"><h2>游戏服务 <span id="game-state" class="save-status" data-state="pending">连接中</span></h2><a class="button secondary" href="#configuration">管理配置 →</a></div>
     <p class="management-note">管理服务器的安装、启动、停止与更新。</p>
-    <div class="management-actions"><button class="button secondary" data-action="install">安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop">停止</button><button class="button secondary" data-action="restart">重启</button><button class="button secondary" data-action="update">更新服务端</button></div>`;
+    <div class="management-actions"><button class="button secondary" data-action="install">安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop">停止</button><button class="button secondary" data-action="restart">重启</button><button class="button secondary" data-action="update">更新服务端</button></div>
+    <form id="game-args-settings">
+      <label for="game-args">启动参数（每行一个）</label>
+      <textarea id="game-args" rows="3" spellcheck="false" autocapitalize="off" autocomplete="off" aria-describedby="game-args-note" disabled></textarea>
+      <p id="game-args-note" class="management-note">保存后不会自动重启游戏服，将在下次启动或重启时生效。游戏端口由 PALBOX_GAME_PORT 控制，不能在这里设置 -port。</p>
+      <button class="button secondary" type="submit" disabled>保存启动参数</button>
+    </form>`;
   const metrics = document.createElement('dl');
   metrics.className = 'management-metrics';
   metrics.setAttribute('aria-label', '服务器运行信息');
@@ -35,7 +43,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   saves.className = 'management-panel save-management';
   saves.setAttribute('aria-labelledby', 'save-management-title');
   saves.innerHTML = `
-    <div class="management-heading"><div><h2 id="save-management-title">存档管理</h2><p class="management-note">官方自动备份与手动完整备份分开管理。</p></div><div class="management-actions"><button class="button secondary" data-action="save-world" disabled>保存世界</button><button class="button primary" data-action="backup" disabled>创建完整备份</button></div></div>
+    <div class="management-heading"><div><h2 id="save-management-title">存档管理</h2><p class="management-note">官方自动备份与手动完整备份分开管理。</p></div><div class="management-actions"><button class="button secondary" data-action="import-save" disabled><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg>导入存档</button><button class="button secondary" data-action="backup" disabled>创建完整备份</button><button class="button primary" data-action="save-world" disabled>保存世界</button></div></div>
     <div class="save-backup-plan"><div class="management-heading"><h3>官方自动备份 <span id="native-backup-state" class="save-status" data-state="pending">读取中</span></h3><a class="button secondary" href="#configuration">管理备份配置 →</a></div><p class="management-note">由游戏在运行中生成，无需停服。保留档位：30 秒 5 份、10 分钟 6 份、1 小时 12 份、1 天 7 份。修改「自动备份世界」后需应用配置。</p><p id="native-backup-note" class="management-note"></p><div class="save-backup-heading"><h3>官方存档备份</h3><span id="native-backup-summary" role="status">正在读取…</span></div><div id="native-backups">正在读取官方备份…</div></div>
     <div class="save-backup-heading"><h3>完整备份归档</h3><span id="save-backup-summary" role="status">正在读取…</span></div><p class="management-note">包含世界、玩家存档和游戏配置。手动创建完整备份时会先存档并停服，完成后重新启动；恢复任何备份前都会先备份当前数据。</p>
     <form id="backup-settings"><label>每类完整备份保留数量<input id="backup-retention" disabled type="number" min="1" max="100" required></label><button class="button secondary" type="submit" disabled>保存设置</button></form>
@@ -57,12 +65,12 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
   document.querySelector('.bottom-note > span:last-child').textContent = '配置自动保存 · 应用后在游戏中生效';
   const actionButtons = [...section.querySelectorAll('[data-action]'), ...saves.querySelectorAll('[data-action]'), ...deployment.querySelectorAll('[data-action]')];
   actionButtons.forEach(button => { button.disabled = true; });
-  const names = { install: '安装服务端', start: '启动', stop: '停止', restart: '重启', update: '更新服务端', apply: '应用配置', backup: '创建备份', restore: '恢复备份', 'restore-native': '恢复官方备份', 'save-world': '保存世界', announce: '发送广播', kick: '移出玩家' };
+  const names = { install: '安装服务端', start: '启动', stop: '停止', restart: '重启', update: '更新服务端', apply: '应用配置', backup: '创建备份', restore: '恢复备份', 'restore-native': '恢复官方备份', 'import-save': '导入存档', 'save-world': '保存世界', announce: '发送广播', kick: '移出玩家' };
   let polling = false;
   let stopped = false;
   let lastTask;
   let lastStatus;
-  let settingsLoaded = false;
+  let settingsRequest = null;
   let logChannel = 'game';
   let logRequest = 0;
   function error(message) { $('management-error').textContent = message; $('management-error').hidden = !message; }
@@ -87,7 +95,13 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
       await refresh();
     } catch (caught) { error(caught.message); }
   }
-  for (const button of actionButtons) button.addEventListener('click', () => action(button.dataset.action));
+  const saveImport = createSaveImportDialog({ dom, api, onImport: async id => {
+    error('');
+    const task = await api.request('tasks', { method: 'POST', body: { action: 'import-save', id } });
+    $('management-task').textContent = `${names['import-save']}：${task.message}`;
+    await refresh();
+  } });
+  for (const button of actionButtons) button.addEventListener('click', () => button.dataset.action === 'import-save' ? saveImport.open() : action(button.dataset.action));
   async function loadBackups() {
     const backups = await api.request('backups');
     $('save-backup-summary').textContent = `${backups.length} 份 · ${(backups.reduce((total, backup) => total + backup.bytes, 0) / 1024 / 1024).toFixed(1)} MB`;
@@ -162,7 +176,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
       $('game-port').textContent = value.port;
       for (const button of actionButtons) {
         const name = button.dataset.action;
-        button.disabled = Boolean(value.task) || (name === 'install' && value.installed) || (['start', 'update', 'restart'].includes(name) && !value.installed) || (name === 'start' && value.running) || (['stop', 'restart', 'save-world'].includes(name) && !value.running);
+        button.disabled = Boolean(value.task) || (name === 'install' && value.installed) || (['start', 'update', 'restart', 'import-save'].includes(name) && !value.installed) || (name === 'start' && value.running) || (['stop', 'restart', 'save-world'].includes(name) && !value.running);
         if (name === 'apply') button.textContent = value.running ? '应用并重启' : '应用配置';
       }
       const task = value.task || value.tasks[0];
@@ -173,11 +187,12 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
         if (task.state !== 'running') lastTask = task.id;
       }
       players(value.players);
-      if (!$('game-page').hidden && !$('game-overview').hidden) await loadLogs();
-      if (!$('game-page').hidden && !$('game-saves').hidden) {
-        if (!settingsLoaded) await loadBackupSettings();
-        await Promise.all([loadNativeBackups(), loadBackups()]);
-      }
+      const gameVisible = !$('game-page').hidden;
+      const overviewVisible = gameVisible && !$('game-overview').hidden;
+      const savesVisible = gameVisible && !$('game-saves').hidden;
+      if (overviewVisible || savesVisible) await loadSettings();
+      if (overviewVisible) await loadLogs();
+      if (savesVisible) await Promise.all([loadNativeBackups(), loadBackups()]);
     } catch (caught) {
       error(caught.message);
       actionButtons.forEach(button => { button.disabled = true; });
@@ -195,16 +210,31 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
     $('manager-logs').textContent = '正在读取日志…';
     loadLogs().catch(caught => error(caught.message));
   });
-  async function loadBackupSettings() {
-    const settings = await api.request('settings');
-    $('backup-retention').value = settings.backupRetention;
-    settingsLoaded = true;
-    $('backup-settings').querySelectorAll('input, button').forEach(control => { control.disabled = false; });
+  function loadSettings() {
+    settingsRequest ??= api.request('settings').then(settings => {
+      $('backup-retention').value = settings.backupRetention;
+      $('game-args').value = settings.gameArgs.join('\n');
+      for (const control of [...$('backup-settings').querySelectorAll('input, button'), ...$('game-args-settings').querySelectorAll('textarea, button')]) control.disabled = false;
+      return settings;
+    }).catch(caught => { settingsRequest = null; throw caught; });
+    return settingsRequest;
   }
   $('backup-settings').addEventListener('submit', async event => {
     event.preventDefault();
     try { await api.request('settings', { method: 'PUT', body: { backupRetention: Number($('backup-retention').value) } }); notify('完整备份保留设置已保存'); }
     catch (caught) { error(caught.message); }
+  });
+  $('game-args-settings').addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = event.currentTarget.querySelector('button[type="submit"]');
+    const gameArgs = $('game-args').value.split('\n').map(line => line.endsWith('\r') ? line.slice(0, -1) : line).filter(line => line.trim() !== '');
+    button.disabled = true;
+    try {
+      const saved = await api.request('settings', { method: 'PUT', body: { gameArgs } });
+      $('game-args').value = saved.gameArgs.join('\n');
+      notify('启动参数已保存，将在下次启动或重启游戏服时生效');
+    } catch (caught) { error(caught.message); }
+    finally { button.disabled = false; }
   });
   $('manager-announce').addEventListener('submit', event => { event.preventDefault(); action('announce', { message: $('announce-message').value }, false); });
   $('manager-logout').addEventListener('click', async () => {

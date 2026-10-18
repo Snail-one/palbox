@@ -35,8 +35,8 @@ export PALBOX_AUTO_START="${PALBOX_AUTO_START:-false}"
 
 echo "游戏管理：http://$HOST:$PORT/#game"
 echo "配置管理：http://$HOST:$PORT/#configuration"
-echo '登录时使用首次初始化设置的管理密码。'
-echo "数据目录：$PALBOX_DATA_DIR（已有数据沿用原登录密码）"
+echo '首次打开页面时请在浏览器中设置管理员用户名和密码。'
+echo "数据目录：$PALBOX_DATA_DIR（已有数据沿用原管理员账号）"
 if [[ "$watch" == true ]]; then
   echo '后端修改自动重启，前端修改后刷新页面。按 Ctrl+C 停止。'
   exec "$node_bin" --watch server/index.js
