@@ -124,7 +124,7 @@ export class Runtime {
     this.ready = false;
     if (force) this.kill(child, 'SIGKILL');
     else {
-      try { await this.rest('save', {}); await this.rest('shutdown', { waittime: 0, message: 'Palbox 正在维护服务器' }); }
+      try { await this.rest('save', {}); await this.rest('shutdown', { waittime: 5, message: 'Palbox 正在维护服务器' }); }
       catch (error) {
         if (requireSave) { this.ready = wasReady; throw error; }
         this.log('palbox', `API 关服失败，发送 SIGTERM：${error.message}\n`);
