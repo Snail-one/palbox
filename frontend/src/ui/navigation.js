@@ -44,8 +44,7 @@ export function createNavigation({ dom, window, isDirty, onSave, onConfiguration
     }
     $('configuration-page').hidden = game;
     $('configuration-actions').hidden = game;
-    const deployment = document.querySelector('.configuration-deployment');
-    if (deployment) deployment.hidden = game || route.view === 'profiles';
+    $('configuration-apply').hidden = game || route.view === 'profiles';
     if (!game && route.view !== 'profiles') onConfigurationView(route.view);
     $('current-page').textContent = name;
     $('current-section').hidden = false;

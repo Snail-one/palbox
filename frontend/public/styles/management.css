@@ -7,10 +7,10 @@
 }
 .management-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .management-heading h2 { font-size: 17px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.configuration-deployment { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 22px; margin-bottom: 22px; background: #fff8f1; border: 1px solid #f0d9c5; border-radius: var(--radius); }
-.configuration-deployment h2 { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 14px; }
-.configuration-deployment p { font-size: 11px; line-height: 1.8; margin-top: 6px; }
-.configuration-deployment > .button { flex-shrink: 0; }
+.topbar:has(#configuration-actions:not([hidden])) { height: auto; min-height: 73px; flex-wrap: wrap; padding-top: 12px; padding-bottom: 12px; }
+.topbar .page-actions { align-items: center; }
+.configuration-apply { display: flex; align-items: center; gap: 10px; border-left: 1px solid var(--line); padding-left: 12px; }
+.configuration-apply .save-status, .configuration-apply .button { white-space: nowrap; }
 .management-feedback:has(> :not([hidden])) { margin-top: 12px; }
 .management-feedback .management-task { margin: 0; }
 .management-feedback .alert { margin: 0 0 8px; }
@@ -81,9 +81,13 @@ main:has(#game-page:not([hidden]) #game-overview:not([hidden])) { display: flex;
 #manager-logs { flex: 1; height: 0; min-height: clamp(160px, 25dvh, 240px); min-width: 0; overflow: auto; padding: 14px; border-radius: 6px; background: #202124; color: #f4f4f5; font: 11px/1.7 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; margin: 10px 0 0; }
 .log-heading { flex-wrap: wrap; }
 .log-type-buttons button.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: none; }
-@media (max-width: 1100px) {
+@media (max-width: 1400px) {
   .topbar { height: auto; min-height: 65px; flex-wrap: wrap; padding-top: 12px; padding-bottom: 12px; }
   .topbar .page-actions { order: 3; width: 100%; justify-content: flex-end; margin: 0; }
+}
+@media (max-width: 760px) {
+  .topbar .configuration-apply { grid-column: 1 / -1; justify-content: flex-end; border-left: 0; border-top: 1px solid var(--line); padding: 10px 0 0; }
+  .configuration-apply .button { flex: 1; }
 }
 .backup-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 11px; }
 .backup-row > span { flex: 1; min-width: 150px; overflow-wrap: anywhere; }
@@ -99,7 +103,6 @@ main:has(#game-page:not([hidden]) #game-overview:not([hidden])) { display: flex;
   .log-type-buttons button { padding: 8px 6px; }
   .topbar-session { gap: 10px; }
   .save-management .management-heading > .management-actions { width: 100%; }
-  .configuration-deployment { flex-direction: column; align-items: stretch; gap: 14px; padding: 16px; }
   #manager-logout { font-size: 10px; padding: 7px; }
   .management-panel { padding: 15px; }
   .management-heading { align-items: start; }

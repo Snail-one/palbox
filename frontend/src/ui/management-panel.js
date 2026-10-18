@@ -58,17 +58,12 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration 
     <form id="backup-settings"><label>每类完整备份保留数量<input id="backup-retention" disabled type="number" min="1" max="100" required></label><button class="button secondary" type="submit" disabled>保存设置</button></form>
     <div id="manager-backups">正在读取完整备份…</div>`;
   $('game-saves').append(saves);
-  const deployment = document.createElement('section');
-  deployment.className = 'configuration-deployment';
-  deployment.setAttribute('aria-label', '配置应用');
-  deployment.hidden = $('configuration-page').hidden || $('configuration-editor').hidden;
-  deployment.innerHTML = `<div><h2>应用到游戏 <span id="game-config-state" class="save-status" data-state="pending">连接中</span></h2><p>有效修改自动保存到服务器。应用后写入游戏；运行中的服务器会先存档、停服、备份，再应用并重启。</p></div><button class="button primary" data-action="apply" disabled>应用配置</button>`;
-  $('configuration-page').prepend(deployment);
+  const configurationApply = $('configuration-apply');
   const logout = document.createElement('button');
   logout.id = 'manager-logout'; logout.className = 'button secondary'; logout.textContent = '退出登录';
   document.querySelector('.topbar-session').append(logout);
   document.querySelector('.bottom-note > span:last-child').textContent = '配置自动保存 · 应用后在游戏中生效';
-  const actionButtons = [...section.querySelectorAll('[data-action]'), ...saves.querySelectorAll('[data-action]'), ...deployment.querySelectorAll('[data-action]')];
+  const actionButtons = [...section.querySelectorAll('[data-action]'), ...saves.querySelectorAll('[data-action]'), ...configurationApply.querySelectorAll('[data-action]')];
   actionButtons.forEach(button => { button.disabled = true; });
   const names = { install: '安装服务端', start: '启动', stop: '停止', 'force-stop': '强制停止', restart: '重启', update: '更新服务端', apply: '应用配置', backup: '创建备份', restore: '恢复备份', 'restore-native': '恢复官方备份', 'import-save': '导入存档', 'save-world': '保存世界', announce: '发送广播', kick: '移出玩家', ban: '封禁玩家', unban: '解封玩家' };
   let polling = false;
