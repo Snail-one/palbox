@@ -45,7 +45,10 @@ test('管理 API 登录、权限、并发保存与路径边界', { skip: process
   const changedDefault = (await readFile(defaultFile, 'utf8')).replace('ExpRate=1.000000', 'ExpRate=6.000000');
   await writeFile(defaultFile, changedDefault);
   const refreshed = await (await f.request('/api/workspace')).json();
-  assert.equal(refreshed.workspace.profiles.find(profile => profile.locked).source, changedDefault);
+  const refreshedLocked = refreshed.workspace.profiles.find(profile => profile.locked);
+  assert.equal(value(refreshedLocked.source, 'ExpRate'), '6.000000');
+  assert.equal(value(refreshedLocked.source, 'RESTAPIEnabled'), 'True');
+  assert.ok(value(refreshedLocked.source, 'AdminPassword'));
   const lockedProfile = refreshed.workspace.profiles.find(profile => profile.locked);
   const workingProfile = refreshed.workspace.profiles.find(profile => profile.id === refreshed.workspace.activeId);
   lockedProfile.source = workingProfile.source.replace('ExpRate=2,', 'ExpRate=5,');

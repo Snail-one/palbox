@@ -1,22 +1,28 @@
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
-import { parse, serialize, encodeString } from '../../shared/domain/config.js';
+import { parse, serialize, encodeString, decodeString } from '../../shared/domain/config.js';
 import {
   createProfile, createWorkspace, validateWorkspace,
   GAME_DEFAULT_PROFILE_ID, GAME_DEFAULT_PROFILE_NAME, OFFICIAL_DEFAULT_ORIGIN, DERIVED_DEFAULT_ORIGIN
 } from '../../shared/domain/workspace.js';
 import { jsonWrite, readJson, failure } from './files.js';
 
-export function managedTemplate(port, source) {
+export function managedTemplate(port, source, { password } = {}) {
   const changes = new Map([
-    ['RESTAPIEnabled', 'True'], ['AdminPassword', encodeString(randomBytes(24).toString('hex'))], ['PublicPort', String(port)]
+    ['RESTAPIEnabled', 'True'], ['AdminPassword', encodeString(password || randomBytes(24).toString('hex'))], ['PublicPort', String(port)]
   ]);
   const parsed = parse(source);
   const keys = new Set(parsed.entries.map(entry => entry.key));
   const missing = [...changes].filter(([key]) => !keys.has(key));
   if (missing.length) source = source.slice(0, parsed.end) + (parsed.entries.length ? ',' : '') + missing.map(([key, raw]) => `${key}=${raw}`).join(',') + source.slice(parsed.end);
   return serialize(parse(source), changes);
+}
+
+function sourcePassword(source) {
+  if (typeof source !== 'string') return '';
+  try { return decodeString(parse(source).entries.find(entry => entry.key === 'AdminPassword')?.raw || '""'); }
+  catch { return ''; }
 }
 
 export function validateConfigurationWorkspace(value) {
@@ -116,18 +122,24 @@ export class ManagementStore {
     }
     if (source !== null) {
       if (!locked) {
-        locked = createProfile(GAME_DEFAULT_PROFILE_NAME, source, { id: () => GAME_DEFAULT_PROFILE_ID, origin: OFFICIAL_DEFAULT_ORIGIN, locked: true });
+        const managed = managedTemplate(this.gamePort, source);
+        locked = createProfile(GAME_DEFAULT_PROFILE_NAME, managed, { id: () => GAME_DEFAULT_PROFILE_ID, origin: OFFICIAL_DEFAULT_ORIGIN, locked: true });
         workspace.profiles.push(locked);
         changed = true;
       } else {
-        // The file is the initial input. Once parameters are edited, keep the
-        // working source and only move the restore baseline forward.
+        // Keep the generated admin password stable, enable REST management, and
+        // follow the file only while the user has not edited the working source.
+        const password = sourcePassword(locked.initialSource) || sourcePassword(locked.source);
+        const managed = managedTemplate(this.gamePort, source, { password });
         const unedited = locked.source === locked.initialSource;
-        const nextSource = unedited || !locked.source ? source : locked.source;
-        if (locked.name !== GAME_DEFAULT_PROFILE_NAME || locked.origin !== OFFICIAL_DEFAULT_ORIGIN || locked.locked !== true || locked.initialSource !== source || locked.source !== nextSource) {
+        let nextSource = unedited || !locked.source ? managed : locked.source;
+        // An edited default may predate password generation (or have it cleared).
+        // Keep its parameters but restore the managed credentials.
+        if (!unedited && nextSource && !sourcePassword(nextSource)) nextSource = managedTemplate(this.gamePort, nextSource, { password });
+        if (locked.name !== GAME_DEFAULT_PROFILE_NAME || locked.origin !== OFFICIAL_DEFAULT_ORIGIN || locked.locked !== true || locked.initialSource !== managed || locked.source !== nextSource) {
           Object.assign(locked, {
             name: GAME_DEFAULT_PROFILE_NAME, origin: OFFICIAL_DEFAULT_ORIGIN, locked: true,
-            source: nextSource, initialSource: source, updatedAt: new Date().toISOString()
+            source: nextSource, initialSource: managed, updatedAt: new Date().toISOString()
           });
           changed = true;
         }

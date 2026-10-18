@@ -40,7 +40,12 @@ test('初始默认配置读取游戏官方文件，保留注释、未知参数�
   assert.ok(locked);
   assert.equal(locked.name, GAME_DEFAULT_PROFILE_NAME);
   assert.equal(locked.origin, OFFICIAL_DEFAULT_ORIGIN);
-  assert.equal(locked.source, official, '只读默认项直接使用游戏默认文件原文');
+  const lockedSettings = values(locked.source);
+  assert.equal(lockedSettings.get('ServerName'), '"Official World"');
+  assert.equal(lockedSettings.get('RESTAPIEnabled'), 'True');
+  assert.equal(lockedSettings.get('PublicPort'), '9000');
+  assert.ok(decodeString(lockedSettings.get('AdminPassword')), '默认项自动生成管理员密码');
+  const lockedPassword = decodeString(lockedSettings.get('AdminPassword'));
   assert.notEqual(store.active().id, locked.id);
   const changed = official.replace('ExpRate=2.500000', 'ExpRate=8.000000');
   await writeFile(file, changed);
@@ -48,7 +53,10 @@ test('初始默认配置读取游戏官方文件，保留注释、未知参数�
   const restarted = new ManagementStore(directory, 9000);
   await restarted.initialize();
   assert.equal(restarted.active().source, source, '更新官方文件不覆盖已经保存的配置');
-  assert.equal(restarted.workspace.profiles.find(profile => profile.locked).source, changed, '只读默认项跟随官方文件更新');
+  const restartedLocked = restarted.workspace.profiles.find(profile => profile.locked);
+  assert.equal(values(restartedLocked.source).get('ExpRate'), '8.000000', '只读默认项跟随官方文件更新');
+  assert.equal(decodeString(values(restartedLocked.source).get('AdminPassword')), lockedPassword, '密码跨同步保留');
+  assert.equal(restartedLocked.source, restartedLocked.initialSource);
 });
 
 test('未安装时只建立管理占位配置，安装后导入官方文件并更新恢复基准', async t => {
@@ -70,7 +78,9 @@ test('未安装时只建立管理占位配置，安装后导入官方文件并�
   assert.equal(restarted.active().initialSource, restarted.active().source);
   const locked = restarted.workspace.profiles.find(profile => profile.locked);
   assert.ok(locked);
-  assert.equal(locked.source, official);
+  assert.equal(values(locked.source).get('ServerName'), '"Official World"');
+  assert.equal(values(locked.source).get('RESTAPIEnabled'), 'True');
+  assert.ok(decodeString(values(locked.source).get('AdminPassword')));
   assert.equal(await restarted.importDefaultIfPending(), false);
   assert.equal(JSON.parse(await readFile(restarted.file, 'utf8')).pendingDefault, undefined);
 });
@@ -85,7 +95,10 @@ test('安装前已修改的配置和现有游戏配置不会被默认文件覆�
   await writeFile(file, official);
   assert.equal(await store.importDefaultIfPending(), false);
   assert.equal(store.active().source, 'OptionSettings=(ServerName="My World")');
-  assert.equal(store.workspace.profiles.find(profile => profile.locked).source, official);
+  const locked = store.workspace.profiles.find(profile => profile.locked);
+  assert.equal(values(locked.source).get('ServerName'), '"Official World"');
+  assert.equal(values(locked.source).get('RESTAPIEnabled'), 'True');
+  assert.ok(decodeString(values(locked.source).get('AdminPassword')));
   await rm(store.file);
   const config = path.join(directory, 'server/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini');
   await mkdir(path.dirname(config), { recursive: true });
@@ -175,7 +188,10 @@ test('游戏默认配置可修改参数并应用，但名称和来源由服务�
   const store = new ManagementStore(directory, 9000);
   await store.initialize();
   const workingId = store.active().id;
-  const lockedId = store.workspace.profiles.find(profile => profile.locked).id;
+  const initialLocked = store.workspace.profiles.find(profile => profile.locked);
+  const lockedId = initialLocked.id;
+  const initialBaseline = initialLocked.initialSource;
+  const generatedPassword = decodeString(values(initialLocked.source).get('AdminPassword'));
   const editedSource = 'OptionSettings=(ServerName="Edited Default",ExpRate=5)';
 
   // Parameter edits are accepted; identity fields and the restore baseline stay canonical.
@@ -192,7 +208,7 @@ test('游戏默认配置可修改参数并应用，但名称和来源由服务�
   assert.equal(kept.name, GAME_DEFAULT_PROFILE_NAME);
   assert.equal(kept.origin, OFFICIAL_DEFAULT_ORIGIN);
   assert.equal(kept.locked, true);
-  assert.equal(kept.initialSource, official);
+  assert.equal(kept.initialSource, initialBaseline);
   assert.equal(current.activeId, workingId);
 
   // Removal is still corrected and the edited working source is retained.
@@ -209,19 +225,25 @@ test('游戏默认配置可修改参数并应用，但名称和来源由服务�
   await writeFile(file, changed);
   await store.syncDefaultProfile();
   kept = store.snapshot().workspace.profiles.find(profile => profile.id === lockedId);
-  assert.equal(kept.source, editedSource);
-  assert.equal(kept.initialSource, changed);
+  assert.equal(values(kept.source).get('ServerName'), '"Edited Default"');
+  assert.equal(values(kept.source).get('RESTAPIEnabled'), 'True');
+  assert.equal(decodeString(values(kept.source).get('AdminPassword')), generatedPassword);
+  assert.equal(values(kept.initialSource).get('ExpRate'), '7.000000');
+  assert.equal(values(kept.initialSource).get('RESTAPIEnabled'), 'True');
+  assert.equal(decodeString(values(kept.initialSource).get('AdminPassword')), generatedPassword);
 
-  // Resetting to the file makes the entry follow later file updates again.
+  // Resetting to the managed baseline makes the entry follow later file updates again.
   snapshot = store.snapshot();
-  snapshot.workspace.profiles.find(profile => profile.id === lockedId).source = changed;
+  const baseline = store.snapshot().workspace.profiles.find(profile => profile.id === lockedId).initialSource;
+  snapshot.workspace.profiles.find(profile => profile.id === lockedId).source = baseline;
   await store.update(snapshot.workspace, snapshot.revision);
   const nextFile = changed.replace('ExpRate=7.000000', 'ExpRate=9.000000');
   await writeFile(file, nextFile);
   await store.syncDefaultProfile();
   kept = store.snapshot().workspace.profiles.find(profile => profile.id === lockedId);
-  assert.equal(kept.source, nextFile);
-  assert.equal(kept.initialSource, nextFile);
+  assert.equal(kept.source, kept.initialSource);
+  assert.equal(values(kept.source).get('ExpRate'), '9.000000');
+  assert.equal(decodeString(values(kept.source).get('AdminPassword')), generatedPassword);
 
   // The default entry can be selected and therefore applied by the manager.
   snapshot = store.snapshot();
@@ -263,6 +285,9 @@ test('旧版官方来源配置迁移为可编辑副本，并自动补充只读�
   assert.equal(store.active().id, 'legacy');
   const locked = store.workspace.profiles.find(candidate => candidate.locked);
   assert.ok(locked);
-  assert.equal(locked.source, official);
+  const lockedSettings = values(locked.source);
+  assert.equal(lockedSettings.get('ServerName'), '"Official World"');
+  assert.equal(lockedSettings.get('RESTAPIEnabled'), 'True');
+  assert.ok(decodeString(lockedSettings.get('AdminPassword')));
   assert.equal(locked.origin, OFFICIAL_DEFAULT_ORIGIN);
 });
