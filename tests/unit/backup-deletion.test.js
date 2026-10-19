@@ -19,7 +19,7 @@ async function fixture(t) {
   return { manager, directory, task };
 }
 
-test('各类完整备份均可逐条删除，不停服且不改变当前存档', async t => {
+test('各类世界备份均可逐条删除，不停服且不改变当前存档', async t => {
   const { manager, directory, task } = await fixture(t);
   const game = {};
   manager.runtime.game = game;

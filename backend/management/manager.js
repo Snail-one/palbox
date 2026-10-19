@@ -251,17 +251,17 @@ export class Manager extends EventEmitter {
     authorize();
     const allowed = ['install', 'update', 'start', 'stop', 'force-stop', 'restart', 'apply', 'backup', 'delete-backup', 'restore', 'restore-native', 'import-save', 'reset-save', 'save-world', 'announce', 'kick', 'ban', 'unban'];
     if (!allowed.includes(action)) throw failure('管理操作不存在。', 404);
-    if (action === 'backup' && payload.category && payload.category !== 'manual') throw failure('定时备份已交由游戏官方机制，面板仅支持手动完整备份。');
+    if (action === 'backup' && payload.category && payload.category !== 'manual') throw failure('定时备份已交由游戏官方机制，面板仅支持手动创建世界备份。');
     if (this.closing) throw failure('管理服务正在关闭。', 503);
     if (this.busy) throw failure('已有任务正在执行，请稍后再试。', 409);
     if (action === 'update' && this.runtime.game) throw failure('请先停止游戏服再更新服务端。', 409);
-    if (action === 'backup' && this.runtime.game) throw failure('请先停止游戏服再创建完整备份。', 409);
+    if (action === 'backup' && this.runtime.game) throw failure('请先停止游戏服再创建世界备份。', 409);
     if (action === 'reset-save') this.requireResetAllowed(payload);
     if (action === 'backup') {
       await this.requireWorldSave();
       if (this.closing) throw failure('管理服务正在关闭。', 503);
       if (this.busy) throw failure('已有任务正在执行，请稍后再试。', 409);
-      if (this.runtime.game) throw failure('请先停止游戏服再创建完整备份。', 409);
+      if (this.runtime.game) throw failure('请先停止游戏服再创建世界备份。', 409);
     }
     authorize();
     const task = { id: randomUUID(), action, state: 'running', message: '任务已开始', createdAt: new Date().toISOString() };
@@ -432,7 +432,7 @@ export class Manager extends EventEmitter {
       const target = await this.targetWorld();
       if (wasRunning) await this.stopGame({ requireSave: true });
       if (target !== await this.targetWorld()) throw failure('当前世界已改变，请刷新后重试。', 409);
-      task.message = '正在创建导入前完整备份';
+      task.message = '正在创建导入前备份';
       task.backup = await this.backup('before-import');
       const ensured = await this.native.ensureWorld(target);
       if (ensured.created) created = ensured.directory;
@@ -489,7 +489,7 @@ export class Manager extends EventEmitter {
   }
   async backup(category, protectedId = null) {
     const directory = await backupDirectory(this.directory, category);
-    this.servicePhase('backing', '正在创建当前世界的完整备份。');
+    this.servicePhase('backing', '正在创建当前世界的备份。');
     // Stop the process before archiving so world/player files belong to one save.
     if (this.runtime.game) throw failure('创建备份前需要停止游戏服。', 409);
     const world = await this.backupWorld();
@@ -807,7 +807,7 @@ export class Manager extends EventEmitter {
     if (!hasRetention && !hasRetentions && !hasAutoStart && !hasShutdownWait && !hasShutdownMessage && !hasArgs && !hasInstallArgs) throw failure('请提供要保存的设置。');
     const next = { ...this.settings, gameArgs: [...this.gameArgs], installArgs: [...this.installArgs] };
     if (hasRetention) {
-      if (!Number.isInteger(value.backupRetention) || value.backupRetention < 1 || value.backupRetention > MAX_BACKUP_RETENTION) throw failure(`完整备份保留数量须为 1 到 ${MAX_BACKUP_RETENTION}。`);
+      if (!Number.isInteger(value.backupRetention) || value.backupRetention < 1 || value.backupRetention > MAX_BACKUP_RETENTION) throw failure(`世界备份保留数量须为 1 到 ${MAX_BACKUP_RETENTION}。`);
       next.backupRetention = value.backupRetention;
       next.backupRetentions = Object.fromEntries(categories.map(category => [category, value.backupRetention]));
     }

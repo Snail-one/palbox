@@ -83,6 +83,6 @@ const path = require('node:path');
     await page.setViewportSize({ width: 390, height: 844 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     assert.deepEqual(errors, []);
-    console.log('PASS 确认期间启动时后端拒绝，执行期间锁定启动，清空所有存档并保留配置和完整备份');
+    console.log('PASS 确认期间启动时后端拒绝，执行期间锁定启动，清空所有存档并保留配置和世界备份');
   } finally { release?.(); await f.manager.operation; await browser?.close(); await f.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

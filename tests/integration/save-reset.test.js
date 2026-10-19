@@ -58,7 +58,7 @@ test('重置必须登录、通过 CSRF 且准确输入 delete，只清空 0 目�
   assert.equal(f.runtime.game, null);
 });
 
-test('重置前完整备份失败时保留所有存档，不开始清空', async t => {
+test('重置前世界备份失败时保留所有存档，不开始清空', async t => {
   const f = await managementFixture(); t.after(() => f.close()); await f.login();
   const file = path.join(f.runtime.saved, 'SaveGames/0/WORLD/Level.sav');
   await mkdir(path.dirname(file), { recursive: true });

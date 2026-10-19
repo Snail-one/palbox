@@ -4,7 +4,7 @@ export function createNavigation({ dom, window, isDirty, onSave, onConfiguration
     '#game': { page: 'game', view: 'overview', title: '服务器概况' },
     '#game/players': { page: 'game', view: 'players', title: '玩家管理' },
     '#saves': { page: 'saves', view: 'native', title: '官方备份' },
-    '#saves/archives': { page: 'saves', view: 'archives', title: '完整备份' },
+    '#saves/archives': { page: 'saves', view: 'archives', title: '世界备份' },
     '#game/saves': { page: 'saves', view: 'native', title: '官方备份' },
     '#configuration': { page: 'configuration', view: 'editor', mode: 'form', title: '配置编辑' },
     '#configuration/advanced': { page: 'configuration', view: 'editor', mode: 'advanced', title: '配置编辑' },

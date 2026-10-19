@@ -47,7 +47,7 @@ test('缺失、空目录、配置文件、空存档和链接不能冒充可备�
   await rejected();
 });
 
-test('完整备份与恢复只作用于当前世界，保留配置、封禁名单和旧世界目录', async t => {
+test('世界备份与恢复只作用于当前世界，保留配置、封禁名单和旧世界目录', async t => {
   const { manager, runtime, directory } = await fixture(t);
   const world = path.join(runtime.saved, 'SaveGames/0/WORLD1');
   await mkdir(path.join(world, 'Players'), { recursive: true });
