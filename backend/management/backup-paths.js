@@ -2,7 +2,7 @@ import path from 'node:path';
 import { lstat, mkdir } from 'node:fs/promises';
 import { failure } from './files.js';
 
-export const BACKUP_CATEGORIES = Object.freeze(['manual', 'before-restore', 'before-import', 'before-reset', 'scheduled', 'before-update']);
+export const BACKUP_CATEGORIES = Object.freeze(['manual', 'before-restore', 'before-import', 'before-reset']);
 
 // The configured data directory is trusted. Reject links beneath it before any
 // backup operation; filesystem permissions still need to exclude hostile local writers.

@@ -11,17 +11,13 @@ const BACKUP_GROUPS = {
   manual: '手动备份',
   'before-restore': '恢复前备份',
   'before-import': '导入前备份',
-  'before-reset': '重置前备份',
-  scheduled: '旧定时归档',
-  'before-update': '历史更新前备份'
+  'before-reset': '重置前备份'
 };
 const BACKUP_GROUP_DETAILS = {
   manual: ['file', '手动创建，用于日常留档', '停止游戏后，可创建第一份完整备份。'],
   'before-restore': ['restore', '恢复备份前自动保存当前数据', '恢复备份时，会自动在这里保留当前数据。'],
   'before-import': ['upload', '导入外部存档前自动保存', '导入存档时，会自动在这里保留原存档。'],
-  'before-reset': ['shield', '清空世界存档前自动保存', '重置存档时，会先在这里保留完整备份。'],
-  scheduled: ['restore', '旧版定时任务创建的归档', ''],
-  'before-update': ['server', '旧版更新前创建的归档', '']
+  'before-reset': ['shield', '清空世界存档前自动保存', '重置存档时，会先在这里保留完整备份。']
 };
 
 function uptimeLabel(seconds) {
@@ -347,7 +343,6 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     const groups = new Map();
     for (const [category, title] of Object.entries(BACKUP_GROUPS)) {
       const entries = backups.filter(backup => backup.category === category);
-      if (!entries.length && ['scheduled', 'before-update'].includes(category)) continue;
       const group = document.createElement('section'); group.className = 'backup-category'; group.dataset.backupCategory = category;
       const [icon, description, emptyDescription] = BACKUP_GROUP_DETAILS[category];
       const header = document.createElement('div'); header.className = 'backup-category-header';

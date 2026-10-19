@@ -355,7 +355,35 @@ main:has(#game-page:not([hidden])), main:has(#login-logs-page:not([hidden])) { d
 }
 
 #login-password-step, #login-totp-step { display: grid; gap: 12px; }
-#login-totp-step input, #security-code { font-family: var(--mono); letter-spacing: .12em; }
+#login-totp-step input, #security-code { font-family: var(--mono); }
+#security-code { letter-spacing: .12em; }
+.login-card[data-step="verification"] .eyebrow { display: none; }
+.login-verification-icon { display: grid; place-items: center; width: 48px; height: 48px; margin-bottom: 16px; border-radius: 14px; background: var(--accent-soft); color: var(--accent); }
+.login-verification-icon svg { width: 28px; height: 28px; }
+.login-progress { display: flex; gap: 20px; padding: 0 0 20px; margin: 0 0 20px; border-bottom: 1px solid var(--line); list-style: none; }
+.login-progress li { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--muted); }
+.login-progress li > span:first-child { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--input-bg); font-size: 11px; }
+.login-progress li[aria-current="step"] { color: var(--accent); font-weight: 600; }
+.login-progress li[aria-current="step"] > span:first-child { background: var(--accent-soft); }
+.login-account { margin: 0 0 4px; padding: 9px 12px; background: var(--input-bg); border-radius: 6px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+#login-code { width: 100%; height: 60px; padding: 10px 12px; text-align: center; font-size: 28px; letter-spacing: .32em; font-variant-numeric: tabular-nums; }
+#login-code::placeholder { color: var(--muted); opacity: .45; }
+#login-code:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+#login-code[aria-invalid="true"] { border-color: var(--red); }
+.login-card[data-method="recovery"] #login-code { text-align: left; font-size: 14px; letter-spacing: .02em; }
+.login-code-help { font-size: 11px; line-height: 1.8; color: var(--muted); }
+.login-card[data-step="verification"] #login-submit { min-height: 44px; margin-top: 4px; }
+.login-verification-options { display: flex; justify-content: center; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+.login-method-switch { min-height: 32px; padding: 4px 2px; color: var(--accent); }
+.login-method-switch:hover { text-decoration: underline; text-underline-offset: 3px; }
+.login-card .login-back { min-height: 38px; border-color: transparent; background: transparent; color: var(--muted); box-shadow: none; }
+.login-card .login-back:hover { background: var(--input-bg); }
+@media (max-width: 480px) {
+  .login-page { padding: 16px; }
+  .login-card { padding: 24px; }
+  .login-progress { gap: 16px; }
+  .login-card[data-method="recovery"] #login-code { font-size: 13px; }
+}
 .security-account { display: grid; gap: 6px; margin: 16px 0; }
 .security-account dt { font-size: 12px; }
 .security-account dd { margin: 0 0 10px; overflow-wrap: anywhere; }

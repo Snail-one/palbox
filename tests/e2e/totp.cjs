@@ -1,6 +1,7 @@
 'use strict';
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
+const { mkdir } = require('node:fs/promises');
 
 (async () => {
   const { managementFixture } = await import('../helpers/management-fixture.js');
@@ -66,11 +67,25 @@ const assert = require('node:assert/strict');
     await page.waitForURL('**/login.html');
     await loginPassword();
     await page.locator('#login-totp-step').waitFor();
+    assert.equal(await page.locator('#login-title').textContent(), '二次验证');
+    assert.equal(await page.locator('#login-code').evaluate(input => input === document.activeElement), true);
+    await mkdir('test-results/totp', { recursive: true });
+    await page.screenshot({ path: 'test-results/totp/verification-desktop.png', fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.screenshot({ path: 'test-results/totp/verification-mobile.png', fullPage: true });
     assert.equal((await context.cookies()).some(cookie => cookie.name === 'palbox_session'), false);
     assert.equal((await context.request.get(f.base + '/api/workspace')).status(), 401);
-    await page.locator('#login-code').fill(totpCode(secret, Math.floor(Date.now() / 30000)));
-    await page.locator('#login-submit').click();
+    const code = totpCode(secret, Math.floor(Date.now() / 30000));
+    await page.locator('#login-code').evaluate((input, value) => {
+      const clipboardData = new DataTransfer();
+      clipboardData.setData('text', value.slice(0, 3) + ' ' + value.slice(3));
+      input.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }));
+    }, code);
+    assert.equal(await page.locator('#login-code').inputValue(), code);
+    await page.locator('#login-code').press('Enter');
     await page.waitForURL(f.base + '/');
+    await page.setViewportSize({ width: 1280, height: 900 });
     console.log('PASS 密码通过后仍无法访问面板，完成 TOTP 验证才建立会话');
 
     await logout();
@@ -78,8 +93,12 @@ const assert = require('node:assert/strict');
     await loginPassword();
     await page.locator('#login-totp-step').waitFor();
     await page.locator('#login-use-recovery').click();
+    assert.equal(await page.locator('#login-title').textContent(), '使用恢复码');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: 'test-results/totp/recovery-mobile.png', fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.locator('#login-code').fill(codes[0]);
-    await page.locator('#login-submit').click();
+    await page.locator('#login-code').press('Enter');
     await page.waitForURL(f.base + '/');
     await page.locator('#account-security').click();
     await page.locator('#account-totp-button').click();

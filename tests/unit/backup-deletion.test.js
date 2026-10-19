@@ -57,9 +57,9 @@ test('删除拒绝越界路径、临时文件、目录和链接，保留目标�
   await symlink(target, manager.backupFile('manual/link.tar.gz'));
   assert.equal((await task('manual/directory.tar.gz')).state, 'failed');
   assert.equal((await task('manual/link.tar.gz')).state, 'failed');
-  await rm(path.join(directory, 'backups/scheduled'), { recursive: true });
-  await symlink(outside, path.join(directory, 'backups/scheduled'));
-  assert.equal((await task('scheduled/outside.tar.gz')).state, 'failed');
+  await rm(path.join(directory, 'backups/before-import'), { recursive: true });
+  await symlink(outside, path.join(directory, 'backups/before-import'));
+  assert.equal((await task('before-import/outside.tar.gz')).state, 'failed');
   await rename(path.join(directory, 'backups'), path.join(directory, 'original-backups'));
   await symlink(outside, path.join(directory, 'backups'));
   await mkdir(path.join(outside, 'manual'));

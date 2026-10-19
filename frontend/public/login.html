@@ -1,5 +1,27 @@
 <!doctype html>
 <html lang="zh-CN">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>登录 · PalBox</title><link rel="icon" href="/assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/styles/index.css"><script type="module" src="/src/login.js"></script></head>
-<body class="login-page"><main class="login-card"><a class="brand" href="/" aria-label="PalBox 首页"><span class="brand-symbol"><img src="/assets/favicon.svg" width="40" height="40" alt=""></span><span>PalBox</span></a><div class="eyebrow">PalBox SERVER MANAGER</div><h1>管理你的帕鲁世界</h1><p id="login-description">输入管理员用户名和密码以继续。</p><form id="login-form"><div id="login-password-step"><label for="login-username">管理员用户名</label><input id="login-username" type="text" autocomplete="username" maxlength="64" required autofocus><label for="login-password">管理密码</label><input id="login-password" type="password" autocomplete="current-password" required></div><div id="login-totp-step" hidden><label for="login-code">动态验证码</label><input id="login-code" type="text" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6"><button id="login-use-recovery" type="button" class="button secondary">使用恢复码</button></div><p id="login-error" class="alert error" role="alert" hidden></p><button id="login-submit" class="button primary" type="submit">登录面板</button><button id="login-back" class="button secondary" type="button" hidden>返回密码登录</button></form></main></body>
+<body class="login-page">
+  <main class="login-card" data-step="password" aria-labelledby="login-title">
+    <a class="brand" href="/" aria-label="PalBox 首页"><span class="brand-symbol"><img src="/assets/favicon.svg" width="40" height="40" alt=""></span><span>PalBox</span></a>
+    <div class="eyebrow">PalBox SERVER MANAGER</div>
+    <div id="login-verification-icon" class="login-verification-icon" aria-hidden="true" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m12 3 8 4v5c0 5-8 9-8 9s-8-4-8-9V7z"/><path d="m8 12 3 3 5-6"/></svg></div>
+    <h1 id="login-title">管理你的帕鲁世界</h1>
+    <p id="login-description">输入管理员用户名和密码以继续。</p>
+    <ol id="login-progress" class="login-progress" aria-label="登录进度" hidden><li><span aria-hidden="true">✓</span>密码已验证</li><li aria-current="step"><span aria-hidden="true">2</span><span id="login-progress-method">安全验证</span></li></ol>
+    <form id="login-form">
+      <div id="login-password-step"><label for="login-username">管理员用户名</label><input id="login-username" type="text" autocomplete="username" maxlength="64" required autofocus><label for="login-password">管理密码</label><input id="login-password" type="password" autocomplete="current-password" required></div>
+      <div id="login-totp-step" hidden>
+        <p id="login-account" class="login-account"></p>
+        <label for="login-code">6 位动态验证码</label>
+        <input id="login-code" type="text" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="000000" spellcheck="false" autocapitalize="off" aria-describedby="login-code-help" aria-errormessage="login-error" aria-invalid="false">
+        <p id="login-code-help" class="login-code-help">打开验证器，输入当前显示的 6 位验证码。</p>
+      </div>
+      <p id="login-error" class="alert error" role="alert" hidden></p>
+      <button id="login-submit" class="button primary" type="submit">登录面板</button>
+      <div id="login-verification-options" class="login-verification-options" hidden><span id="login-alternative-hint">无法使用验证器？</span><button id="login-use-recovery" type="button" class="login-method-switch">使用恢复码</button></div>
+      <button id="login-back" class="button secondary login-back" type="button" hidden>← 返回密码登录</button>
+    </form>
+  </main>
+</body>
 </html>

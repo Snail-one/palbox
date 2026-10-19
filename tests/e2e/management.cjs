@@ -422,7 +422,7 @@ const path = require('node:path');
     await page.waitForFunction(() => document.getElementById('backup-retention-status-manual').dataset.state === 'saved');
     assert.equal(f.manager.backupRetentions.manual, 8);
     await setRetention('manual', 7);
-    assert.deepEqual(f.manager.settings.backupRetentions, { manual: 7, 'before-restore': 2, 'before-import': 3, 'before-reset': 9, scheduled: 5, 'before-update': 5 });
+    assert.deepEqual(f.manager.settings.backupRetentions, { manual: 7, 'before-restore': 2, 'before-import': 3, 'before-reset': 9 });
     assert.deepEqual(f.manager.settings.gameArgs, ['-useperfthreads', '-NoAsyncLoadingThread']);
     const manualWorld = path.join(f.runtime.saved, 'SaveGames/0/MANUAL_WORLD');
     await fs.mkdir(manualWorld, { recursive: true });

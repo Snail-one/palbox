@@ -132,8 +132,14 @@ export class Manager extends EventEmitter {
       this.settings = null;
       this.setupRequired = true;
     } else {
-      this.validateSettings(settings);
       let write = false;
+      if (settings?.backupRetentions && typeof settings.backupRetentions === 'object' && !Array.isArray(settings.backupRetentions)) {
+        for (const category of ['scheduled', 'before-update']) {
+          if (Object.hasOwn(settings.backupRetentions, category)) { delete settings.backupRetentions[category]; write = true; }
+        }
+        if (write && !Object.keys(settings.backupRetentions).length) delete settings.backupRetentions;
+      }
+      this.validateSettings(settings);
       if (settings.backupRetention > MAX_BACKUP_RETENTION) { settings.backupRetention = MAX_BACKUP_RETENTION; write = true; }
       if (!Object.hasOwn(settings, 'autoStart')) { settings.autoStart = false; write = true; }
       if (!Object.hasOwn(settings, 'gameArgs')) { settings.gameArgs = []; write = true; }
