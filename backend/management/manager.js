@@ -25,6 +25,7 @@ const output = source => new EditorSession(source, { formatOutput: catalog.forma
 const backupId = /^[a-z0-9-]+\.tar\.gz$(?![\s\S])/;
 const MISSING = Symbol('missing');
 const MAX_GAME_ARGS = 32;
+const MAX_BACKUP_RETENTION = 20;
 const MAX_GAME_ARG_LENGTH = 200;
 const MAX_GAME_ARGS_BYTES = 1800;
 const PORT_ARGUMENT = /(?:^|\s)-port(?:=|\s|$)/i;
@@ -125,6 +126,7 @@ export class Manager extends EventEmitter {
     } else {
       this.validateSettings(settings);
       let write = false;
+      if (settings.backupRetention > MAX_BACKUP_RETENTION) { settings.backupRetention = MAX_BACKUP_RETENTION; write = true; }
       if (!Object.hasOwn(settings, 'autoStart')) { settings.autoStart = false; write = true; }
       if (!Object.hasOwn(settings, 'gameArgs')) { settings.gameArgs = []; write = true; }
       if (!Object.hasOwn(settings, 'installArgs')) { settings.installArgs = [...DEFAULT_INSTALL_ARGS]; write = true; }
@@ -159,6 +161,7 @@ export class Manager extends EventEmitter {
       || admin.username !== normalizeUsername(admin.username) || !validUsername(admin.username)
       || !/^[a-f0-9]{128}$(?![\s\S])/.test(admin.hash || '') || !/^[a-f0-9]+$(?![\s\S])/.test(admin.salt || '')) throw new Error(this.settingsError());
     if (Object.hasOwn(admin, 'totp') && !validTotpRecord(admin.totp)) throw new Error(this.settingsError());
+    // Accept the previous limit on disk, then migrate it to the current cap.
     if (!Number.isInteger(settings.backupRetention) || settings.backupRetention < 1 || settings.backupRetention > 100) throw new Error(this.settingsError());
     if (Object.hasOwn(settings, 'autoStart') && typeof settings.autoStart !== 'boolean') throw new Error(this.settingsError());
     if (Object.hasOwn(settings, 'shutdownWait') && (!Number.isInteger(settings.shutdownWait) || settings.shutdownWait < 0 || settings.shutdownWait > 300)) {
@@ -324,7 +327,6 @@ export class Manager extends EventEmitter {
         if (!Number.isInteger(restPort) || restPort < 1 || restPort > 65535 || restPort === this.runtime.port || restPort === this.webPort) throw failure('REST API 端口无效或与现有服务端口冲突。');
         const running = Boolean(this.runtime.game);
         if (running) await this.stopGame({ requireSave: true });
-        await this.backup('manual');
         this.servicePhase('applying', '正在将配置写入游戏文件。');
         await atomicWrite(this.runtime.config, source);
         if (running) await this.startGame();
@@ -342,7 +344,7 @@ export class Manager extends EventEmitter {
         const running = Boolean(this.runtime.game);
         await this.native.restore(payload.id, async () => {
           if (running) await this.stopGame({ requireSave: true });
-          await this.backup('manual');
+          await this.backup('before-restore');
           this.servicePhase('restoring', '正在恢复官方备份中的世界和玩家存档。');
         });
         if (running) await this.startGame();
@@ -351,6 +353,7 @@ export class Manager extends EventEmitter {
       case 'import-save': await this.restoreImported(payload.id, task); break;
       case 'reset-save': {
         this.requireResetAllowed(payload);
+        task.backup = await this.backup('before-reset');
         this.servicePhase('resetting', '正在清空全部世界、玩家存档及官方备份历史。');
         task.removedEntries = await this.native.clearWorlds(() => this.requireResetAllowed(payload));
         this.runtime.log('palbox', `重置存档完成：已清空 SaveGames/0 下的 ${task.removedEntries} 个顶层条目。\n`);
@@ -412,8 +415,8 @@ export class Manager extends EventEmitter {
     try {
       if (wasRunning) await this.stopGame({ requireSave: true });
       const target = await this.targetWorld(imported);
-      task.message = '正在创建恢复前完整备份';
-      task.backup = await this.backup('manual');
+      task.message = '正在创建导入前完整备份';
+      task.backup = await this.backup('before-import');
       const ensured = await this.native.ensureWorld(target);
       if (ensured.created) created = ensured.directory;
       this.servicePhase('restoring', '正在替换世界与玩家存档。');
@@ -534,7 +537,7 @@ export class Manager extends EventEmitter {
     if (types.length >= captureLimit || types.trim().split('\n').some(line => !['-', 'd'].includes(line[0]))) throw failure('备份包含链接或不支持的文件类型。');
     const running = Boolean(this.runtime.game);
     if (running) await this.stopGame({ requireSave: true });
-    await this.backup('manual', id);
+    await this.backup('before-restore', id);
     await this.checkedBackupFile(id);
     this.servicePhase('restoring', '正在恢复完整备份中的存档和配置。');
     const stage = path.join(this.runtime.server, `.restore-${randomUUID()}`);
@@ -745,7 +748,7 @@ export class Manager extends EventEmitter {
     if (!hasRetention && !hasAutoStart && !hasShutdownWait && !hasShutdownMessage && !hasArgs && !hasInstallArgs) throw failure('请提供要保存的设置。');
     const next = { ...this.settings, gameArgs: [...this.gameArgs], installArgs: [...this.installArgs] };
     if (hasRetention) {
-      if (!Number.isInteger(value.backupRetention) || value.backupRetention < 1 || value.backupRetention > 100) throw failure('完整备份保留数量须为 1 到 100。');
+      if (!Number.isInteger(value.backupRetention) || value.backupRetention < 1 || value.backupRetention > MAX_BACKUP_RETENTION) throw failure(`完整备份保留数量须为 1 到 ${MAX_BACKUP_RETENTION}。`);
       next.backupRetention = value.backupRetention;
     }
     if (hasAutoStart) {

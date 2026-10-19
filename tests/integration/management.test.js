@@ -132,6 +132,19 @@ test('启动参数通过设置接口保存，并在启动和重启时生效', { 
   const retention = await put({ backupRetention: 7 });
   assert.equal(retention.status, 200);
   assert.deepEqual(await retention.json(), { backupRetention: 7, autoStart: false, shutdownWait: 5, shutdownMessage: 'Palbox 正在维护服务器', gameArgs: nextArgs, installArgs });
+  for (const backupRetention of [1, 20]) {
+    const response = await put({ backupRetention });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).backupRetention, backupRetention);
+  }
+  const settingsBeforeInvalidRetention = await readFile(f.manager.settingsFile);
+  for (const backupRetention of [0, 21, 100, 1.5, '20', null]) {
+    const response = await put({ backupRetention });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /1 到 20/);
+    assert.equal(f.manager.backupRetention, 20);
+    assert.deepEqual(await readFile(f.manager.settingsFile), settingsBeforeInvalidRetention);
+  }
   assert.deepEqual(f.runtime.args, nextArgs);
   assert.equal((await put({ shutdownWait: 0 })).status, 200);
   assert.equal(f.runtime.shutdownWait, 0);
@@ -257,8 +270,10 @@ test('SteamCMD、进程、配置应用、备份恢复与故障状态真实联动
   await f.manager.store.update(snapshot.workspace, snapshot.revision);
   assert.equal(value(await readFile(f.runtime.config, 'utf8'), 'ExpRate'), '1.000000');
   assert.equal((await f.manager.status()).configuration, 'pending');
+  const backupsBeforeApply = await f.manager.backups();
   const applied = await f.task('apply', { revision: f.manager.store.revision, profileId: f.manager.store.active().id });
   assert.equal(applied.state, 'succeeded', applied.message);
+  assert.deepEqual(await f.manager.backups(), backupsBeforeApply);
   assert.equal(value(await readFile(f.runtime.config, 'utf8'), 'ExpRate'), '2.000000');
   await access(path.join(f.runtime.saved, 'saved-by-api'));
   assert.equal((await f.manager.status()).configuration, 'applied');
@@ -306,6 +321,9 @@ test('SteamCMD、进程、配置应用、备份恢复与故障状态真实联动
   await f.manager.updateSettings({ backupRetention: 1 });
   const restored = await f.task('restore', { id: backup.backup });
   assert.equal(restored.state, 'succeeded', restored.message);
+  const afterRestore = await f.manager.backups();
+  assert.ok(afterRestore.some(entry => entry.category === 'before-restore'));
+  assert.ok(afterRestore.some(entry => entry.id === backup.backup));
   assert.equal(await readFile(world, 'utf8'), 'world-v1');
   assert.equal(f.runtime.ready, true);
   const runningGame = f.runtime.game;

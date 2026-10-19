@@ -5,6 +5,15 @@ import { gameServiceState } from './game-service-state.js';
 import { createRunningConfigPanel } from './running-config-panel.js';
 import { compactLogDisplay } from './log-display.js';
 
+const BACKUP_GROUPS = {
+  manual: '手动备份',
+  'before-restore': '恢复前备份',
+  'before-import': '导入前备份',
+  'before-reset': '重置前备份',
+  scheduled: '旧定时归档',
+  'before-update': '历史更新前备份'
+};
+
 function uptimeLabel(seconds) {
   if (!Number.isFinite(seconds)) return '—';
   const minutes = Math.max(0, Math.floor(seconds / 60));
@@ -93,8 +102,8 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   saves.setAttribute('aria-labelledby', 'save-management-title');
   saves.innerHTML = `
     <div class="management-heading"><h2 id="save-management-title">完整备份归档</h2><div class="management-actions"><button class="button primary" data-action="backup" disabled>创建完整备份</button></div></div>
-    <p id="complete-backup-note" class="management-note">汇总手动完整备份及历史更新前、定时归档，包含世界、玩家存档和游戏配置。创建完整备份前需先停止游戏服，完成后保持停服。</p>
-    <div class="save-backup-toolbar"><span id="save-backup-summary" role="status">正在读取…</span><form id="backup-settings"><label>每类保留<input id="backup-retention" aria-label="每类完整备份保留数量" disabled type="number" min="1" max="100" required>份</label><button class="button secondary" type="submit" disabled>保存设置</button></form></div>
+    <p id="complete-backup-note" class="management-note">手动备份、恢复前备份、导入前备份和重置前备份分别显示，包含世界、玩家存档和游戏配置。创建手动备份前需先停止游戏服，完成后保持停服。</p>
+    <div class="save-backup-toolbar"><span id="save-backup-summary" role="status">正在读取…</span><form id="backup-settings"><label>每类保留<input id="backup-retention" aria-label="每类完整备份保留数量" disabled type="number" min="1" max="20" required>份</label><button class="button secondary" type="submit" disabled>保存设置</button></form></div>
     <div id="manager-backups">正在读取完整备份…</div>`;
   $('saves-archives').append(saves);
   const configurationApply = $('configuration-apply');
@@ -144,11 +153,11 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   async function action(name, payload = {}, confirm = true) {
     if (confirm && ['stop', 'force-stop', 'restart', 'update', 'apply', 'backup', 'restore', 'restore-native', 'reset-save', 'kick'].includes(name)) {
       const descriptions = {
-        apply: '将当前配置写入游戏。游戏服正在运行时会先存档、停服、备份，再应用并重启。',
+        apply: '将当前配置写入游戏，不创建备份。游戏服正在运行时会先存档、停服，再应用并重启。',
         backup: '仅在游戏服停止时备份完整存档和配置，完成后保持停服。',
-        restore: '用这份完整备份恢复游戏配置和世界存档。当前存档会先备份，面板中的配置预设保持不变。',
-        'restore-native': '将当前世界和玩家存档恢复到所选官方备份。会先存档、停服并创建完整备份，保留当前配置及官方备份历史；原先运行的游戏服会重新启动。',
-        'reset-save': '将清空 Pal/Saved/SaveGames/0 下的全部内容，包括所有世界、玩家存档和该目录中的官方备份历史。不会自动创建备份；游戏配置和完整备份归档保留。必须先停止游戏服务器，完成后保持停服。',
+        restore: '用这份完整备份恢复游戏配置和世界存档。当前存档会先备份到“恢复前备份”，面板中的配置预设保持不变。',
+        'restore-native': '将当前世界和玩家存档恢复到所选官方备份。会先存档、停服并创建完整备份，归入“恢复前备份”，保留当前配置及官方备份历史；原先运行的游戏服会重新启动。',
+        'reset-save': '将先创建完整备份，单独保存在“重置前备份”中，再清空 Pal/Saved/SaveGames/0 下的全部内容，包括所有世界、玩家存档和该目录中的官方备份历史。备份失败时中止重置；游戏配置和完整备份归档保留。必须先停止游戏服务器，完成后保持停服。',
         update: '仅在游戏服停止时使用 SteamCMD 更新服务端，不自动创建备份，更新完成后保持停服。',
         stop: '保存世界后停止游戏服，管理面板继续运行。',
         'force-stop': '立即强制停止游戏服，可能丢失最近一次未保存的进度。仅在正常停止失败时使用。',
@@ -262,10 +271,25 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     $('save-backup-summary').title = `${totalBytes} 字节`;
     $('manager-backups').replaceChildren();
     if (!backups.length) $('manager-backups').textContent = '暂无完整备份。手动创建后，可在这里下载或恢复。';
+    const groups = new Map();
+    for (const [category, title] of Object.entries(BACKUP_GROUPS)) {
+      const entries = backups.filter(backup => backup.category === category);
+      if (!entries.length && ['scheduled', 'before-update'].includes(category)) continue;
+      const group = document.createElement('section'); group.className = 'backup-category'; group.dataset.backupCategory = category;
+      const heading = document.createElement('h3'); heading.id = `backup-category-${category}`; heading.textContent = title;
+      group.setAttribute('aria-labelledby', heading.id);
+      const summary = document.createElement('span'); summary.className = 'subtle-tag';
+      summary.textContent = `${entries.length} 份 · ${formatBytes(entries.reduce((total, backup) => total + backup.bytes, 0))}`;
+      heading.append(summary); group.append(heading);
+      if (!entries.length) {
+        const empty = document.createElement('p'); empty.className = 'management-note'; empty.textContent = `暂无${title}。`; group.append(empty);
+      }
+      groups.set(category, group); $('manager-backups').append(group);
+    }
     for (const backup of backups) {
       const row = document.createElement('div'); row.className = 'backup-row'; row.dataset.backupId = backup.id;
       const label = document.createElement('span');
-      const category = { manual: '手动', scheduled: '旧定时归档', 'before-update': '更新前' }[backup.category];
+      const category = BACKUP_GROUPS[backup.category];
       label.textContent = `${new Date(backup.createdAt).toLocaleString()} · ${category} · ${formatBytes(backup.bytes)}`;
       label.title = `${backup.bytes} 字节`;
       const download = document.createElement('a'); download.className = 'button secondary'; download.textContent = '下载'; download.href = `/api/backup?id=${encodeURIComponent(backup.id)}`; download.setAttribute('download', '');
@@ -275,7 +299,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
         const confirmed = await ask({ title: '删除这份完整备份？', description: `${new Date(backup.createdAt).toLocaleString()} · ${category} · ${formatBytes(backup.bytes)}。确认后永久删除这份归档，无法撤销。当前游戏存档保持不变。`, confirm: '删除备份', danger: true, symbol: 'trash' });
         if (confirmed) await action('delete-backup', { id: backup.id }, false);
       });
-      row.append(label, download, restore, remove); $('manager-backups').append(row);
+      row.append(label, download, restore, remove); groups.get(backup.category).append(row);
     }
   }
   async function loadNativeBackups() {
@@ -548,7 +572,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     $('check-update').disabled = checkingUpdate || !value.installed || Boolean(value.task);
     $('complete-backup-note').textContent = !value.hasWorldSave && !value.running
       ? '尚无可备份的世界存档，请先启动游戏并生成存档。已有备份仍可下载或恢复。'
-      : '汇总手动完整备份及历史更新前、定时归档，包含世界、玩家存档和游戏配置。创建完整备份前需先停止游戏服，完成后保持停服；恢复任何备份前都会先备份当前数据。';
+      : '手动备份、恢复前备份、导入前备份和重置前备份分别显示，包含世界、玩家存档和游戏配置。创建手动备份前需先停止游戏服，完成后保持停服；恢复、导入或重置前会自动创建对应分类的保护备份。';
     const playerActionDisabled = Boolean(value.task) || !value.running || !value.ready;
     $('ban-player').disabled = playerActionDisabled;
     $('unban-player').disabled = playerActionDisabled;

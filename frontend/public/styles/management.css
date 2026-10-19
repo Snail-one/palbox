@@ -102,6 +102,8 @@
 .backup-policy .button { padding: 5px 9px; }
 #save-backup-summary, #manager-backups { font-size: 11px; }
 #manager-backups { margin-top: 12px; }
+.backup-category + .backup-category { margin-top: 20px; }
+.backup-category h3 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; font-size: 12px; }
 #native-backups { margin-top: 12px; font-size: 11px; scroll-margin-top: 90px; }
 .backup-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
 .backup-pagination .page-status { margin-right: 2px; color: var(--muted); }

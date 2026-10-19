@@ -63,7 +63,8 @@ test('官方备份恢复先备份停服，替换世界与玩家，保留配置�
   assert.equal(await readFile(f.runtime.config, 'utf8'), config);
   assert.equal(await readFile(path.join(backup.snapshot, 'Level.sav'), 'utf8'), 'official-world');
   const archives = await f.manager.backups();
-  assert.ok(archives.some(entry => entry.category === 'manual'));
+  assert.equal(archives.length, 1);
+  assert.equal(archives[0].category, 'before-restore');
   const original = path.join(f.directory, 'original-world.sav');
   await f.runtime.run('tar', ['-xzf', f.manager.backupFile(archives[0].id), '-C', f.directory, '--', `Pal/Saved/SaveGames/0/${backup.worldId}/Level.sav`]);
   await copyFile(path.join(f.directory, `Pal/Saved/SaveGames/0/${backup.worldId}/Level.sav`), original);

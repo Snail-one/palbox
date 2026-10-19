@@ -67,6 +67,70 @@ test('停服时有实际世界存档才能生成可读取的完整备份', async
   assert.equal((await readdir(path.join(directory, 'backups/manual'))).some(name => name.endsWith('.partial')), false);
 });
 
+test('旧版超过 20 份的保留设置在启动时迁移到 20，管理员记录保留', async t => {
+  const { manager, directory } = await fixture(t);
+  await manager.setupAdmin('admin', 'test-backup-password');
+  const original = JSON.parse(await readFile(manager.settingsFile, 'utf8'));
+  await manager.close();
+  for (const retention of [21, 100]) {
+    await writeFile(manager.settingsFile, JSON.stringify({ ...original, backupRetention: retention }));
+    const restarted = new Manager({ directory });
+    try {
+      await restarted.initialize();
+      assert.equal(restarted.backupRetention, 20);
+      const stored = JSON.parse(await readFile(restarted.settingsFile, 'utf8'));
+      assert.equal(stored.backupRetention, 20);
+      assert.deepEqual(stored.admin, original.admin);
+    } finally { await restarted.close(); }
+  }
+});
+
+test('停服时应用配置只写入配置，不创建或清理备份', async t => {
+  const { manager, runtime } = await fixture(t);
+  const world = path.join(runtime.saved, 'SaveGames/0/WORLD1');
+  await mkdir(world, { recursive: true });
+  await writeFile(path.join(world, 'Level.sav'), 'world-data');
+  await manager.ensureConfig();
+  await manager.backup('manual');
+  const backups = await manager.backups();
+  await writeFile(runtime.config, 'old-configuration');
+  await manager.submit('apply', { revision: manager.store.revision, profileId: manager.store.active().id });
+  await manager.operation;
+  assert.equal(manager.tasks[0].state, 'succeeded', manager.tasks[0].message);
+  assert.match(await readFile(runtime.config, 'utf8'), /OptionSettings=/);
+  assert.equal(runtime.game, null);
+  assert.deepEqual(await manager.backups(), backups);
+  assert.equal(await readFile(path.join(world, 'Level.sav'), 'utf8'), 'world-data');
+});
+
+test('手动、恢复前、导入前和重置前备份独立保留，恢复保护备份时不会删除正在使用的归档', async t => {
+  const { manager, runtime } = await fixture(t);
+  const world = path.join(runtime.saved, 'SaveGames/0/WORLD1');
+  await mkdir(world, { recursive: true });
+  const level = path.join(world, 'Level.sav');
+  await writeFile(level, 'world-v1');
+  await manager.ensureConfig();
+  await manager.setupAdmin('admin', 'test-backup-password');
+  await manager.updateSettings({ backupRetention: 1 });
+  for (const category of ['manual', 'before-restore', 'before-import', 'before-reset']) {
+    await manager.backup(category);
+    await manager.backup(category);
+    assert.equal((await manager.backups()).filter(entry => entry.category === category).length, 1);
+  }
+  const archives = await manager.backups();
+  assert.equal(archives.length, 4);
+  const selected = archives.find(entry => entry.category === 'before-restore');
+  await writeFile(level, 'world-v2');
+  await manager.submit('restore', { id: selected.id });
+  await manager.operation;
+  assert.equal(manager.tasks[0].state, 'succeeded', manager.tasks[0].message);
+  assert.equal(await readFile(level, 'utf8'), 'world-v1');
+  const remaining = await manager.backups();
+  for (const archive of archives) assert.ok(remaining.some(entry => entry.id === archive.id));
+  assert.equal(remaining.filter(entry => entry.category === 'before-restore').length, 2);
+  assert.equal(runtime.game, null);
+});
+
 test('自动保护备份跳过空目录，但保留已有游戏配置的恢复能力', async t => {
   const { manager, runtime } = await fixture(t);
   await mkdir(path.join(runtime.saved, 'SaveGames/0/EMPTY'), { recursive: true });

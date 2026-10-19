@@ -62,7 +62,9 @@ test('导入根目录官方快照并恢复运行中的世界', { skip: process.p
   assert.deepEqual(await readFile(f.runtime.config), config);
   assert.equal(f.runtime.ready, true);
   assert.notEqual(f.runtime.game.pid, oldPid);
-  assert.ok((await f.manager.backups()).some(backup => backup.category === 'manual'));
+  const backups = await f.manager.backups();
+  assert.equal(backups.length, 1);
+  assert.equal(backups[0].category, 'before-import');
   assert.deepEqual(await readdir(path.join(f.directory, 'palbox/imports')), []);
   assert.equal((await f.task('stop')).state, 'succeeded');
 });

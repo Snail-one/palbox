@@ -10,6 +10,7 @@ test('重置必须登录、通过 CSRF 且准确输入 delete，只清空 0 目�
   const f = await managementFixture(); t.after(() => f.close());
   assert.equal((await reset(f)).status, 401);
   await f.login();
+  await f.manager.ensureConfig();
   const root = path.join(f.runtime.saved, 'SaveGames/0');
   for (const name of ['WORLD1/Level.sav', 'WORLD1/Players/player.sav', 'WORLD1/backup/world/history/Level.sav', 'WORLD2/Level.sav', '.hidden', 'loose-file']) {
     await mkdir(path.dirname(path.join(root, name)), { recursive: true });
@@ -31,6 +32,15 @@ test('重置必须登录、通过 CSRF 且准确输入 delete，只清空 0 目�
   assert.equal((await reset(f)).status, 202); await f.manager.operation;
   assert.equal(f.manager.tasks[0].state, 'succeeded', f.manager.tasks[0].message);
   assert.equal(f.manager.tasks[0].removedEntries, 4);
+  const resetBackup = f.manager.tasks[0].backup;
+  assert.match(resetBackup, /^before-reset\//);
+  assert.equal((await f.manager.backups()).filter(backup => backup.category === 'before-reset').length, 1);
+  const archivedWorld = await f.runtime.run('tar', ['-xOzf', f.manager.backupFile(resetBackup), '--', 'Pal/Saved/SaveGames/0/WORLD1/Level.sav']);
+  assert.equal(archivedWorld, 'WORLD1/Level.sav');
+  const archivedPlayer = await f.runtime.run('tar', ['-xOzf', f.manager.backupFile(resetBackup), '--', 'Pal/Saved/SaveGames/0/WORLD1/Players/player.sav']);
+  assert.equal(archivedPlayer, 'WORLD1/Players/player.sav');
+  const archivedHistory = await f.runtime.run('tar', ['-xOzf', f.manager.backupFile(resetBackup), '--', 'Pal/Saved/SaveGames/0/WORLD1/backup/world/history/Level.sav']);
+  assert.equal(archivedHistory, 'WORLD1/backup/world/history/Level.sav');
   assert.equal((await stat(root)).isDirectory(), true);
   assert.deepEqual(await readdir(root), []);
   assert.equal(await readFile(config, 'utf8'), 'DedicatedServerName=WORLD1\n');
@@ -42,6 +52,30 @@ test('重置必须登录、通过 CSRF 且准确输入 delete，只清空 0 目�
   assert.equal((await f.manager.status({ scope: 'local' })).hasWorldSave, false);
   assert.equal((await reset(f)).status, 202); await f.manager.operation;
   assert.equal(f.manager.tasks[0].removedEntries, 0);
+  const restored = await f.task('restore', { id: resetBackup });
+  assert.equal(restored.state, 'succeeded', restored.message);
+  assert.equal(await readFile(path.join(root, 'WORLD1/Level.sav'), 'utf8'), 'WORLD1/Level.sav');
+  assert.equal(f.runtime.game, null);
+});
+
+test('重置前完整备份失败时保留所有存档，不开始清空', async t => {
+  const f = await managementFixture(); t.after(() => f.close()); await f.login();
+  const file = path.join(f.runtime.saved, 'SaveGames/0/WORLD/Level.sav');
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, 'must-keep');
+  const run = f.runtime.run.bind(f.runtime);
+  f.runtime.run = async (command, args, ...rest) => {
+    if (command === 'tar' && args[0] === '-czf') throw new Error('模拟备份磁盘写入失败');
+    return run(command, args, ...rest);
+  };
+  const task = await f.task('reset-save', { confirmation: 'delete' });
+  assert.equal(task.state, 'failed');
+  assert.match(task.message, /备份磁盘写入失败/);
+  assert.equal(task.removedEntries, undefined);
+  assert.equal(await readFile(file, 'utf8'), 'must-keep');
+  assert.deepEqual(await readdir(path.join(f.directory, 'backups/before-reset')), []);
+  assert.deepEqual(await f.manager.backups(), []);
+  assert.equal(f.runtime.game, null);
 });
 
 test('游戏运行时拒绝重置，不自动停止；停止后才能执行', async t => {

@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from 'node:f
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Manager } from '../../backend/management/manager.js';
+import { BACKUP_CATEGORIES } from '../../backend/management/backup-paths.js';
 
 async function fixture(t) {
   const directory = await mkdtemp(path.join(tmpdir(), 'palbox-delete-backup-'));
@@ -18,14 +19,14 @@ async function fixture(t) {
   return { manager, directory, task };
 }
 
-test('手动、更新前和旧定时归档可逐条删除，不停服且不改变当前存档', async t => {
+test('各类完整备份均可逐条删除，不停服且不改变当前存档', async t => {
   const { manager, directory, task } = await fixture(t);
   const game = {};
   manager.runtime.game = game;
   const world = path.join(manager.runtime.saved, 'SaveGames/0/WORLD1');
   await mkdir(world, { recursive: true });
   await writeFile(path.join(world, 'Level.sav'), 'current-world');
-  for (const category of ['manual', 'before-update', 'scheduled']) {
+  for (const category of BACKUP_CATEGORIES) {
     const id = `${category}/selected.tar.gz`;
     const selected = path.join(directory, 'backups', id);
     const other = path.join(directory, 'backups', category, 'other.tar.gz');
