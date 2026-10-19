@@ -87,24 +87,24 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   $('show-task-history').addEventListener('click', () => { history.showModal(); void refresh({ scope: 'local' }); });
   $('close-task-history').addEventListener('click', () => history.close());
   const playerPanel = document.createElement('section');
-  playerPanel.className = 'management-panel';
+  playerPanel.className = 'management-panel player-management';
   playerPanel.setAttribute('aria-label', '在线玩家与广播');
-  playerPanel.innerHTML = `<div class="management-heading"><h2>在线玩家 <span id="online-player-count" class="subtle-tag">—</span></h2></div><form id="manager-announce"><label class="sr-only" for="announce-message">广播内容</label><input id="announce-message" maxlength="500" required placeholder="向在线玩家发送公告…"><button class="button secondary" type="submit">发送广播</button></form><div id="manager-players-list">游戏服尚未连接</div>`;
+  playerPanel.innerHTML = `<div class="management-heading"><div><h2>在线玩家 <span id="online-player-count" class="subtle-tag">—</span></h2><p id="online-player-note" class="management-note">正在读取玩家状态…</p></div></div><form id="manager-announce" class="player-broadcast"><label for="announce-message"><svg class="icon" aria-hidden="true"><use href="#i-globe"/></svg>全服广播</label><div class="player-broadcast-controls"><input id="announce-message" maxlength="500" required placeholder="向在线玩家发送公告…"><button class="button secondary" type="submit" disabled>发送广播</button></div></form><div id="manager-players-list" class="player-card-grid">游戏服尚未连接</div>`;
   const bannedPanel = document.createElement('section');
   bannedPanel.id = 'banned-management';
-  bannedPanel.className = 'management-panel';
+  bannedPanel.className = 'management-panel player-management';
   bannedPanel.setAttribute('aria-label', '已封禁玩家');
-  bannedPanel.innerHTML = `<div class="management-heading"><h2>已封禁玩家 <span id="banned-player-count" class="subtle-tag">—</span></h2><div class="management-actions"><button class="button secondary" id="ban-player" disabled>按 ID 封禁</button><button class="button secondary" id="unban-player" disabled>按 ID 解封</button></div></div><p id="banned-player-note" class="management-note">本服封禁名单，游戏服务运行后可封禁或解封。</p><div id="manager-banned-list">正在读取封禁名单…</div>`;
+  bannedPanel.innerHTML = `<div class="management-heading"><h2>已封禁玩家 <span id="banned-player-count" class="subtle-tag">—</span></h2><div class="management-actions"><button class="button secondary" id="ban-player" disabled>按 ID 封禁</button><button class="button secondary" id="unban-player" disabled>按 ID 解封</button></div></div><p id="banned-player-note" class="management-note">本服封禁名单，游戏服务运行后可封禁或解封。</p><div id="manager-banned-list" class="player-card-grid">正在读取封禁名单…</div>`;
   $('game-players-view').append(playerPanel, bannedPanel);
   const nativeSaves = document.createElement('section');
   nativeSaves.id = 'native-save-management';
   nativeSaves.className = 'management-panel save-management';
   nativeSaves.setAttribute('aria-labelledby', 'native-save-title');
   nativeSaves.innerHTML = `
-    <div class="management-heading"><h2 id="native-save-title">官方存档备份 <span id="native-backup-state" class="save-status" data-state="pending">读取中</span></h2><div class="management-actions"><button class="button secondary" data-action="reset-save" title="仅在游戏服务器停止且没有任务执行时可重置存档" disabled><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>重置存档</button><button class="button secondary" data-action="import-save" disabled><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg>导入存档</button><button class="button primary" data-action="save-world" disabled>保存世界</button></div></div>
-    <p class="management-note">游戏自动生成世界和玩家快照，下载无需停服；恢复前会备份当前数据并停服。</p>
-    <div class="backup-policy"><p>保留策略：30 秒 5 份 · 10 分钟 6 份 · 1 小时 12 份 · 1 天 7 份</p><a class="button secondary" href="#configuration">备份配置 →</a></div>
-    <div class="save-backup-toolbar"><span id="native-backup-summary" role="status">正在读取…</span><p id="native-backup-note" class="management-note"></p></div>
+    <div class="management-heading backup-page-heading"><div><h2 id="native-save-title">官方存档备份 <span id="native-backup-state" class="save-status" data-state="pending">读取中</span></h2><p class="management-note">游戏自动生成世界和玩家快照；时间按本地时区显示（${timeFormat.timeZone}）。</p></div><div class="management-actions"><button class="button secondary" data-action="reset-save" title="仅在游戏服务器停止且没有任务执行时可重置存档" disabled><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>重置存档</button><button class="button secondary" data-action="import-save" disabled><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg>导入存档</button><button class="button primary" data-action="save-world" disabled>保存世界</button></div></div>
+    <div class="backup-overview native-backup-overview"><div class="backup-stat"><span>全部快照</span><strong id="native-backup-summary" role="status">正在读取…</strong></div><div class="backup-stat"><span>最近备份</span><span id="native-backup-latest">正在读取…</span></div><div class="backup-stat"><span>当前世界</span><span id="native-backup-world">正在读取…</span></div></div>
+    <div class="backup-policy native-backup-policy"><div><span class="native-policy-title">游戏默认保留策略</span><div class="native-policy-tiers"><span>30 秒 <strong>5 份</strong></span><span>10 分钟 <strong>6 份</strong></span><span>1 小时 <strong>12 份</strong></span><span>1 天 <strong>7 份</strong></span></div></div><a class="button secondary" href="#configuration">备份配置 →</a></div>
+    <p class="backup-status-note management-note"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><span id="native-backup-note"></span></p>
     <div id="native-backups">正在读取官方备份…</div>`;
   $('saves-native').append(nativeSaves);
   const saves = document.createElement('section');
@@ -147,8 +147,10 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   let lastBanError = '';
   let bannedCache = null;
   let bannedRenderKey = '';
+  let playersRenderKey = null;
   let logChannel = 'all';
   let nativeBackupPage = 0;
+  let nativeBackupRenderKey = null;
   let logGeneration = 0;
   let closeLogs = null;
   let logHistory = null;
@@ -374,32 +376,62 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   }
   async function loadNativeBackups() {
     const value = await api.request('native-backups');
+    const pageCount = Math.max(1, Math.ceil(value.backups.length / NATIVE_BACKUP_PAGE_SIZE));
+    nativeBackupPage = Math.min(nativeBackupPage, pageCount - 1);
+    const renderKey = JSON.stringify([value, nativeBackupPage, Boolean(lastStatus?.task)]);
+    if (renderKey === nativeBackupRenderKey) return;
     const badge = $('native-backup-state');
     badge.textContent = value.enabled === null ? '尚未配置' : value.enabled ? '已启用' : '未启用';
     badge.dataset.state = value.enabled ? 'saved' : 'pending';
-    $('native-backup-note').textContent = value.enabled === false ? '当前游戏配置未启用官方自动备份，可前往配置管理开启。' : value.activeWorld ? `当前世界：${value.activeWorld}。下载无需停服，恢复需要停服。` : '世界尚未生成或无法确认当前世界；可下载已有备份，暂不允许恢复。';
+    $('native-backup-note').textContent = value.enabled === false ? '当前游戏配置未启用官方自动备份，可前往配置管理开启；已有备份仍可下载。' : value.activeWorld ? '下载无需停服；恢复前会保存并停服、创建当前数据的完整备份。仅可恢复当前世界的快照。' : '世界尚未生成或无法确认当前世界；可下载已有备份，暂不允许恢复。';
     const nativeBytes = value.backups.reduce((total, backup) => total + backup.bytes, 0);
     $('native-backup-summary').textContent = `${value.backups.length} 份 · ${formatBytes(nativeBytes)}`;
     $('native-backup-summary').title = `${nativeBytes} 字节`;
+    $('native-backup-latest').textContent = value.backups.length ? timeFormat.dateTime(value.backups[0].createdAt) : '尚无备份';
+    $('native-backup-world').textContent = value.activeWorld || '尚未确认';
+    $('native-backup-world').title = value.activeWorld || '世界生成后会自动识别';
     $('native-backups').replaceChildren();
     if (!value.backups.length) {
-      $('native-backups').textContent = '暂无完整的官方备份。游戏生成备份后会自动显示；正在写入或已轮换的备份可能暂不可用。';
+      const empty = document.createElement('div'); empty.className = 'native-backup-empty';
+      empty.innerHTML = '<svg class="icon" aria-hidden="true"><use href="#i-restore"/></svg><h3>暂无官方备份</h3><p>游戏生成完整的世界和玩家快照后，会自动显示在这里。<br>正在写入或已轮换的备份可能暂不可用。</p>';
+      $('native-backups').append(empty);
+      nativeBackupRenderKey = renderKey;
       return;
     }
-    const pageCount = Math.max(1, Math.ceil(value.backups.length / NATIVE_BACKUP_PAGE_SIZE));
-    nativeBackupPage = Math.min(nativeBackupPage, pageCount - 1);
     const start = nativeBackupPage * NATIVE_BACKUP_PAGE_SIZE;
+    const grid = document.createElement('div'); grid.className = 'native-backup-grid';
     for (const backup of value.backups.slice(start, start + NATIVE_BACKUP_PAGE_SIZE)) {
-      const row = document.createElement('div'); row.className = 'backup-row';
-      const label = document.createElement('span');
-      label.textContent = `${timeFormat.dateTime(backup.createdAt)} · 世界 ${backup.worldId} · ${formatBytes(backup.bytes)}`;
-      label.title = `${backup.bytes} 字节 · 本地时间（${timeFormat.timeZone}） · 原始目录 ${backup.timestamp}`;
+      const card = document.createElement('article'); card.className = 'native-backup-card'; card.dataset.backupId = backup.id;
+      const header = document.createElement('div'); header.className = 'native-backup-card-header';
+      const icon = document.createElement('span'); icon.className = 'native-backup-icon'; icon.setAttribute('aria-hidden', 'true');
+      icon.innerHTML = '<svg class="icon"><use href="#i-restore"/></svg>';
+      const heading = document.createElement('h3'); heading.id = `native-backup-${grid.children.length}`;
+      card.setAttribute('aria-labelledby', heading.id);
+      const date = document.createElement('time'); date.dateTime = backup.createdAt; date.textContent = `${timeFormat.date(backup.createdAt)} `;
+      date.title = `本地时间（${timeFormat.timeZone}） · 原始目录 ${backup.timestamp}`;
+      const clock = document.createElement('span'); clock.className = 'native-backup-hour'; clock.textContent = timeFormat.time(backup.createdAt);
+      date.append(clock); heading.append(date);
+      const worldBadge = document.createElement('span'); worldBadge.className = 'native-backup-world-badge';
+      worldBadge.dataset.current = String(backup.worldId === value.activeWorld);
+      worldBadge.textContent = backup.worldId === value.activeWorld ? '当前世界' : value.activeWorld ? '其他世界' : '世界待确认';
+      header.append(icon, heading, worldBadge);
+      const details = document.createElement('dl'); details.className = 'native-backup-details';
+      const size = document.createElement('div');
+      const sizeLabel = document.createElement('dt'); sizeLabel.textContent = '备份大小';
+      const sizeValue = document.createElement('dd'); sizeValue.textContent = formatBytes(backup.bytes); sizeValue.title = `${backup.bytes} 字节`;
+      size.append(sizeLabel, sizeValue);
+      const world = document.createElement('div');
+      const worldLabel = document.createElement('dt'); worldLabel.textContent = '所属世界';
+      const worldValue = document.createElement('dd'); worldValue.className = 'native-backup-world-id'; worldValue.textContent = backup.worldId;
+      world.append(worldLabel, worldValue); details.append(size, world);
       const download = document.createElement('a'); download.className = 'button secondary'; download.textContent = '下载'; download.href = `/api/native-backup?id=${encodeURIComponent(backup.id)}`; download.setAttribute('download', '');
       const restore = document.createElement('button'); restore.className = 'button secondary'; restore.textContent = '恢复'; restore.disabled = Boolean(lastStatus?.task) || !backup.canRestore;
       if (!backup.canRestore) restore.title = '只能恢复已确认的当前世界备份';
       restore.addEventListener('click', () => action('restore-native', { id: backup.id }));
-      row.append(label, download, restore); $('native-backups').append(row);
+      const actions = document.createElement('div'); actions.className = 'native-backup-actions'; actions.append(download, restore);
+      card.append(header, details, actions); grid.append(card);
     }
+    $('native-backups').append(grid);
     if (pageCount > 1) {
       const pagination = document.createElement('div');
       pagination.className = 'backup-pagination';
@@ -407,7 +439,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       pagination.setAttribute('aria-label', '官方备份分页');
       const status = document.createElement('span');
       status.className = 'page-status';
-      status.textContent = `第 ${nativeBackupPage + 1} / ${pageCount} 页`;
+      status.textContent = `第 ${nativeBackupPage + 1} / ${pageCount} 页 · 共 ${value.backups.length} 份`;
       pagination.append(status);
       async function changePage(next) {
         if (next === nativeBackupPage) return;
@@ -436,6 +468,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       pagination.append(navButton('下一页', nativeBackupPage + 1, nativeBackupPage === pageCount - 1));
       $('native-backups').append(pagination);
     }
+    nativeBackupRenderKey = renderKey;
   }
   function renderLogs(text) {
     const panel = $('manager-logs');
@@ -511,19 +544,60 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   async function playerMessage(title, description, confirm, danger) {
     return ask({ title, description, name: '', nameLabel: '理由', namePlaceholder: '可选，例如：违反服务器规则', nameMaxLength: 500, required: false, confirm, danger, symbol: 'user' });
   }
+  function playerDetail(details, label, value, { code = false, dateTime } = {}) {
+    const item = document.createElement('div');
+    const term = document.createElement('dt'); term.textContent = label;
+    const description = document.createElement('dd');
+    if (code) description.className = 'player-user-id';
+    const content = document.createElement(dateTime ? 'time' : 'span'); content.textContent = value;
+    if (dateTime) content.dateTime = dateTime;
+    description.append(content); item.append(term, description); details.append(item);
+  }
+  function playerCard(player, banned = false) {
+    const row = document.createElement('article'); row.className = 'player-row player-card';
+    const label = player.name || player.accountName || (banned ? '昵称未记录' : '玩家');
+    row.setAttribute('aria-label', label);
+    const header = document.createElement('div'); header.className = 'player-card-header';
+    const avatar = document.createElement('span'); avatar.className = 'player-avatar'; avatar.setAttribute('aria-hidden', 'true');
+    avatar.textContent = Array.from(label)[0];
+    const identity = document.createElement('div'); identity.className = 'player-identity';
+    const title = document.createElement('h3'); title.textContent = label; identity.append(title);
+    if (!banned) {
+      const level = document.createElement('span'); level.className = 'player-level'; level.textContent = `Lv.${player.level ?? '—'}`; identity.append(level);
+    }
+    const badge = document.createElement('span'); badge.className = 'player-status'; badge.textContent = banned ? '已封禁' : '在线';
+    row.dataset.banned = String(banned);
+    header.append(avatar, identity, badge);
+    const details = document.createElement('dl'); details.className = 'player-card-details';
+    playerDetail(details, 'UserID', player.userId || 'ID 未提供', { code: true });
+    const actions = document.createElement('div'); actions.className = 'player-actions';
+    row.append(header, details, actions);
+    return { row, details, actions, label };
+  }
+  function playerEmpty(list, title, description) {
+    const empty = document.createElement('div'); empty.className = 'player-empty';
+    const icon = document.createElement('span'); icon.className = 'player-empty-icon'; icon.setAttribute('aria-hidden', 'true');
+    icon.innerHTML = '<svg class="icon"><use href="#i-user"/></svg>';
+    const heading = document.createElement('h3'); heading.textContent = title;
+    const note = document.createElement('p'); note.textContent = description;
+    empty.append(icon, heading, note); list.append(empty);
+  }
   function players(list) {
-    $('manager-players-list').replaceChildren();
+    const unavailable = Boolean(lastStatus?.task) || !lastStatus?.running || !lastStatus?.ready;
+    const key = JSON.stringify([list, unavailable, Boolean(lastStatus?.running), Boolean(lastStatus?.ready)]);
+    if (key === playersRenderKey) return;
+    playersRenderKey = key;
+    const container = $('manager-players-list'); container.replaceChildren();
     $('online-player-count').textContent = String(list.length);
-    if (!list.length) $('manager-players-list').textContent = lastStatus?.running ? '暂无在线玩家' : '游戏服务未运行';
+    $('online-player-note').textContent = !lastStatus?.running ? '启动游戏服务后，可查看在线玩家并发送广播。' : !lastStatus?.ready ? '正在连接游戏管理接口，请稍候…' : '查看在线玩家，可移出玩家或封禁账号；点击顶部刷新状态更新列表。';
+    $('announce-message').disabled = unavailable;
+    $('manager-announce').querySelector('button').disabled = unavailable;
+    if (!list.length) playerEmpty(container,
+      !lastStatus?.running ? '游戏服务未运行' : !lastStatus?.ready ? '正在连接玩家列表' : '暂无在线玩家',
+      !lastStatus?.running ? '启动游戏服务后，可在这里查看在线玩家。' : !lastStatus?.ready ? '管理接口就绪后，可查看玩家状态。' : '玩家加入服务器后，可点击顶部刷新状态更新列表。');
     for (const player of list) {
-      const row = document.createElement('div'); row.className = 'player-row';
-      const label = player.name || player.accountName || '玩家';
-      const details = document.createElement('div'); details.className = 'player-details';
-      const title = document.createElement('strong'); title.textContent = label;
-      const caption = document.createElement('span'); caption.textContent = `Lv.${player.level ?? '—'} · ${player.userId || 'ID 未提供'}`;
-      details.append(title, caption);
-      const actions = document.createElement('div'); actions.className = 'player-actions';
-      const disabled = Boolean(lastStatus?.task) || !lastStatus?.ready || !player.userId;
+      const { row, actions, label } = playerCard(player);
+      const disabled = unavailable || !player.userId;
       const kick = document.createElement('button'); kick.className = 'button secondary'; kick.textContent = '移出'; kick.disabled = disabled;
       kick.addEventListener('click', async () => {
         const message = await playerMessage('移出玩家', `将 ${label} 移出游戏服。`, '移出', false);
@@ -531,13 +605,14 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
         action('kick', { userid: player.userId, message }, false);
       });
       const ban = document.createElement('button'); ban.className = 'button secondary'; ban.textContent = '封禁'; ban.disabled = disabled;
+      ban.classList.add('player-ban-action');
       ban.addEventListener('click', async () => {
         const message = await playerMessage('封禁玩家', `封禁 ${label}，该玩家将被移出并无法再次加入。`, '封禁', true);
         if (message === null) return;
         action('ban', { userid: player.userId, name: label, message }, false);
       });
       actions.append(kick, ban);
-      row.append(details, actions); $('manager-players-list').append(row);
+      container.append(row);
     }
   }
   function renderBans(value) {
@@ -551,27 +626,17 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       : disabled ? '本服封禁名单，游戏服务就绪且无任务执行时可解封。' : '解封后允许玩家重新加入服务器。';
     const list = $('manager-banned-list');
     list.replaceChildren();
-    if (!value.players.length) list.textContent = '暂无已封禁玩家';
+    if (!value.players.length) playerEmpty(list, '暂无已封禁玩家', '封禁的账号会保留在这里，解封后可重新加入服务器。');
     for (const player of value.players) {
-      const row = document.createElement('div'); row.className = 'player-row';
-      const details = document.createElement('div'); details.className = 'player-details';
-      const title = document.createElement('strong'); title.textContent = player.name || player.userId;
-      const caption = document.createElement('span'); caption.textContent = player.name ? player.userId : '昵称未记录';
-      details.append(title, caption);
-      if (player.reason) {
-        const note = document.createElement('span'); note.textContent = `封禁理由：${player.reason}`;
-        details.append(note);
-      }
-      if (player.bannedAt) {
-        const time = document.createElement('span'); time.textContent = `封禁时间：${timeFormat.dateTime(player.bannedAt)}`;
-        details.append(time);
-      }
+      const { row, details, actions } = playerCard(player, true);
+      playerDetail(details, '封禁理由', player.reason || '未记录');
+      if (player.bannedAt) playerDetail(details, '封禁时间', timeFormat.dateTime(player.bannedAt), { dateTime: player.bannedAt });
       const button = document.createElement('button'); button.className = 'button secondary'; button.textContent = '解封'; button.disabled = disabled;
       button.addEventListener('click', async () => {
         const confirmed = await ask({ title: '解封玩家？', description: `允许 ${player.name || player.userId} 重新加入服务器。`, confirm: '解封', symbol: 'user' });
         if (confirmed) await action('unban', { userid: player.userId }, false);
       });
-      row.append(details, button); list.append(row);
+      actions.append(button); list.append(row);
     }
   }
   async function loadBans() {
