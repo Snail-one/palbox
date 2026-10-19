@@ -12,6 +12,20 @@ const record = async password => ({ username: 'admin', ...await passwordRecord(p
 const request = (address, headers = {}) => ({ socket: { remoteAddress: address }, headers });
 const response = () => ({ headers: {}, setHeader(name, value) { this.headers[name] = value; } });
 
+test('校验密码期间用户名改变，旧用户名的登录不能获得新账号会话', async () => {
+  let admin = await record('correct-password');
+  const auth = new Authentication(() => admin);
+  let finish;
+  auth.passwordMatches = () => new Promise(resolve => { finish = resolve; });
+  const result = response();
+  const login = auth.login(request('203.0.113.8'), 'admin', 'correct-password', result);
+  admin = { ...admin, username: 'renamed-admin' };
+  finish(true);
+  await assert.rejects(login, { status: 401 });
+  assert.equal(result.headers['Set-Cookie'], undefined);
+  assert.equal(auth.sessions.size, 0);
+});
+
 test('初始化网络地址分类识别回环、内网和链路本地地址', () => {
   for (const address of ['127.0.0.1', '127.8.9.10', '::1', '10.1.2.3', '172.16.0.1', '172.31.255.255', '192.168.1.5', '169.254.1.1', '::ffff:192.168.1.5', '::ffff:7f00:1', 'fd00::1', 'fe80::1']) {
     assert.equal(isLoopbackOrPrivate(address), true, address);

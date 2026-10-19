@@ -36,7 +36,7 @@
 .account-settings-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
 .account-settings-actions .button { flex: 1 1 120px; }
 .account-settings-actions .button[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
-.account-password-section fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.account-security-dialog fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .account-security-dialog .account-password-input { margin-top: 7px; }
 .account-security-dialog .account-password-input input { min-width: 0; margin-top: 0; padding-right: 42px; }
 .account-password-tools { display: flex; flex-wrap: wrap; gap: 8px; }

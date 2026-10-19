@@ -27,7 +27,7 @@ async function pendingBody(f, route, session, { method = 'PUT', type = 'applicat
   return { request, response };
 }
 
-for (const revoke of ['logout', 'rotation', 'password']) {
+for (const revoke of ['logout', 'rotation', 'password', 'username']) {
   test(`${revoke} 后，已通过入口认证但尚未读完请求体的写入全部拒绝`, async t => {
     const f = await managementFixture(); t.after(() => f.close());
     const session = await f.login();
@@ -40,6 +40,7 @@ for (const revoke of ['logout', 'rotation', 'password']) {
       ['/api/workspace', snapshot],
       ['/api/tasks', { action: 'save-world' }, { method: 'POST' }],
       ['/api/security/password', { currentPassword: f.password, newPassword: 'new-management-password-456' }, { method: 'POST' }],
+      ['/api/security/username', { currentPassword: f.password, username: 'another-admin' }, { method: 'POST' }],
       ['/api/save-import', Buffer.from([0x1f, 0x8b]), { method: 'POST', type: 'application/gzip' }]
     ];
     const pending = [];
@@ -48,10 +49,11 @@ for (const revoke of ['logout', 'rotation', 'password']) {
     const revocation = revoke === 'logout'
       ? await f.request('/api/logout', { method: 'POST' })
       : revoke === 'password' ? await f.request('/api/security/password', { method: 'POST', body: { currentPassword: f.password, newPassword: 'new-management-password-456' } })
+      : revoke === 'username' ? await f.request('/api/security/username', { method: 'POST', body: { currentPassword: f.password, username: 'new-admin' } })
       : await f.request('/api/security/totp/enable', { method: 'POST', body: { code: totpCode(secret, Math.floor(Date.now() / 30000) - 1) } });
     assert.equal(revocation.status, 200);
     for (const job of pending) job.request.end(Buffer.isBuffer(job.body) ? job.body : JSON.stringify(job.body));
-    assert.deepEqual((await Promise.all(pending.map(job => job.response))).map(response => response.statusCode), [401, 401, 401, 401, 401]);
+    assert.deepEqual((await Promise.all(pending.map(job => job.response))).map(response => response.statusCode), pending.map(() => 401));
     assert.deepEqual(f.manager.store.snapshot(), snapshot);
     assert.equal(f.manager.settings.backupRetention, 5);
     if (revoke === 'logout') assert.deepEqual(await readFile(f.manager.settingsFile), settings);

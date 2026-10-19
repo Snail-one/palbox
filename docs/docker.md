@@ -48,6 +48,8 @@ ssh -N -L 127.0.0.1:18080:127.0.0.1:8080 用户名@服务器IP
 
 前端静态页面与代理响应附带 CSP、X-Frame-Options、Referrer-Policy 和 Permissions-Policy；JSON API 与下载响应附带 `default-src 'none'` 的 CSP。JSON 请求体同时受大小上限和读取截止时间约束，超时连接会被关闭。TLS 终止、HSTS 和公网访问控制仍由反向代理负责。
 
+面板登录用户名可在侧栏「账号 → 修改用户名」修改，需验证当前密码；启用 TOTP 时还需第二因素。用户名保存在 `palbox/settings.json`，修改会撤销其他会话并更新当前浏览器凭据，原密码和验证器绑定保留。
+
 已有 `settings.json` 时沿用其中的管理员账号。旧版 `settings.json`（`admin` 只有 `salt`/`hash`、没有 `username`）不兼容当前版本：启动会失败并提示先备份数据目录、删除对应的 `palbox/settings.json` 后重新初始化；配置库、存档、备份和日志不受影响。镜像入口以 root 处理挂载目录归属后，通过 gosu 切换到普通用户，游戏和 Node 均以该用户运行；默认使用 `1000:1000`，需要时可通过可选的 `PUID`/`PGID` 环境变量覆盖。
 
 修改 Dockerfile 后，重新构建并更新容器：

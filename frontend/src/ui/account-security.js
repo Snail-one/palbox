@@ -17,8 +17,19 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
   }
   dialog.innerHTML = `<div class="dialog-heading"><span class="dialog-icon"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg></span><button type="button" class="icon-button" id="security-close" aria-label="关闭账号"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
     <h2 id="account-security-title">账号</h2>
-    <div class="account-settings-actions" role="group" aria-label="账号设置"><button id="account-password-button" type="button" class="button secondary" aria-controls="password-section" aria-expanded="false" disabled>修改密码</button><button id="account-totp-button" type="button" class="button secondary" aria-controls="security-section" aria-expanded="false" disabled>二次验证</button></div>
+    <p id="security-username" class="management-note"></p>
+    <div class="account-settings-actions" role="group" aria-label="账号设置"><button id="account-username-button" type="button" class="button secondary" aria-controls="username-section" aria-expanded="false" disabled>修改用户名</button><button id="account-password-button" type="button" class="button secondary" aria-controls="password-section" aria-expanded="false" disabled>修改密码</button><button id="account-totp-button" type="button" class="button secondary" aria-controls="security-section" aria-expanded="false" disabled>二次验证</button></div>
     <p id="security-status" role="status">正在读取…</p>
+    <section id="username-section" aria-labelledby="username-section-title" hidden><h3 id="username-section-title" class="account-section-title">修改用户名</h3>
+      <p id="username-hint">用户名需要 1–64 位。修改后，其他设备需要使用新用户名重新登录。</p>
+      <form id="username-form"><fieldset id="username-fields" aria-label="修改用户名" disabled>
+        <label class="dialog-name-label" for="username-new">新用户名<input id="username-new" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" required maxlength="64" aria-describedby="username-hint"></label>
+        ${passwordField('username-password', '当前密码', 'current-password')}
+        <label id="username-code-field" class="dialog-name-label" for="username-code" hidden>动态验证码或恢复码<input id="username-code" type="text" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" maxlength="40"></label>
+        <p id="username-error" class="alert error" role="alert" hidden></p>
+        <div class="dialog-actions"><button id="username-submit" class="button primary" type="submit">修改用户名</button></div>
+      </fieldset></form>
+    </section>
     <section id="security-section" aria-labelledby="security-section-title" hidden><h3 id="security-section-title" class="account-section-title">二次验证</h3>
     <form id="security-form">
       <div id="security-credentials">${passwordField('security-password', '管理员密码', 'current-password')}</div>
@@ -44,7 +55,7 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
     </section>
     <div class="account-session-actions"><button id="manager-logout" type="button" class="button secondary"><svg class="icon" aria-hidden="true"><use href="#i-logout"/></svg>退出登录</button></div>`;
   document.body.append(dialog);
-  const navigation = ['account-password-button', 'account-totp-button'];
+  const navigation = ['account-username-button', 'account-password-button', 'account-totp-button'];
   const revealButtons = [...dialog.querySelectorAll('[data-password-input]')];
   let stage = 'loading';
   let enabled = false;
@@ -58,23 +69,27 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
   }
   for (const reveal of revealButtons) reveal.addEventListener('click', () => revealPassword(reveal, $(reveal.dataset.passwordInput).type === 'password'));
   function showPanel() {
+    $('username-section').hidden = panel !== 'username';
     $('password-section').hidden = panel !== 'password';
     $('security-section').hidden = panel !== 'totp';
     $('account-password-button').setAttribute('aria-expanded', String(panel === 'password'));
     $('account-totp-button').setAttribute('aria-expanded', String(panel === 'totp'));
+    $('account-username-button').setAttribute('aria-expanded', String(panel === 'username'));
   }
-  for (const [id, name] of [['account-password-button', 'password'], ['account-totp-button', 'totp']]) {
+  for (const [id, name] of [['account-username-button', 'username'], ['account-password-button', 'password'], ['account-totp-button', 'totp']]) {
     $(id).addEventListener('click', () => {
       if (busy || stage === 'loading' || stage === 'recovery') return;
       panel = panel === name ? null : name;
       render(lastState);
-      if (panel) $(panel === 'password' ? 'password-current' : 'security-password').focus();
+      if (panel) $({ username: 'username-new', password: 'password-current', totp: 'security-password' }[panel]).focus();
     });
   }
   function error(message = '') { $('security-error').textContent = message; $('security-error').hidden = !message; }
   function clearSecrets() {
     $('security-qr').removeAttribute('src'); $('security-qr').hidden = true;
-    for (const id of ['security-password', 'security-code', 'password-current', 'password-new', 'password-confirm', 'password-code']) $(id).value = '';
+    for (const id of ['security-password', 'security-code', 'password-current', 'password-new', 'password-confirm', 'password-code', 'username-new', 'username-password', 'username-code']) $(id).value = '';
+    $('username-new').setCustomValidity('');
+    $('username-error').textContent = ''; $('username-error').hidden = true;
     $('password-confirm').setCustomValidity('');
     for (const reveal of revealButtons) revealPassword(reveal, false);
     $('password-generated').hidden = true;
@@ -84,6 +99,7 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
   function render(state) {
     lastState = state;
     enabled = state.enabled;
+    $('security-username').textContent = `当前用户名：${state.username}`;
     stage = 'settings';
     $('security-status').textContent = enabled ? `二次验证已启用 · 剩余 ${state.recoveryCodesRemaining} 个恢复码` : '二次验证未启用。启用后，登录还需要验证器的动态验证码。';
     $('security-setup').hidden = true;
@@ -101,6 +117,9 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
     showPanel();
     for (const id of navigation) $(id).disabled = busy;
     $('password-fields').disabled = busy;
+    $('username-fields').disabled = busy;
+    $('username-code-field').hidden = !enabled;
+    $('username-code').required = enabled;
     $('password-code-field').hidden = !enabled;
     $('password-code').required = enabled;
     clearSecrets(); error();
@@ -112,6 +131,7 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
     $('security-form').hidden = true;
     $('security-recovery').hidden = false;
     $('password-section').hidden = true;
+    $('username-section').hidden = true;
     $('security-recovery-codes').textContent = result.recoveryCodes.join('\n');
     $('security-close').disabled = true; $('manager-logout').disabled = true;
     for (const id of navigation) $(id).disabled = true;
@@ -122,6 +142,7 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
     panel = null; showPanel();
     for (const id of navigation) $(id).disabled = true;
     $('security-status').textContent = '正在读取…';
+    $('security-username').textContent = '';
     $('security-form').hidden = false; $('security-recovery').hidden = true; $('security-setup').hidden = true;
     $('security-credentials').hidden = true; $('security-code-field').hidden = true; $('security-regenerate').hidden = true;
     $('security-submit').disabled = true;
@@ -145,6 +166,7 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
     busy = true; error();
     for (const id of navigation) $(id).disabled = true;
     $('password-fields').disabled = true;
+    $('username-fields').disabled = true;
     $('security-submit').disabled = true; $('security-regenerate').disabled = true; $('security-close').disabled = true; $('manager-logout').disabled = true;
     try {
       const password = $('security-password').value;
@@ -175,6 +197,7 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
       busy = false; $('security-submit').disabled = false; $('security-regenerate').disabled = false;
       for (const id of navigation) $(id).disabled = stage === 'recovery';
       $('password-fields').disabled = stage !== 'settings';
+      $('username-fields').disabled = stage !== 'settings';
       $('security-close').disabled = stage === 'recovery'; $('manager-logout').disabled = stage === 'recovery';
     }
   }
@@ -204,6 +227,7 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
     busy = true;
     $('password-error').hidden = true;
     $('password-fields').disabled = true;
+    $('username-fields').disabled = true;
     for (const id of [...navigation, 'security-submit', 'security-regenerate', 'security-close', 'manager-logout']) $(id).disabled = true;
     try {
       render(await api.request('security/password', { method: 'POST', body: input }));
@@ -212,6 +236,31 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
       $('password-error').textContent = caught.message; $('password-error').hidden = false;
     } finally {
       busy = false; $('password-fields').disabled = false;
+      $('username-fields').disabled = false;
+      for (const id of [...navigation, 'security-submit', 'security-regenerate', 'security-close', 'manager-logout']) $(id).disabled = false;
+    }
+  });
+  function validateUsername() {
+    const username = $('username-new').value.trim();
+    $('username-new').setCustomValidity(!username ? '请输入新用户名。' : username === lastState?.username ? '新用户名不能与当前用户名相同。' : '');
+  }
+  $('username-new').addEventListener('input', validateUsername);
+  $('username-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    if (busy || stage !== 'settings') return;
+    validateUsername();
+    if (!$('username-form').reportValidity()) return;
+    const input = { username: $('username-new').value.trim(), currentPassword: $('username-password').value, code: $('username-code').value.trim() };
+    busy = true; $('username-error').hidden = true;
+    $('username-fields').disabled = true; $('password-fields').disabled = true;
+    for (const id of [...navigation, 'security-submit', 'security-regenerate', 'security-close', 'manager-logout']) $(id).disabled = true;
+    try {
+      render(await api.request('security/username', { method: 'POST', body: input }));
+      notify('用户名已修改，其他设备需要使用新用户名重新登录');
+    } catch (caught) {
+      $('username-error').textContent = caught.message; $('username-error').hidden = false;
+    } finally {
+      busy = false; $('username-fields').disabled = false; $('password-fields').disabled = false;
       for (const id of [...navigation, 'security-submit', 'security-regenerate', 'security-close', 'manager-logout']) $(id).disabled = false;
     }
   });

@@ -31,7 +31,7 @@ test('TOTP 绑定要求登录、来源校验、密码重验和有效动态码，
   const f = await managementFixture(); t.after(() => f.close());
   assert.equal((await post(f, '/api/security/totp/setup', { password: f.password })).status, 401);
   const session = await f.login();
-  assert.deepEqual(await (await f.request('/api/security/totp')).json(), { enabled: false, recoveryCodesRemaining: 0 });
+  assert.deepEqual(await (await f.request('/api/security/totp')).json(), { username: f.username, enabled: false, recoveryCodesRemaining: 0 });
   assert.equal((await post(f, '/api/security/totp/setup', { password: f.password }, { headers: { 'X-Palbox-CSRF': 'wrong' } })).status, 403);
   assert.equal((await post(f, '/api/security/totp/setup', { password: 'wrong' })).status, 401);
   const setup = await post(f, '/api/security/totp/setup', { password: f.password });

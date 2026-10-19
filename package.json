@@ -19,6 +19,7 @@
     "test:e2e": "node tests/e2e/browser.cjs",
     "test:e2e:totp": "node tests/e2e/totp.cjs",
     "test:e2e:password": "node tests/e2e/password.cjs",
+    "test:e2e:username": "node tests/e2e/username.cjs",
     "test:e2e:initial": "node tests/e2e/initial-configuration.cjs",
     "test:e2e:managed": "node tests/e2e/management.cjs",
     "test:e2e:logs": "node tests/e2e/logs.cjs",

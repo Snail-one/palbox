@@ -67,7 +67,7 @@ export class Authentication {
     this.factorFailures = null;
   }
   get adminRecord() { return typeof this.record === 'function' ? this.record() : this.record; }
-  signature(record = this.adminRecord) { return digest(`${record?.hash}:${record?.totp?.secret || ''}`); }
+  signature(record = this.adminRecord) { return digest(JSON.stringify([record?.username, record?.hash, record?.totp?.secret || ''])); }
   session(request) {
     const token = request.headers.cookie?.split(';').map(p => p.trim()).find(p => p.startsWith('palbox_session='))?.slice(15);
     if (!token) return null;
@@ -207,7 +207,7 @@ export class Authentication {
     } finally { challenge.pending = false; }
   }
   securityStatus() {
-    return { enabled: Boolean(this.adminRecord?.totp), recoveryCodesRemaining: this.adminRecord?.totp?.recoveryHashes.length ?? 0 };
+    return { username: this.adminRecord?.username, enabled: Boolean(this.adminRecord?.totp), recoveryCodesRemaining: this.adminRecord?.totp?.recoveryHashes.length ?? 0 };
   }
   async reauthenticate(request, password, response) {
     const { attempts } = this.attempt(request, response);
@@ -254,6 +254,30 @@ export class Authentication {
     }, { authorize: () => this.require(request, true) });
     const rotated = this.rotateSession(request, response);
     this.log(`管理员密码已修改（${this.clientAddress(request)}）\n`);
+    return { ...this.securityStatus(), ...rotated };
+  }
+  async changeUsername(request, input, response) {
+    this.require(request, true);
+    const username = normalizeUsername(input.username);
+    if (!validUsername(username)) throw failure('用户名需要 1–64 位，且不能包含控制字符。', 400);
+    if (username === this.adminRecord.username) throw failure('新用户名不能与当前用户名相同。', 400);
+    const checked = await this.reauthenticate(request, input.currentPassword, response);
+    let previous;
+    await this.updateAdmin(admin => {
+      this.require(request, true);
+      if (checked.signature !== this.signature(admin)) throw failure('账号验证设置已变化，请重新打开账号。', 409);
+      previous = admin.username;
+      const next = { ...admin, username };
+      if (admin.totp) {
+        this.factorAttempt(response);
+        const verified = verifyFactor(admin.totp, input.code);
+        if (!verified) this.failedFactor(request, checked.attempts, '动态验证码或恢复码不正确、已使用或已过期。', '修改用户名二次验证失败');
+        next.totp = verified;
+      }
+      return next;
+    }, { authorize: () => this.require(request, true) });
+    const rotated = this.rotateSession(request, response);
+    this.log(`管理员用户名已修改（${this.clientAddress(request)}，原用户名 ${JSON.stringify(previous)}，新用户名 ${JSON.stringify(username)}）\n`);
     return { ...this.securityStatus(), ...rotated };
   }
   async confirmEnrollment(request, code, response) {
