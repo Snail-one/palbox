@@ -75,6 +75,9 @@ export function createManagementApi(manager, options = {}) {
         json(200, await auth.login(request, input.username, input.password, response)); return;
       }
       auth.require(request, !['GET', 'HEAD'].includes(request.method));
+      if (pathname === '/api/configuration-template' && request.method === 'GET') {
+        json(200, await manager.store.newConfigurationTemplate()); return;
+      }
       if (pathname === '/api/default-configuration' && request.method === 'GET') {
         json(200, { source: await manager.store.defaultTemplate() }); return;
       }

@@ -4,11 +4,14 @@ import { mkdtemp, mkdir, readdir, readFile, rm, symlink, writeFile } from 'node:
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Manager } from '../../backend/management/manager.js';
+import template from '../../shared/domain/template.js';
 
 async function fixture(t) {
   const directory = await mkdtemp(path.join(tmpdir(), 'palbox-complete-backup-'));
   const manager = new Manager({ directory });
   t.after(async () => { await manager.close(); await rm(directory, { recursive: true, force: true }); });
+  await mkdir(path.join(directory, 'server'), { recursive: true });
+  await writeFile(path.join(directory, 'server/DefaultPalWorldSettings.ini'), template);
   await manager.initialize();
   return { manager, runtime: manager.runtime, directory };
 }

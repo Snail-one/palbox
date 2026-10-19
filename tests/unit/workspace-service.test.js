@@ -13,7 +13,7 @@ const createRepository = getStorage => ({
   }
 });
 
-function setup(initial = null) {
+function setup(initial = { version: 1, activeId: 'initial', profiles: [{ id: 'initial', name: '我的帕鲁世界', source: template, initialSource: template }] }) {
   const data = new Map(initial === null ? [] : [[KEY, JSON.stringify(initial)]]);
   let fail = false;
   const storage = {
@@ -50,8 +50,8 @@ test('新建、复制、重命名、切换与删除通过工作空间服务完�
   service.remove();
   assert.equal(service.active.id, original.id);
   service.remove();
-  assert.equal(service.profiles.length, 1);
-  assert.equal(service.active.source, template);
+  assert.equal(service.profiles.length, 0);
+  assert.equal(service.active, undefined);
 });
 
 test('最多添加 10 套配置，拒绝超限时不改变选择与内容，删除后可添加', () => {
@@ -102,16 +102,16 @@ test('保存失败回滚已保存源文件，不影响可供复制的编辑结�
   assert.match(service.message, /复制/);
 });
 
-test('删除最后一套配置时使用后端提供的官方默认内容作为新恢复基准', () => {
-  const { service } = setup();
-  const source = 'OptionSettings=(ServerName="Official File",NewOption=5)';
-  service.remove(service.active.id, { fallbackSource: source });
-  assert.equal(service.profiles.length, 1);
-  assert.equal(service.active.source, source);
-  assert.equal(service.initialSource, source);
-  const id = service.active.id;
-  assert.throws(() => service.remove(id, { fallbackSource: 'OptionSettings=(A="broken)' }));
-  assert.equal(service.active.id, id);
+test('空配置库不会自动创建配置，删除最后一条后保持为空', () => {
+  const { service, data } = setup({ version: 1, activeId: null, profiles: [] });
+  assert.equal(service.active, undefined);
+  assert.equal(service.initialSource, undefined);
+  assert.equal(service.profiles.length, 0);
+  const created = service.add('手动新建', 'OptionSettings=(ServerName="Manual")');
+  assert.equal(service.active.id, created.id);
+  service.remove(created.id);
+  service.persist();
+  assert.deepEqual(JSON.parse(data.get(KEY)), { version: 1, activeId: null, profiles: [] });
 });
 
 test('列表可按 ID 管理其他配置，复制、重命名和删除均保留当前选择', () => {
@@ -139,8 +139,8 @@ test('列表可按 ID 管理其他配置，复制、重命名和删除均保留�
   service.remove(current.id);
   assert.equal(service.active.id, copy.id);
   service.remove(copy.id);
-  assert.equal(service.profiles.length, 1);
-  assert.equal(service.active.source, template);
+  assert.equal(service.profiles.length, 0);
+  assert.equal(service.active, undefined);
 });
 
 test('损坏的仓库记录进入临时空间，禁止后续操作覆盖原始数据', () => {
@@ -160,6 +160,9 @@ test('仓库实现和身份生成可独立替换，无浏览器 API 依赖', () 
   let snapshot = null;
   const repository = { load: () => null, save: value => { snapshot = structuredClone(value); } };
   const service = new WorkspaceService({ repository, template, id: () => 'injected', now: () => 'fixed-time' });
+  assert.equal(service.profiles.length, 0);
+  service.add('手动创建');
+  service.persist();
   assert.equal(service.active.id, 'injected');
   assert.equal(snapshot.profiles[0].updatedAt, 'fixed-time');
   assert.throws(() => service.select('missing'), /不存在/);

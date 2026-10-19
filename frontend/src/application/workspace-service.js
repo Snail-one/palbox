@@ -31,14 +31,14 @@ export class WorkspaceService {
       this.#message = `${error.message} 当前使用临时工作空间，可以编辑并复制；请先备份或修复原始数据。`;
     }
     if (!this.#workspace) {
-      this.#workspace = createWorkspace(this.#profile('我的帕鲁世界', template, '内置模板'));
+      this.#workspace = createWorkspace(this.#blocked ? this.#profile('临时配置', template, '临时工作空间') : undefined);
       if (!this.#blocked) this.persist();
     }
   }
 
   get profiles() { return this.#workspace.profiles; }
   get active() { return this.profiles.find(profile => profile.id === this.#workspace.activeId); }
-  get initialSource() { return this.active.initialSource ?? this.active.source; }
+  get initialSource() { return this.active?.initialSource ?? this.active?.source; }
   get persisted() { return this.#persisted; }
   get message() { return this.#message; }
   #profile(name, source, origin) { return createProfile(name, source, { ...this.#identity, origin }); }
@@ -67,12 +67,12 @@ export class WorkspaceService {
     parse(source);
     const profile = this.#profile(name, source, origin);
     this.profiles.push(profile);
-    if (select) this.select(profile.id);
+    if (select || !this.active) this.select(profile.id);
     this.#persisted = false;
     return profile;
   }
 
-  rename(name, id = this.active.id) {
+  rename(name, id = this.active?.id) {
     const profile = this.profiles.find(profile => profile.id === id);
     if (!profile) throw new Error('配置不存在。');
     if (profile.locked) throw new Error('游戏默认配置不能重命名。');
@@ -80,21 +80,14 @@ export class WorkspaceService {
     this.#persisted = false;
   }
 
-  remove(id = this.active.id, { fallbackSource, fallbackOrigin } = {}) {
+  remove(id = this.active?.id) {
     const removed = this.profiles.find(profile => profile.id === id);
     if (!removed) throw new Error('配置不存在。');
     if (removed.locked) throw new Error('游戏默认配置不能删除。');
     const activeRemoved = id === this.active.id;
     const remaining = this.profiles.filter(profile => profile.id !== id);
-    // Keeping the server-owned game-default entry is enough; do not recreate a
-    // deleted editable profile when that entry is still available.
-    if (!remaining.length) {
-      const source = fallbackSource ?? this.#template;
-      parse(source);
-      remaining.push(this.#profile('我的帕鲁世界', source, fallbackOrigin ?? '内置模板'));
-    }
     this.#workspace.profiles = remaining;
-    if (activeRemoved) this.select((remaining.find(profile => !profile.locked) ?? remaining[0]).id);
+    if (activeRemoved) this.#workspace.activeId = (remaining.find(profile => !profile.locked) ?? remaining[0])?.id ?? null;
     this.#persisted = false;
   }
 

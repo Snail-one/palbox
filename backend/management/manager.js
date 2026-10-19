@@ -247,7 +247,12 @@ export class Manager {
   }
   async ensureConfig() {
     try { await stat(this.runtime.config); }
-    catch (error) { if (error.code !== 'ENOENT') throw error; await atomicWrite(this.runtime.config, output(this.store.active().source)); }
+    catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      const active = this.store.active();
+      if (!active) throw failure('尚无可用配置，请先安装服务端或手动新建配置。', 409);
+      await atomicWrite(this.runtime.config, output(active.source));
+    }
   }
   servicePhase(phase, message) {
     if (this.busy) { this.busy.phase = phase; this.busy.message = message; }
@@ -269,8 +274,7 @@ export class Manager {
     switch (action) {
       case 'install':
         await this.installGame();
-        task.defaultsImported = await this.store.importDefaultIfPending();
-        try { await this.store.syncDefaultProfile(); } catch (error) { this.runtime.log('palbox', `同步游戏默认配置失败：${error.message}\n`); }
+        task.defaultsImported = await this.store.syncDefaultProfile();
         await this.ensureConfig();
         this.updateCache = null;
         this.versionCache = null;
@@ -294,6 +298,7 @@ export class Manager {
         const snapshot = this.store.snapshot();
         if (payload.revision !== snapshot.revision || payload.profileId !== snapshot.workspace.activeId) throw failure('配置已变更，请等待自动保存完成后重新应用。', 409);
         const active = this.store.active();
+        if (!active) throw failure('尚无可用配置，请先安装服务端或手动新建配置。', 409);
         const source = output(active.source);
         const values = new Map(parse(source).entries.map(e => [e.key, e.raw]));
         if (values.get('RESTAPIEnabled') !== 'True' || !decodeString(values.get('AdminPassword') || '""')) throw failure('管理模式需要 RESTAPIEnabled=True 和非空管理员密码。');
@@ -549,15 +554,17 @@ export class Manager {
     };
   }
   async status() {
+    await this.store.syncDefaultProfile();
     const installed = await this.runtime.installed();
     const installedBuild = installed ? await this.installedBuild() : null;
     if (!installed || this.versionCache?.build !== installedBuild) this.versionCache = null;
     let disk = null;
     try { disk = await readFile(this.runtime.config, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    const desired = output(this.store.active().source);
+    const active = this.store.active();
+    const desired = active ? output(active.source) : null;
     let configuration = disk && output(disk) === desired ? 'applied' : 'pending';
     if (this.runtime.game && (!this.runtime.runningSource || output(this.runtime.runningSource) !== desired)) configuration = 'pending';
-    const status = { installed, installedBuild, version: this.versionCache?.version || null, hasWorldSave: await this.hasWorldSave(), running: Boolean(this.runtime.game), ready: this.runtime.ready, configuration, startedAt: this.runtime.startedAt, lastExit: this.runtime.lastExit, task: this.busy, tasks: this.tasks, revision: this.store.revision, port: this.runtime.port, metrics: null, info: null, players: [] };
+    const status = { installed, installedBuild, version: this.versionCache?.version || null, hasWorldSave: await this.hasWorldSave(), running: Boolean(this.runtime.game), ready: this.runtime.ready, configuration, hasConfiguration: Boolean(active), startedAt: this.runtime.startedAt, lastExit: this.runtime.lastExit, task: this.busy, tasks: this.tasks, revision: this.store.revision, port: this.runtime.port, metrics: null, info: null, players: [] };
     if (this.runtime.game) {
       const results = await Promise.allSettled([this.runtime.rest('info'), this.runtime.rest('metrics'), this.runtime.rest('players')]);
       if (results[0].status === 'fulfilled') {

@@ -163,3 +163,6 @@
   background: #fdf0ef;
   color: #a43c35;
 }
+
+.configuration-library .profile-item.unavailable { color: #888; background: var(--input-bg); border-color: var(--line); }
+.profile-item.unavailable .profile-select { cursor: not-allowed; opacity: .55; }

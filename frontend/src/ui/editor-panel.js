@@ -17,6 +17,8 @@ export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged
   const source = createSourceEditor({ dom, editor, ask, notify, onChanged });
 
   function render() {
+    $('configuration-editor-content').hidden = !workspace.active;
+    $('configuration-empty').hidden = Boolean(workspace.active);
     const origin = workspace.active?.origin || '已有配置';
     const sourceLocked = workspace.active?.locked === true;
     $('source-origin').textContent = `来源：${origin}`;

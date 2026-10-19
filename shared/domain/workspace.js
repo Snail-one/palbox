@@ -7,7 +7,7 @@ export const OFFICIAL_DEFAULT_ORIGIN = '官方默认配置（DefaultPalWorldSett
 export const DERIVED_DEFAULT_ORIGIN = '基于官方默认配置（DefaultPalWorldSettings.ini）';
 
 export function validateWorkspace(workspace) {
-  if (!workspace || workspace.version !== WORKSPACE_VERSION || !Array.isArray(workspace.profiles) || !workspace.profiles.length) {
+  if (!workspace || workspace.version !== WORKSPACE_VERSION || !Array.isArray(workspace.profiles)) {
     throw new Error('本地配置数据格式不正确。原始数据已保留，未覆盖。');
   }
   const ids = new Set();
@@ -17,7 +17,7 @@ export function validateWorkspace(workspace) {
     }
     ids.add(profile.id);
   }
-  if (!ids.has(workspace.activeId)) throw new Error('本地配置的选中记录不存在。原始数据已保留，未覆盖。');
+  if (workspace.profiles.length ? !ids.has(workspace.activeId) : workspace.activeId !== null) throw new Error('本地配置的选中记录不存在。原始数据已保留，未覆盖。');
   return workspace;
 }
 
@@ -34,5 +34,5 @@ export function createProfile(name, source, { id, now, origin, locked } = {}) {
 }
 
 export function createWorkspace(profile) {
-  return { version: WORKSPACE_VERSION, activeId: profile.id, profiles: [profile] };
+  return { version: WORKSPACE_VERSION, activeId: profile?.id ?? null, profiles: profile ? [profile] : [] };
 }

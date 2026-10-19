@@ -13,7 +13,7 @@ function uptimeLabel(seconds) {
   return `${Math.floor(hours / 24)}天${hours % 24 ? `${hours % 24}小时` : ''}`;
 }
 
-export function createManagementPanel({ dom, api, ask, notify, getConfiguration, onDefaultsImported }) {
+export function createManagementPanel({ dom, api, ask, notify, getConfiguration, onDefaultsImported, onWorkspaceChanged }) {
   const { $, document } = dom;
   const NATIVE_BACKUP_PAGE_SIZE = 10;
   const section = document.createElement('section');
@@ -459,7 +459,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     polling = true;
     let statusReceived = false;
     try {
-      const value = await api.request('status'); lastStatus = value; lastErrorMessage = '';
+      const value = await api.request('status'); onWorkspaceChanged?.(value.revision); lastStatus = value; lastErrorMessage = '';
       statusReceived = true;
       const game = $('game-state');
       const serviceState = gameServiceState(value);
@@ -468,9 +468,9 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       game.title = serviceState.description;
       game.setAttribute('aria-label', `${serviceState.label}。${serviceState.description}`);
       const config = $('game-config-state');
-      config.textContent = value.configuration === 'pending' ? '待生效' : value.running && value.ready ? '已生效' : '已写入';
+      config.textContent = value.hasConfiguration === false ? '暂无配置' : value.configuration === 'pending' ? '待生效' : value.running && value.ready ? '已生效' : '已写入';
       config.dataset.state = value.configuration === 'pending' ? 'pending' : value.running && value.ready ? 'saved' : 'written';
-      config.title = value.configuration === 'pending' ? '当前面板配置尚未应用到游戏，点击应用配置后生效。'
+      config.title = value.hasConfiguration === false ? '请先安装服务端或手动新建配置。' : value.configuration === 'pending' ? '当前面板配置尚未应用到游戏，点击应用配置后生效。'
         : value.running && value.ready ? '游戏服务已使用当前配置运行。'
         : value.running ? '配置已写入，正在等待游戏管理接口就绪。'
         : '配置已写入游戏文件，启动服务器后生效。';
@@ -493,7 +493,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
           button.disabled ||= noSave;
           button.title = noSave ? '尚无可备份的世界存档，请先启动游戏并生成存档。' : '';
         }
-        if (name === 'apply') button.textContent = value.running ? '应用并重启' : '应用配置';
+        if (name === 'apply') { button.textContent = value.running ? '应用并重启' : '应用配置'; button.disabled ||= value.hasConfiguration === false; }
       }
       $('show-running-config').disabled = !value.running;
       $('check-update').disabled = checkingUpdate || !value.installed || Boolean(value.task);

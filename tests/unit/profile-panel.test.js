@@ -147,3 +147,19 @@ test('保存失败时保留弹窗并显示错误', async () => {
   assert.equal(elements.get('source-view-error').hidden, false);
   assert.match(elements.get('source-view-error').textContent, /保存失败/);
 });
+
+test('没有官方配置时只显示灰色禁用入口，保留新建和导入', () => {
+  const { elements, workspace, panel } = setup();
+  workspace.profiles = []; workspace.active = undefined;
+  panel.render();
+  const rows = elements.get('profile-list').children;
+  assert.equal(rows.length, 1);
+  assert.match(rows[0].className, /unavailable/);
+  assert.equal(rows[0].attributes['aria-disabled'], 'true');
+  assert.equal(rows[0].children[0].disabled, true);
+  assert.equal(elements.get('new-profile').disabled, false);
+  assert.equal(elements.get('import-button').disabled, false);
+  assert.equal(elements.get('copy-profile').disabled, true);
+  assert.equal(elements.get('view-profile-source').disabled, true);
+  assert.equal(workspace.profiles.length, 0);
+});

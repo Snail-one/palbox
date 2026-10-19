@@ -45,7 +45,6 @@ export class ManagementStore {
     this.revision = 0;
     this.gamePort = gamePort;
     this.workspace = null;
-    this.pendingDefault = null;
     this.writes = Promise.resolve();
   }
   async initialize() {
@@ -55,26 +54,23 @@ export class ManagementStore {
       // Existing libraries remain readable and can be reduced to the new limit.
       this.workspace = validateConfigurationWorkspace(saved.workspace || saved, { maxProfiles: 101 });
       this.revision = saved.revision || 1;
-      this.pendingDefault = saved.pendingDefault || null;
-    } else {
-      let source;
-      let origin;
-      let pendingDefault = false;
-      try { source = await readFile(path.join(this.directory, 'server/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini'), 'utf8'); parse(source); origin = '当前游戏配置（PalWorldSettings.ini）'; }
-      catch (error) {
-        if (error.code !== 'ENOENT') throw error;
-        source = await this.defaultTemplate({ optional: true });
-        if (source === null) {
-          source = managedTemplate(this.gamePort, '[/Script/Pal.PalGameWorldSettings]\nOptionSettings=()\n');
-          origin = '安装前占位配置';
-          pendingDefault = true;
-        } else origin = DERIVED_DEFAULT_ORIGIN;
+      // Remove only untouched placeholders from older deployments.
+      const pending = saved.pendingDefault;
+      if (pending) {
+        this.workspace.profiles = this.workspace.profiles.filter(profile => profile.id !== pending.id || profile.source !== pending.source);
+        if (!this.active()) this.workspace.activeId = this.workspace.profiles[0]?.id ?? null;
+        this.revision += 1;
+        await this.persist();
       }
-      this.workspace = createWorkspace(createProfile('我的帕鲁世界', source, { origin }));
+    } else {
+      this.workspace = createWorkspace();
       this.revision = 1;
-      // Before installation, keep only the settings required to manage the game.
-      // Replace this untouched placeholder once the official file is installed.
-      if (pendingDefault) this.pendingDefault = { id: this.active().id, source };
+      // Preserve an existing server configuration, but never create a working copy automatically.
+      try {
+        const source = await readFile(path.join(this.directory, 'server/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini'), 'utf8');
+        parse(source);
+        this.workspace = createWorkspace(createProfile('当前游戏配置', source, { origin: '当前游戏配置（PalWorldSettings.ini）' }));
+      } catch (error) { if (error.code !== 'ENOENT') throw error; }
       await this.persist();
     }
     for (const profile of this.workspace.profiles) profile.initialSource ??= profile.source;
@@ -125,6 +121,7 @@ export class ManagementStore {
         const managed = managedTemplate(this.gamePort, source);
         locked = createProfile(GAME_DEFAULT_PROFILE_NAME, managed, { id: () => GAME_DEFAULT_PROFILE_ID, origin: OFFICIAL_DEFAULT_ORIGIN, locked: true });
         workspace.profiles.push(locked);
+        workspace.activeId ??= locked.id;
         changed = true;
       } else {
         // Keep the generated admin password stable, enable REST management, and
@@ -163,40 +160,12 @@ export class ManagementStore {
     this.writes = operation.catch(() => {});
     return operation;
   }
-  persist() { return jsonWrite(this.file, { ...this.snapshot(), ...(this.pendingDefault ? { pendingDefault: this.pendingDefault } : {}) }); }
-  importDefaultIfPending() {
-    const operation = this.writes.then(async () => {
-      const pending = this.pendingDefault;
-      let imported = false;
-      let source = null;
-      if (pending) {
-        const profile = this.workspace.profiles.find(candidate => candidate.id === pending.id);
-        if (profile && profile.source === pending.source) {
-          source = await this.readDefaultFile();
-          imported = true;
-        }
-      }
-      if (source === null) {
-        try { source = await this.readDefaultFile({ optional: true }); }
-        catch { source = null; }
-      }
-      const workspace = structuredClone(this.workspace);
-      if (imported) {
-        const profile = workspace.profiles.find(candidate => candidate.id === pending.id);
-        const managed = managedTemplate(this.gamePort, source);
-        profile.source = managed; profile.initialSource = managed; profile.updatedAt = new Date().toISOString();
-        profile.origin = DERIVED_DEFAULT_ORIGIN;
-      }
-      const changed = this.applyDefaultProfile(workspace, source) || imported;
-      if (!changed) return false;
-      const revision = this.revision + 1;
-      const nextPending = imported ? null : this.pendingDefault;
-      await jsonWrite(this.file, { workspace, revision, ...(nextPending ? { pendingDefault: nextPending } : {}) });
-      this.workspace = workspace; this.revision = revision; this.pendingDefault = nextPending;
-      return imported;
-    });
-    this.writes = operation.catch(() => {});
-    return operation;
+  persist() { return jsonWrite(this.file, this.snapshot()); }
+  async newConfigurationTemplate() {
+    const source = await this.defaultTemplate({ optional: true });
+    return source === null
+      ? { source: managedTemplate(this.gamePort, '[/Script/Pal.PalGameWorldSettings]\nOptionSettings=()\n'), origin: '手动创建的配置' }
+      : { source, origin: DERIVED_DEFAULT_ORIGIN };
   }
   update(workspace, revision) {
     const operation = this.writes.then(async () => {
@@ -223,11 +192,10 @@ export class ManagementStore {
         if (profile.origin === OFFICIAL_DEFAULT_ORIGIN) profile.origin = DERIVED_DEFAULT_ORIGIN;
       }
       if (locked && !candidate.profiles.some(profile => profile.id === locked.id)) candidate.profiles.push(structuredClone(locked));
+      if (!candidate.activeId && locked) candidate.activeId = locked.id;
       validateConfigurationWorkspace(candidate, limits);
       const next = this.revision + 1;
-      const pendingDefault = this.pendingDefault && candidate.profiles.some(profile => profile.id === this.pendingDefault.id && profile.source === this.pendingDefault.source) ? this.pendingDefault : null;
-      await jsonWrite(this.file, { workspace: candidate, revision: next, ...(pendingDefault ? { pendingDefault } : {}) });
-      this.pendingDefault = pendingDefault;
+      await jsonWrite(this.file, { workspace: candidate, revision: next });
       this.workspace = candidate;
       this.revision = next;
       return this.snapshot();

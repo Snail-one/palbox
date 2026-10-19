@@ -8,7 +8,7 @@ import { ManagementStore } from '../../backend/management/store.js';
 import { Manager } from '../../backend/management/manager.js';
 import { createManagementApi } from '../../backend/management/api.js';
 import { parse, decodeString } from '../../shared/domain/config.js';
-import { DERIVED_DEFAULT_ORIGIN, GAME_DEFAULT_PROFILE_NAME, OFFICIAL_DEFAULT_ORIGIN } from '../../shared/domain/workspace.js';
+import { createProfile, createWorkspace, DERIVED_DEFAULT_ORIGIN, GAME_DEFAULT_PROFILE_NAME, OFFICIAL_DEFAULT_ORIGIN } from '../../shared/domain/workspace.js';
 
 const official = '; Official defaults\r\n[/Script/Pal.PalGameWorldSettings]\r\nOptionSettings=(ServerName="Official World",ExpRate=2.500000,FutureFlag=(Enabled=True),RESTAPIEnabled=False,AdminPassword="",PublicPort=8211)\r\n';
 const values = source => new Map(parse(source).entries.map(entry => [entry.key, entry.raw]));
@@ -46,67 +46,81 @@ test('初始默认配置读取游戏官方文件，保留注释、未知参数�
   assert.equal(lockedSettings.get('PublicPort'), '9000');
   assert.ok(decodeString(lockedSettings.get('AdminPassword')), '默认项自动生成管理员密码');
   const lockedPassword = decodeString(lockedSettings.get('AdminPassword'));
-  assert.notEqual(store.active().id, locked.id);
+  assert.equal(store.active().id, locked.id);
+  assert.equal(store.workspace.profiles.length, 1);
   const changed = official.replace('ExpRate=2.500000', 'ExpRate=8.000000');
   await writeFile(file, changed);
   assert.equal(values(await store.defaultTemplate()).get('ExpRate'), '8.000000', '新建时读取当前官方文件');
   const restarted = new ManagementStore(directory, 9000);
   await restarted.initialize();
-  assert.equal(restarted.active().source, source, '更新官方文件不覆盖已经保存的配置');
+  assert.equal(restarted.workspace.profiles.length, 1);
   const restartedLocked = restarted.workspace.profiles.find(profile => profile.locked);
   assert.equal(values(restartedLocked.source).get('ExpRate'), '8.000000', '只读默认项跟随官方文件更新');
   assert.equal(decodeString(values(restartedLocked.source).get('AdminPassword')), lockedPassword, '密码跨同步保留');
   assert.equal(restartedLocked.source, restartedLocked.initialSource);
 });
 
-test('未安装时只建立管理占位配置，安装后导入官方文件并更新恢复基准', async t => {
+test('首次部署没有配置或占位项，检测到官方文件后只有一个默认条目', async t => {
   const { directory, file } = await fixture(t);
   const store = new ManagementStore(directory);
   await store.initialize();
-  assert.deepEqual([...values(store.active().source).keys()], ['RESTAPIEnabled', 'AdminPassword', 'PublicPort']);
-  await assert.rejects(store.defaultTemplate(), { status: 409, message: /DefaultPalWorldSettings\.ini/ });
-  assert.equal(await store.defaultTemplate({ optional: true }), null);
-  const id = store.active().id;
-  const revision = store.revision;
-  await writeFile(file, official);
+  assert.deepEqual(store.workspace, { version: 1, activeId: null, profiles: [] });
+  assert.deepEqual(JSON.parse(await readFile(store.file, 'utf8')).workspace.profiles, []);
+  await assert.rejects(store.defaultTemplate(), { status: 409 });
   const restarted = new ManagementStore(directory);
   await restarted.initialize();
-  assert.equal(await restarted.importDefaultIfPending(), true);
-  assert.equal(restarted.active().id, id);
-  assert.equal(restarted.revision, revision + 2, '启动时新增只读默认项，安装后导入占位配置');
+  assert.deepEqual(restarted.workspace, store.workspace);
+  await writeFile(file, official);
+  assert.equal(await restarted.syncDefaultProfile(), true);
+  assert.equal(restarted.workspace.profiles.length, 1);
+  assert.equal(restarted.active().name, GAME_DEFAULT_PROFILE_NAME);
+  assert.equal(restarted.active().source, restarted.active().initialSource);
   assert.equal(values(restarted.active().source).get('ServerName'), '"Official World"');
-  assert.equal(restarted.active().initialSource, restarted.active().source);
-  const locked = restarted.workspace.profiles.find(profile => profile.locked);
-  assert.ok(locked);
-  assert.equal(values(locked.source).get('ServerName'), '"Official World"');
-  assert.equal(values(locked.source).get('RESTAPIEnabled'), 'True');
-  assert.ok(decodeString(values(locked.source).get('AdminPassword')));
-  assert.equal(await restarted.importDefaultIfPending(), false);
-  assert.equal(JSON.parse(await readFile(restarted.file, 'utf8')).pendingDefault, undefined);
+  assert.equal(await restarted.syncDefaultProfile(), false);
 });
 
-test('安装前已修改的配置和现有游戏配置不会被默认文件覆盖', async t => {
+test('未安装时允许手动新建，检测到官方配置后保留手动配置和当前选择', async t => {
   const { directory, file } = await fixture(t);
   const store = new ManagementStore(directory);
   await store.initialize();
-  const snapshot = store.snapshot();
-  snapshot.workspace.profiles[0].source = 'OptionSettings=(ServerName="My World")';
-  await store.update(snapshot.workspace, snapshot.revision);
+  const template = await store.newConfigurationTemplate();
+  assert.equal(template.origin, '手动创建的配置');
+  assert.deepEqual([...values(template.source).keys()], ['RESTAPIEnabled', 'AdminPassword', 'PublicPort']);
+  assert.equal(store.workspace.profiles.length, 0, '获取新建内容不会创建配置');
+  const profile = createProfile('手动世界', template.source, { origin: template.origin });
+  await store.update(createWorkspace(profile), store.revision);
   await writeFile(file, official);
-  assert.equal(await store.importDefaultIfPending(), false);
-  assert.equal(store.active().source, 'OptionSettings=(ServerName="My World")');
-  const locked = store.workspace.profiles.find(profile => profile.locked);
-  assert.equal(values(locked.source).get('ServerName'), '"Official World"');
-  assert.equal(values(locked.source).get('RESTAPIEnabled'), 'True');
-  assert.ok(decodeString(values(locked.source).get('AdminPassword')));
-  await rm(store.file);
+  await store.syncDefaultProfile();
+  assert.equal(store.workspace.profiles.length, 2);
+  assert.equal(store.active().id, profile.id);
+  assert.equal(store.active().source, template.source);
+  assert.equal((await store.newConfigurationTemplate()).origin, DERIVED_DEFAULT_ORIGIN);
+});
+
+test('已有游戏配置仍被保留，不被官方配置覆盖', async t => {
+  const { directory, file } = await fixture(t);
   const config = path.join(directory, 'server/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini');
   await mkdir(path.dirname(config), { recursive: true });
   await writeFile(config, 'OptionSettings=(ServerName="Existing Server")');
-  const existing = new ManagementStore(directory);
-  await existing.initialize();
-  assert.equal(existing.active().source, 'OptionSettings=(ServerName="Existing Server")');
-  assert.equal(await existing.importDefaultIfPending(), false);
+  await writeFile(file, official);
+  const store = new ManagementStore(directory);
+  await store.initialize();
+  assert.equal(store.active().source, 'OptionSettings=(ServerName="Existing Server")');
+  assert.equal(store.workspace.profiles.length, 2);
+});
+
+test('旧占位配置只在未编辑时移除，已编辑配置保留', async t => {
+  const { directory } = await fixture(t);
+  const source = 'OptionSettings=(RESTAPIEnabled=True,AdminPassword="old")';
+  for (const edited of [false, true]) {
+    const profile = createProfile('我的帕鲁世界', edited ? source.replace('old', 'edited') : source, { id: () => 'old' });
+    const store = new ManagementStore(directory);
+    await mkdir(path.dirname(store.file), { recursive: true });
+    await writeFile(store.file, JSON.stringify({ workspace: createWorkspace(profile), revision: 1, pendingDefault: { id: 'old', source } }));
+    await store.initialize();
+    assert.equal(store.workspace.profiles.length, edited ? 1 : 0);
+    assert.equal(JSON.parse(await readFile(store.file, 'utf8')).pendingDefault, undefined);
+  }
 });
 
 test('默认文件缺少管理参数时补齐，空文件或损坏内容明确拒绝', async t => {
@@ -163,6 +177,7 @@ test('默认配置接口要求登录，文件缺失时返回明确错误且现�
     return response;
   }
   assert.equal((await request('/api/default-configuration')).status, 401);
+  assert.equal((await request('/api/configuration-template')).status, 401);
   assert.equal((await request('/api/bootstrap')).body.template, undefined);
   const login = await request('/api/login', { method: 'POST', body: { username: 'admin', password: 'test-default-configuration-password' } });
   assert.equal(login.status, 200);
@@ -179,6 +194,9 @@ test('默认配置接口要求登录，文件缺失时返回明确错误且现�
   const available = await request('/api/bootstrap', { cookie });
   assert.equal(available.status, 200);
   assert.equal(available.body.template, null);
+  const manualTemplate = await request('/api/configuration-template', { cookie });
+  assert.equal(manualTemplate.status, 200);
+  assert.equal(manualTemplate.body.origin, '手动创建的配置');
   assert.equal((await request('/api/workspace', { cookie })).body.workspace.activeId, manager.store.active().id);
 });
 
@@ -187,7 +205,12 @@ test('游戏默认配置可修改参数并应用，但名称和来源由服务�
   await writeFile(file, official);
   const store = new ManagementStore(directory, 9000);
   await store.initialize();
-  const workingId = store.active().id;
+  const working = createProfile('手动世界', await store.defaultTemplate());
+  const workingSnapshot = store.snapshot();
+  workingSnapshot.workspace.profiles.push(working);
+  workingSnapshot.workspace.activeId = working.id;
+  await store.update(workingSnapshot.workspace, workingSnapshot.revision);
+  const workingId = working.id;
   const initialLocked = store.workspace.profiles.find(profile => profile.locked);
   const lockedId = initialLocked.id;
   const initialBaseline = initialLocked.initialSource;
@@ -290,4 +313,18 @@ test('旧版官方来源配置迁移为可编辑副本，并自动补充只读�
   assert.equal(lockedSettings.get('RESTAPIEnabled'), 'True');
   assert.ok(decodeString(lockedSettings.get('AdminPassword')));
   assert.equal(locked.origin, OFFICIAL_DEFAULT_ORIGIN);
+});
+
+test('空配置库仍可查询服务状态，拒绝写入或应用空配置，状态轮询能检测官方文件', async t => {
+  const { directory, file } = await fixture(t);
+  const manager = new Manager({ directory });
+  await manager.initialize();
+  t.after(() => manager.close());
+  assert.equal((await manager.status()).hasConfiguration, false);
+  await assert.rejects(manager.ensureConfig(), { status: 409, message: /尚无可用配置/ });
+  await assert.rejects(manager.execute('apply', { revision: manager.store.revision, profileId: null }), { status: 409, message: /尚无可用配置/ });
+  await assert.rejects(readFile(manager.runtime.config), { code: 'ENOENT' });
+  await writeFile(file, official);
+  assert.equal((await manager.status()).hasConfiguration, true);
+  assert.equal(manager.store.workspace.profiles.length, 1);
 });

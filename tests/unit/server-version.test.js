@@ -21,7 +21,7 @@ test('状态显示游戏版本与本地 Build，停服保留版本，更新后�
     }
   };
   const manager = new Manager({ directory, runtime });
-  manager.store = { active: () => ({ source }), revision: 1 };
+  manager.store = { syncDefaultProfile: async () => false, active: () => ({ source }), revision: 1 };
   const manifest = path.join(runtime.server, 'steamapps/appmanifest_2394010.acf');
   await mkdir(path.dirname(manifest), { recursive: true });
   await writeFile(manifest, '"buildid" "100"\n');
@@ -84,7 +84,7 @@ test('缺少 Steam 清单时仍能读取运行中的游戏版本', async t => {
     rest: async endpoint => endpoint === 'info' ? { version: 'v0.7.1' } : {}
   };
   const manager = new Manager({ directory, runtime });
-  manager.store = { active: () => ({ source: 'OptionSettings=(ServerName="Test")' }), revision: 1 };
+  manager.store = { syncDefaultProfile: async () => false, active: () => ({ source: 'OptionSettings=(ServerName="Test")' }), revision: 1 };
   const status = await manager.status();
   assert.equal(status.version, 'v0.7.1');
   assert.equal(status.installedBuild, null);

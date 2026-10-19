@@ -17,6 +17,7 @@ export function createSummary({ dom, editor, workspace, catalog, isDirty, persis
       let status = isDirty()
         ? { state: 'pending', label: '未保存', detail: '当前修改尚未保存到服务器。' }
         : { state: 'saved', label: '已保存', detail: '所有有效修改已自动保存到服务器。' };
+      if (!profile) status = { state: 'pending', label: '暂无配置', detail: '请先安装服务端或手动新建配置。' };
       if (persistence.pending) status = { state: 'pending', label: '保存中', detail: '正在将有效修改保存到服务器。' };
       if (editor.sourceDraft !== null) status = { state: 'pending', label: '待应用', detail: '源码修改尚未应用，应用成功后会自动保存。' };
       if (editor.errorCount) status = { state: 'error', label: '输入有误', detail: `${editor.errorCount} 项输入需要修正，已保留上一次有效值。` };
@@ -27,9 +28,9 @@ export function createSummary({ dom, editor, workspace, catalog, isDirty, persis
       badge.dataset.state = status.state;
       badge.title = status.detail;
       badge.setAttribute('aria-label', status.detail);
-      $('profile-title').textContent = profile.name;
-      $('profile-server').textContent = decodeString(editor.raw('ServerName') || 'PalWorldSettings.ini');
-      $('profile-updated').textContent = savedTime(profile.updatedAt);
+      $('profile-title').textContent = profile?.name ?? '暂无可用配置';
+      $('profile-server').textContent = profile ? decodeString(editor.raw('ServerName') || 'PalWorldSettings.ini') : '请安装服务端或手动新建配置';
+      $('profile-updated').textContent = profile ? savedTime(profile.updatedAt) : '';
       document.title = `${isDirty() ? '● ' : ''}${document.title.replace(/^● /, '')}`;
     }
   };

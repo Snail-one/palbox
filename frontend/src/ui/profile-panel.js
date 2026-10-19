@@ -1,4 +1,4 @@
-import { OFFICIAL_DEFAULT_ORIGIN, MAX_PROFILES } from '../../../shared/domain/workspace.js';
+import { OFFICIAL_DEFAULT_ORIGIN, MAX_PROFILES, GAME_DEFAULT_PROFILE_NAME } from '../../../shared/domain/workspace.js';
 
 export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, isDirty, clipboard, notify, onSaveSource, actions }) {
   const { $, el, icon, empty } = dom;
@@ -15,7 +15,8 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
   }
   function closeSourceDialog() { sourceDialog.close(); }
   function openSourceDialog(profile = workspace.active) {
-    const active = profile.id === workspace.active.id;
+    if (!profile) return;
+    const active = profile.id === workspace.active?.id;
     const origin = profile.origin || '已有配置';
     // Only the server-owned game-default entry (and legacy official-origin data)
     // is protected; an imported file with the same name is an editable copy.
@@ -59,7 +60,7 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
   $('new-profile').addEventListener('click', async () => {
     if (!hasCapacity()) return;
     if (!(await beforeLeave())) return;
-    const name = await ask({ title: '创建一个新的世界', description: '读取游戏目录中的官方 DefaultPalWorldSettings.ini，创建一套独立配置。', name: '新的帕鲁世界', confirm: '创建配置', symbol: 'plus' });
+    const name = await ask({ title: '创建一个新的世界', description: '创建一套独立配置；检测到官方默认文件时使用其参数，否则由你自行编辑或粘贴配置。', name: '新的帕鲁世界', confirm: '创建配置', symbol: 'plus' });
     if (name) actions.create(name);
   });
   async function rename(profile) {
@@ -67,8 +68,8 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
     if (name && name !== profile.name) actions.rename(name, profile.id);
   }
   async function duplicate(profile, fromList = false) {
-    if (!hasCapacity()) return;
-    if (profile.id === workspace.active.id && !ready()) return;
+    if (!profile || !hasCapacity()) return;
+    if (profile.id === workspace.active?.id && !ready()) return;
     const description = profile.locked && profile.source === profile.initialSource
       ? '副本读取当前官方默认配置并补入管理模式必需的 REST API 参数，作为自己的恢复基准；后续编辑与原条目相互独立。'
       : `副本包含「${profile.name}」的所有有效参数，并将这些参数作为自己的恢复基准；后续编辑与原配置相互独立。`;
@@ -76,11 +77,11 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
     if (name) actions.duplicate(name, profile.id, { fromList });
   }
   async function remove(profile, fromList = false) {
-    const discardsEdits = profile.id === workspace.active.id && isDirty();
+    const discardsEdits = profile.id === workspace.active?.id && isDirty();
     const lastEditable = workspace.profiles.filter(candidate => !candidate.locked).length === 1;
     const hasLocked = workspace.profiles.some(candidate => candidate.locked);
     const afterDelete = lastEditable
-      ? hasLocked ? '删除后将只保留「游戏默认配置」。' : '删除后会创建一套新的可编辑配置。'
+      ? hasLocked ? '删除后将只保留「游戏默认配置」。' : '删除后配置库为空，可手动新建或等待检测到游戏默认配置。'
       : '其他配置不受影响。';
     const yes = await ask({ title: '删除这套配置？', description: `「${profile.name}」将从配置库中删除${discardsEdits ? '，包括尚未保存的更改' : ''}。${afterDelete}`, confirm: '删除配置', danger: true, symbol: 'trash' });
     if (yes) actions.remove(profile.id, { fromList });
@@ -99,15 +100,32 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
         $(id).disabled = full;
         $(id).title = full ? limitMessage : '';
       }
-      $('profile-origin').textContent = `来源：${workspace.active.origin || '已有配置'}`;
-      $('profile-origin').title = workspace.active.origin || '已有配置';
-      const activeLocked = workspace.active.locked === true;
+      $('profile-origin').textContent = `来源：${workspace.active?.origin || '已有配置'}`;
+      $('profile-origin').title = workspace.active?.origin || '已有配置';
+      const activeLocked = !workspace.active || workspace.active.locked === true;
       $('rename-profile').disabled = activeLocked;
       $('delete-profile').disabled = activeLocked;
       $('rename-profile').title = activeLocked ? '游戏默认配置不能重命名。' : '';
       $('delete-profile').title = activeLocked ? '游戏默认配置不能删除。' : '';
+      const hasActive = Boolean(workspace.active);
+      for (const id of ['copy-profile', 'view-profile-source', 'restore-input-button', 'header-copy-button']) {
+        if ($(id)) $(id).disabled = !hasActive || (id === 'copy-profile' && full);
+      }
+      if (!workspace.profiles.some(profile => profile.locked)) {
+        const row = el('div', 'profile-item unavailable');
+        row.setAttribute('role', 'group');
+        row.setAttribute('aria-label', GAME_DEFAULT_PROFILE_NAME);
+        row.setAttribute('aria-disabled', 'true');
+        const button = el('button', 'profile-select');
+        button.type = 'button'; button.disabled = true;
+        const text = el('span', 'profile-item-text');
+        text.append(el('strong', '', GAME_DEFAULT_PROFILE_NAME), el('small', '', '未检测到游戏默认配置，安装服务端后自动启用'));
+        button.append(icon('file'), text);
+        row.append(button);
+        $('profile-list').append(row);
+      }
       for (const profile of workspace.profiles) {
-        const selected = profile.id === workspace.active.id;
+        const selected = profile.id === workspace.active?.id;
         const row = el('div', `profile-item${selected ? ' selected' : ''}`);
         row.dataset.profileId = profile.id;
         row.setAttribute('role', 'group');

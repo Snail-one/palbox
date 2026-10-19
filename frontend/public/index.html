@@ -120,6 +120,8 @@
           <div id="profile-list" class="profile-list"></div>
         </section>
         <div id="configuration-editor">
+        <p id="configuration-empty" class="management-note" hidden>暂无可用配置，请先安装服务端，或前往<a href="#configuration/profiles">配置列表</a>手动新建配置。</p>
+        <div id="configuration-editor-content">
         <section class="editor-panel" aria-label="配置编辑器">
           <div class="editor-toolbar"><div class="segmented editor-mode-switch" id="editor-mode" role="group" aria-label="编辑模式"><button type="button" id="editor-mode-form" class="selected" aria-pressed="true">可视化编辑</button><button type="button" id="editor-mode-advanced" aria-pressed="false">高级编辑</button></div><label class="search-box"><svg class="icon"><use href="#i-search"/></svg><input id="search" type="search" placeholder="搜索名称或参数…" aria-label="搜索配置参数"><kbd>/</kbd></label></div>
           <div id="view-form" role="region" aria-labelledby="editor-mode-form"><nav class="category-nav" id="category-nav" aria-label="参数分类"></nav><div class="section-heading"><div class="section-heading-icon" id="group-icon"></div><div><h3 id="group-title"></h3><p id="group-description"></p></div><span id="group-count" class="subtle-tag"></span></div><div class="fields-grid" id="fields-grid"></div><div class="empty-state" id="empty-state" hidden><svg class="icon"><use href="#i-search"/></svg><h3>没有找到匹配参数</h3><p>试试其他中文名称或原始参数名，也可以前往高级编辑。</p></div><div class="form-note"><svg class="icon"><use href="#i-info"/></svg><span>仅显示当前文件中存在的参数。其他参数可在「高级编辑」中查看和修改。</span></div></div>
@@ -132,7 +134,7 @@
             </div>
           </div>
         </section>
-        <div class="bottom-note"><span><span class="tiny-dot"></span>准备好下一场冒险</span><span>PalWorldSettings.ini<span class="detail-separator">·</span>配置自动保存 · 应用后在游戏中生效</span></div>
+        <div class="bottom-note"><span><span class="tiny-dot"></span>准备好下一场冒险</span><span>PalWorldSettings.ini<span class="detail-separator">·</span>配置自动保存 · 应用后在游戏中生效</span></div></div>
         </div>
         </section>
       </main>

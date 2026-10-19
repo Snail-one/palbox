@@ -1,5 +1,4 @@
 import { EditorSession } from '../../shared/domain/editor-session.js';
-import { DERIVED_DEFAULT_ORIGIN } from '../../shared/domain/workspace.js';
 import { WorkspaceService } from './application/workspace-service.js';
 import { createDom } from './ui/dom.js';
 import { createDialog } from './ui/dialog.js';
@@ -16,13 +15,15 @@ import { createLoginLogsPanel } from './ui/login-logs-panel.js';
 export function createApp({ document, window, catalog, repository, clipboard, files, management }) {
   const dom = createDom(document);
   const workspace = new WorkspaceService({ repository, template: catalog.template });
-  const editor = new EditorSession(workspace.active.source, { validate: catalog.validate, formatOutput: catalog.formatOutput, baselineSource: workspace.initialSource });
-  function resetEditor() { editor.reset(workspace.active.source, { baselineSource: workspace.initialSource }); }
+  const emptySource = '[/Script/Pal.PalGameWorldSettings]\nOptionSettings=()\n';
+  const editor = new EditorSession(workspace.active?.source ?? emptySource, { validate: catalog.validate, formatOutput: catalog.formatOutput, baselineSource: workspace.initialSource });
+  function resetEditor() { editor.reset(workspace.active?.source ?? emptySource, { baselineSource: workspace.initialSource }); }
   const notifications = createNotifications(dom);
   const ask = createDialog(dom);
-  const isDirty = () => editor.sourceDraft !== null || editor.errorCount > 0 || editor.source() !== workspace.active.source || !workspace.persisted || repository.pending || Boolean(repository.error);
+  const isDirty = () => editor.sourceDraft !== null || editor.errorCount > 0 || editor.source() !== (workspace.active?.source ?? emptySource) || !workspace.persisted || repository.pending || Boolean(repository.error);
   const summary = createSummary({ dom, editor, workspace, catalog, isDirty, persistence: repository });
   const ready = () => {
+    if (!workspace.active) { notifications.toast('请先安装服务端或手动新建配置。', true); return false; }
     if (!editor.blockReason) return true;
     notifications.toast(editor.blockReason, true);
     return false;
@@ -42,7 +43,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
     catch (error) { notifications.storage(error.message); notifications.toast(error.message, true); return false; }
   }
   function save({ automatic = false } = {}) {
-    if (!automatic && !ready()) return false;
+    if (!workspace.active || (!automatic && !ready())) return false;
     let success = true;
     const source = editor.source();
     if (source !== workspace.active.source || !workspace.persisted) {
@@ -78,7 +79,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
   navigation.refresh();
   async function saveProfileSource(id, source) {
     if (!workspace.updateSource(id, source)) throw new Error(workspace.message || '保存失败，请复制备份后重试。');
-    if (id === workspace.active.id) { resetEditor(); panel.render(); }
+    if (id === workspace.active?.id) { resetEditor(); panel.render(); }
     profiles.render();
     summary.render();
     if (repository.flush && !(await repository.flush())) throw new Error(repository.error || '保存失败，请复制备份后重试。');
@@ -95,7 +96,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
   }
   const profiles = createProfilePanel({ dom, workspace, ask, beforeLeave, ready, isDirty, clipboard, notify: notifications.toast, onSaveSource: saveProfileSource, actions: {
     async select(id) {
-      if (id === workspace.active.id) {
+      if (id === workspace.active?.id) {
         navigation.closeSidebar();
         if (workspace.active.locked) { navigation.openEditor('form'); return; }
         navigation.openEditor('advanced');
@@ -110,12 +111,12 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
     },
     async create(name) {
       try {
-        const { source } = await management.request('default-configuration');
-        workspace.add(name, source, { origin: DERIVED_DEFAULT_ORIGIN });
-        changedProfile('已从官方默认配置创建');
+        const { source, origin } = await management.request('configuration-template');
+        workspace.add(name, source, { origin });
+        changedProfile('已创建配置', { source: origin === '手动创建的配置' });
       } catch (error) { notifications.toast(error.message, true); }
     },
-    async duplicate(name, id = workspace.active.id, { fromList = false } = {}) {
+    async duplicate(name, id = workspace.active?.id, { fromList = false } = {}) {
       const sourceProfile = workspace.profiles.find(profile => profile.id === id) ?? workspace.active;
       let source;
       if (sourceProfile.locked && sourceProfile.source === sourceProfile.initialSource) {
@@ -123,7 +124,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
         try { ({ source } = await management.request('default-configuration')); }
         catch (error) { notifications.toast(error.message, true); return; }
       } else {
-        source = id === workspace.active.id ? editor.source() : sourceProfile.source;
+        source = id === workspace.active?.id ? editor.source() : sourceProfile.source;
       }
       try { workspace.add(name, source, { select: !fromList, origin: `复制自「${sourceProfile.name}」` }); }
       catch (error) { notifications.toast(error.message, true); return; }
@@ -133,26 +134,16 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
       summary.render();
       if (success) notifications.toast('已创建独立副本');
     },
-    rename(name, id = workspace.active.id) {
+    rename(name, id = workspace.active?.id) {
       try { workspace.rename(name, id); }
       catch (error) { notifications.toast(error.message, true); return; }
       if (persist()) notifications.toast('配置名称已提交');
       profiles.render();
       summary.render();
     },
-    async remove(id = workspace.active.id, { fromList = false } = {}) {
-      let fallbackSource;
-      let fallbackOrigin;
-      const editable = workspace.profiles.filter(profile => !profile.locked);
-      const hasLocked = workspace.profiles.some(profile => profile.locked);
-      if (editable.length === 1 && editable[0].id === id && !hasLocked) {
-        try {
-          ({ source: fallbackSource } = await management.request('default-configuration'));
-          fallbackOrigin = DERIVED_DEFAULT_ORIGIN;
-        } catch (error) { notifications.toast(error.message, true); return; }
-      }
-      const activeRemoved = id === workspace.active.id;
-      try { workspace.remove(id, { fallbackSource, fallbackOrigin }); }
+    async remove(id = workspace.active?.id, { fromList = false } = {}) {
+      const activeRemoved = id === workspace.active?.id;
+      try { workspace.remove(id); }
       catch (error) { notifications.toast(error.message, true); return; }
       if (!fromList) { changedProfile('配置已删除'); return; }
       if (activeRemoved) resetEditor();
@@ -168,6 +159,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
     changedProfile('导入成功，所有原始参数均已保留');
   } });
   dom.$('restore-input-button').addEventListener('click', async () => {
+    if (!workspace.active) return;
     const restore = await ask({ title: '恢复输入配置？', description: '将当前配置的全部参数恢复为最初输入或导入的内容，放弃后续编辑和未应用的源码。恢复后会自动保存；其他配置不受影响。', confirm: '恢复输入配置', danger: true, symbol: 'file' });
     if (!restore) return;
     editor.reset(workspace.initialSource);
@@ -181,13 +173,15 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
   function render() { profiles.render(); panel.render(); summary.render(); }
   render();
   notifications.storage(workspace.message);
-  const managementPanel = createManagementPanel({ dom, api: management, ask, notify: notifications.toast, onDefaultsImported() {
+  const managementPanel = createManagementPanel({ dom, api: management, ask, notify: notifications.toast, onWorkspaceChanged(revision) {
+    if (revision > repository.revision && !isDirty() && !document.querySelector('dialog[open]')) window.location.reload();
+  }, onDefaultsImported() {
     if (!isDirty() && !document.querySelector('dialog[open]')) window.location.reload();
     else notifications.toast('官方默认配置已导入，请复制当前草稿后刷新页面。');
   }, async getConfiguration() {
     if (!ready()) throw new Error(editor.blockReason);
     if (!(await repository.flush())) throw new Error(repository.error || '请等待自动保存完成。');
-    return { profileId: workspace.active.id, revision: repository.revision };
+    return { profileId: workspace.active?.id, revision: repository.revision };
   } });
   createLoginLogsPanel({ dom, api: management, window });
   repository.subscribe?.(() => {

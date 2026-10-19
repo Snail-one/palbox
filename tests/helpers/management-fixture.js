@@ -11,13 +11,14 @@ import { createServer } from '../../backend/http-server.js';
 import { createServer as createFrontendServer } from '../../frontend/http-server.js';
 import { serialize, parse } from '../../shared/domain/config.js';
 import template from '../../shared/domain/template.js';
+import { createProfile, DERIVED_DEFAULT_ORIGIN } from '../../shared/domain/workspace.js';
 
 const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
 
-export async function managementFixture({ setup = true, username = 'admin', password = 'test-management-password-123', importLimits } = {}) {
+export async function managementFixture({ setup = true, username = 'admin', password = 'test-management-password-123', importLimits, editable = true, officialDefaults = true } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'palbox-manager-'));
   await mkdir(path.join(directory, 'server'), { recursive: true });
-  await writeFile(path.join(directory, 'server/DefaultPalWorldSettings.ini'), template);
+  if (officialDefaults) await writeFile(path.join(directory, 'server/DefaultPalWorldSettings.ini'), template);
   const portServer = createNetServer(); portServer.listen(0, '127.0.0.1'); await once(portServer, 'listening');
   const restPort = portServer.address().port;
   await new Promise(resolve => portServer.close(resolve));
@@ -32,10 +33,18 @@ export async function managementFixture({ setup = true, username = 'admin', pass
   const runtime = new Runtime(directory, { steamcmd, readyTimeout: 10000, stopTimeout: 5000 });
   const manager = new Manager({ directory, runtime, importLimits });
   await manager.initialize();
+  // Most management tests explicitly work with an independent editable world.
+  if (editable) {
+    const working = createProfile('我的帕鲁世界', await manager.store.defaultTemplate(), { origin: DERIVED_DEFAULT_ORIGIN });
+    manager.store.workspace.profiles.unshift(working);
+    manager.store.workspace.activeId = working.id;
+  }
   if (setup) await manager.setupAdmin(username, password);
   const snapshot = manager.store.snapshot();
-  snapshot.workspace.profiles[0].source = serialize(parse(snapshot.workspace.profiles[0].source), new Map([['RESTAPIPort', String(restPort)]]));
-  snapshot.workspace.profiles[0].initialSource = snapshot.workspace.profiles[0].source;
+  if (snapshot.workspace.profiles.length) {
+    snapshot.workspace.profiles[0].source = serialize(parse(snapshot.workspace.profiles[0].source), new Map([['RESTAPIPort', String(restPort)]]));
+    snapshot.workspace.profiles[0].initialSource = snapshot.workspace.profiles[0].source;
+  }
   // Fixtures provision their original input before the first managed edit.
   manager.store.workspace = snapshot.workspace;
   await manager.store.persist();

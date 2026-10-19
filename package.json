@@ -17,6 +17,7 @@
     "test:unit": "node --test tests/unit/*.test.js",
     "test:integration": "node --test tests/integration/*.test.js",
     "test:e2e": "node tests/e2e/browser.cjs",
+    "test:e2e:initial": "node tests/e2e/initial-configuration.cjs",
     "test:e2e:managed": "node tests/e2e/management.cjs",
     "test:e2e:logs": "node tests/e2e/logs.cjs",
     "test:browser": "npm run test:e2e"
