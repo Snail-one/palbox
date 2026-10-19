@@ -33,6 +33,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   const { $, document } = dom;
   const timeFormat = createTimeFormatter();
   const NATIVE_BACKUP_PAGE_SIZE = 10;
+  const BACKUP_PAGE_SIZE = 5;
   const section = document.createElement('section');
   section.className = 'game-service-toolbar';
   section.setAttribute('aria-label', '帕鲁服务管理');
@@ -159,6 +160,8 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   let settingsRequest = null;
   let settingsCache = null;
   let backupRenderKey = null;
+  let backupCache = [];
+  const backupPages = new Map();
   const retentionAutosave = createBackupRetentionAutosave({
     getSaved: category => settingsCache?.backupRetentions?.[category] ?? 5,
     async save(category, count) {
@@ -329,7 +332,15 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   }
   async function loadBackups() {
     const backups = await api.request('backups');
-    const renderKey = JSON.stringify([backups, Boolean(lastStatus?.task)]);
+    renderBackups(backups);
+  }
+  function renderBackups(backups) {
+    backupCache = backups;
+    for (const category of Object.keys(BACKUP_GROUPS)) {
+      const count = backups.filter(backup => backup.category === category).length;
+      backupPages.set(category, Math.min(backupPages.get(category) ?? 0, Math.max(0, Math.ceil(count / BACKUP_PAGE_SIZE) - 1)));
+    }
+    const renderKey = JSON.stringify([backups, [...backupPages], Boolean(lastStatus?.task)]);
     if (renderKey === backupRenderKey) return;
     const totalBytes = backups.reduce((total, backup) => total + backup.bytes, 0);
     $('save-backup-summary').textContent = `${backups.length} 份 · ${formatBytes(totalBytes)}`;
@@ -341,8 +352,12 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       const empty = document.createElement('p'); empty.className = 'backup-empty-summary'; empty.textContent = '暂无世界备份，创建或执行相关操作后会显示在对应分类中。'; $('manager-backups').append(empty);
     }
     const groups = new Map();
+    const visibleBackups = [];
     for (const [category, title] of Object.entries(BACKUP_GROUPS)) {
       const entries = backups.filter(backup => backup.category === category);
+      const page = backupPages.get(category);
+      const pageCount = Math.max(1, Math.ceil(entries.length / BACKUP_PAGE_SIZE));
+      visibleBackups.push(...entries.slice(page * BACKUP_PAGE_SIZE, (page + 1) * BACKUP_PAGE_SIZE));
       const group = document.createElement('section'); group.className = 'backup-category'; group.dataset.backupCategory = category;
       const [icon, description, emptyDescription] = BACKUP_GROUP_DETAILS[category];
       const header = document.createElement('div'); header.className = 'backup-category-header';
@@ -357,7 +372,8 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       const size = document.createElement('span'); size.textContent = formatBytes(entries.reduce((total, backup) => total + backup.bytes, 0));
       summary.append(count, size); header.append(badge, details, summary); group.append(header);
       const list = document.createElement('div'); list.className = 'backup-category-entries';
-      if (entries.length) { list.tabIndex = 0; list.setAttribute('role', 'region'); list.setAttribute('aria-label', `${title}列表`); }
+      list.id = `backup-list-${category}`;
+      if (entries.length) { list.setAttribute('role', 'region'); list.setAttribute('aria-label', `${title}列表`); }
       if (!entries.length) {
         const empty = document.createElement('div'); empty.className = 'backup-category-empty';
         const title = document.createElement('strong'); title.textContent = '暂无备份';
@@ -382,17 +398,51 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
         event.preventDefault();
         void retentionAutosave.flush(category);
       });
-      group.append(list, policy); groups.set(category, list); $('manager-backups').append(group);
+      group.append(list);
+      if (entries.length) {
+        const pagination = document.createElement('nav'); pagination.className = 'backup-pagination backup-category-pagination';
+        pagination.setAttribute('aria-label', `${title}分页`);
+        const pageStatus = document.createElement('span'); pageStatus.className = 'page-status';
+        pageStatus.setAttribute('role', 'status');
+        pageStatus.textContent = `第 ${page + 1} / ${pageCount} 页 · 共 ${entries.length} 份`;
+        pagination.append(pageStatus);
+        function pageButton(label, target, disabled = false) {
+          const button = document.createElement('button'); button.type = 'button'; button.className = 'button secondary';
+          button.textContent = label; button.disabled = disabled;
+          button.setAttribute('aria-controls', list.id);
+          button.addEventListener('click', () => {
+            if (target === page || target < 0 || target >= pageCount) return;
+            backupPages.set(category, target);
+            renderBackups(backupCache);
+            $(`backup-page-${category}-${target + 1}`)?.focus({ preventScroll: true });
+          });
+          return button;
+        }
+        pagination.append(pageButton('上一页', page - 1, page === 0));
+        for (let index = 0; index < pageCount; index++) {
+          const button = pageButton(String(index + 1), index);
+          button.id = `backup-page-${category}-${index + 1}`;
+          button.setAttribute('aria-label', `${title}第 ${index + 1} 页`);
+          if (index === page) { button.classList.add('active'); button.setAttribute('aria-current', 'page'); }
+          pagination.append(button);
+        }
+        pagination.append(pageButton('下一页', page + 1, page === pageCount - 1));
+        group.append(pagination);
+      }
+      group.append(policy); groups.set(category, list); $('manager-backups').append(group);
       renderRetentionState(category, retentionAutosave.getState(category));
     }
-    for (const backup of backups) {
+    for (const backup of visibleBackups) {
       const row = document.createElement('div'); row.className = 'backup-row'; row.dataset.backupId = backup.id;
       const label = document.createElement('span'); label.className = 'backup-entry-info';
       const category = BACKUP_GROUPS[backup.category];
       const date = document.createElement('time'); date.dateTime = backup.createdAt; date.textContent = timeFormat.date(backup.createdAt);
       date.title = `本地时间（${timeFormat.timeZone}），原始时间 ${backup.createdAt}`;
       const meta = document.createElement('span'); meta.className = 'backup-entry-meta'; meta.textContent = `${timeFormat.time(backup.createdAt)} · ${formatBytes(backup.bytes)}`;
-      label.append(date, meta);
+      const world = document.createElement('span'); world.className = 'backup-entry-world';
+      const worldId = document.createElement('code'); worldId.textContent = backup.worldId || '未识别';
+      world.append('世界 ID：', worldId);
+      label.append(date, meta, world);
       label.title = `${backup.bytes} 字节`;
       const download = document.createElement('a'); download.className = 'button secondary'; download.textContent = '下载'; download.href = `/api/backup?id=${encodeURIComponent(backup.id)}`; download.setAttribute('download', '');
       const restore = document.createElement('button'); restore.className = 'button secondary'; restore.textContent = '恢复'; restore.disabled = Boolean(lastStatus?.task); restore.addEventListener('click', () => action('restore', { id: backup.id }));

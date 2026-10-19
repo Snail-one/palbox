@@ -165,7 +165,7 @@ export function createManagementApi(manager, options = {}) {
         const channel = new URL(request.url, 'http://localhost').searchParams.get('channel') || 'palbox';
         json(200, { text: await manager.runtime.logs(channel) }); return;
       }
-      if (pathname === '/api/backups' && request.method === 'GET') { json(200, await manager.backups()); return; }
+      if (pathname === '/api/backups' && request.method === 'GET') { json(200, await manager.backups({ includeWorldId: true })); return; }
       if (pathname === '/api/native-backups' && request.method === 'GET') { json(200, await manager.nativeBackups()); return; }
       if (pathname === '/api/native-backup' && request.method === 'GET') {
         const archive = await manager.native.export(new URL(request.url, 'http://localhost').searchParams.get('id'));

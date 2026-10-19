@@ -15,6 +15,7 @@ import { atomicWrite, readJson, jsonWrite, failure } from './files.js';
 import { normalizeUsername, passwordRecord, validUsername } from './auth.js';
 import { validTotpRecord } from './totp.js';
 import { backupDirectory, BACKUP_CATEGORIES as categories } from './backup-paths.js';
+import { readBackupWorld, recordBackupWorld, removeBackupMetadata } from './backup-metadata.js';
 import { EditorSession } from '../../shared/domain/editor-session.js';
 import { createCatalog } from '../../shared/domain/catalog.js';
 import { parse, decodeString } from '../../shared/domain/config.js';
@@ -494,6 +495,8 @@ export class Manager extends EventEmitter {
     try { await this.native.safeDirectory([]); }
     catch (error) { if (error.code === 'ENOENT') return null; throw error; }
     if (!(await this.checkBackupFiles(this.runtime.saved))) return null;
+    const worlds = await this.native.worlds();
+    const worldId = await this.native.configuredWorld() || (worlds.length === 1 ? worlds[0] : null);
     const id = `${category}/${Date.now()}-${randomUUID()}.tar.gz`;
     const file = path.join(this.directory, 'backups', id);
     const stage = await mkdtemp(path.join(directory, '.creating-'));
@@ -502,6 +505,7 @@ export class Manager extends EventEmitter {
       await this.runtime.run('tar', ['-czf', temporary, '--hard-dereference', '-C', this.runtime.server, '--', 'Pal/Saved'], 'palbox');
       await backupDirectory(this.directory, category);
       await rename(temporary, file);
+      await recordBackupWorld(file, worldId);
     } finally { await rm(stage, { recursive: true, force: true }); }
     const list = (await this.backups()).filter(b => b.category === category);
     for (const old of list.slice(this.backupRetentions[category])) if (old.id !== protectedId) await this.deleteBackup(old.id);
@@ -531,18 +535,23 @@ export class Manager extends EventEmitter {
     try {
       const file = await this.checkedBackupFile(id);
       await unlink(file);
+      await removeBackupMetadata(file);
     } catch (error) {
       if (error.code === 'ENOENT') throw failure('备份不存在或已被删除，请刷新列表。', 404);
       throw error;
     }
   }
-  async backups() {
+  async backups({ includeWorldId = false } = {}) {
     const entries = [];
     for (const category of categories) for (const name of await readdir(await backupDirectory(this.directory, category))) {
       if (!backupId.test(name)) continue;
       const file = path.join(this.directory, 'backups', category, name);
       const info = await lstat(file);
-      if (info.isFile()) entries.push({ id: `${category}/${name}`, category, bytes: info.size, createdAt: info.mtime.toISOString() });
+      if (info.isFile()) {
+        const entry = { id: `${category}/${name}`, category, bytes: info.size, createdAt: info.mtime.toISOString() };
+        if (includeWorldId) entry.worldId = await readBackupWorld(file, info);
+        entries.push(entry);
+      }
     }
     return entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }

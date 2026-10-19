@@ -13,6 +13,11 @@ export const saveName = /^[A-Za-z0-9_-]{1,128}\.sav$(?![\s\S])/;
 const signature = info => `${info.ino}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`;
 const changing = () => failure('官方备份正在写入或已被轮换，请刷新后重试。', 409);
 
+export function configuredWorldId(settings) {
+  const configured = settings.match(/^\s*DedicatedServerName\s*=\s*"?([A-Za-z0-9_-]+)"?\s*$/m)?.[1];
+  return configured && worldName.test(configured) ? configured : null;
+}
+
 /** Read the game's backup/world snapshots; never schedule or create game backups. */
 export class NativeBackups {
   constructor(saved, directory) { this.saved = saved; this.directory = directory; }
@@ -51,8 +56,7 @@ export class NativeBackups {
     let settings = '';
     try { settings = await readFile(path.join(this.saved, 'Config/LinuxServer/GameUserSettings.ini'), 'utf8'); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
-    const configured = settings.match(/^\s*DedicatedServerName\s*=\s*"?([A-Za-z0-9_-]+)"?\s*$/m)?.[1];
-    return configured && worldName.test(configured) ? configured : null;
+    return configuredWorldId(settings);
   }
 
   async activeWorld() {

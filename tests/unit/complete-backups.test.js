@@ -84,6 +84,11 @@ test('备份整个 Saved，存在当前世界时仅恢复世界内容并保留�
   assert.equal(runtime.game, null);
   assert.equal((await manager.backups()).length, 1);
   assert.equal((await readdir(path.join(directory, 'backups/manual'))).some(name => name.endsWith('.partial')), false);
+  await writeFile(selection, 'DedicatedServerName=OLD\n');
+  assert.equal((await manager.backups({ includeWorldId: true }))[0].worldId, 'WORLD1');
+  await rm(manager.backupFile(task.backup) + '.json');
+  assert.equal((await manager.backups({ includeWorldId: true }))[0].worldId, 'WORLD1');
+  await writeFile(selection, 'DedicatedServerName=WORLD1\n');
   await writeFile(path.join(world, 'Level.sav'), 'new-world');
   await writeFile(path.join(world, 'Players/player.sav'), 'new-player');
   await writeFile(path.join(world, 'new-file.sav'), 'remove-on-restore');
@@ -109,6 +114,7 @@ test('仅含世界的旧备份需要有效的当前世界，存在时可恢复�
   await writeFile(path.join(source, 'Level.sav'), 'archived-world');
   const id = 'manual/legacy.tar.gz';
   await runtime.run('tar', ['-czf', manager.backupFile(id), '-C', legacy, '--', 'Pal/Saved/SaveGames/0/BACKUP_WORLD']);
+  assert.equal((await manager.backups({ includeWorldId: true }))[0].worldId, 'BACKUP_WORLD');
   await assert.rejects(manager.restore(id), /备份缺少有效的 GameUserSettings\.ini/);
   await assert.rejects(readdir(path.join(runtime.saved, 'SaveGames/0')), { code: 'ENOENT' });
   await manager.ensureConfig();
