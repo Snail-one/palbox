@@ -9,15 +9,16 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 
-# 保留下载、SteamCMD、Node.js、入口脚本及 TZ 所需的运行依赖。
+# 保留下载、SteamCMD、游戏目录查询、Node.js、入口脚本及 TZ 所需的运行依赖。
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 RUN test "${TARGETARCH:-amd64}" = amd64 \
     && test "$(dpkg --print-architecture)" = amd64 \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         curl ca-certificates lib32gcc-s1 procps \
-        tini gosu libstdc++6 libatomic1 tzdata util-linux \
+        tini gosu libstdc++6 libatomic1 tzdata util-linux xdg-user-dirs \
     && rm -rf /var/lib/apt/lists/* \
+    && command -v xdg-user-dir \
     && node --version
 
 # 保留 node 用户名，与入口脚本中的 PUID/PGID 权限调整保持一致。
