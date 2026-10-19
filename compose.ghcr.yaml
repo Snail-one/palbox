@@ -7,6 +7,11 @@ services:
     image: ghcr.io/snail-one/palbox-frontend:latest
     platform: linux/amd64
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -28,6 +33,11 @@ services:
     image: ghcr.io/snail-one/palbox:latest
     platform: linux/amd64
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     stop_grace_period: 120s
     security_opt:
       - no-new-privileges:true
@@ -39,6 +49,10 @@ services:
       PALBOX_GAME_PORT: "8211"
       PALBOX_SECURE_COOKIE: "false"
       PALBOX_TRUSTED_PROXIES: "172.30.83.2"
+      # 每个日志文件的 MiB 上限、历史份数、未更新文件的保留天数。
+      PALBOX_LOG_MAX_MB: "5"
+      PALBOX_LOG_BACKUPS: "1"
+      PALBOX_LOG_RETENTION_DAYS: "7"
     networks:
       - management
     volumes:

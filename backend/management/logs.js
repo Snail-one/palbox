@@ -1,9 +1,10 @@
 import { open, stat, writeFile } from 'node:fs/promises';
-import { watch, appendFileSync, existsSync, renameSync, statSync } from 'node:fs';
+import { constants, watch } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
 import { stripVTControlCharacters } from 'node:util';
 import path from 'node:path';
 import { API_SECURITY_HEADERS } from '../security-headers.js';
+import { appendLog, DEFAULT_LOG_POLICY } from './log-retention.js';
 
 const sources = { game: '游戏', steamcmd: '安装更新', palbox: '面板' };
 const combinedFile = directory => path.join(directory, 'logs/combined.jsonl');
@@ -49,11 +50,6 @@ export function timestampLogChunk(text, at, state) {
   return output;
 }
 
-export function appendLog(file, value) {
-  if (existsSync(file) && statSync(file).size > 5 * 1024 * 1024) renameSync(file, file + '.1');
-  appendFileSync(file, value, { mode: 0o600 });
-}
-
 export async function initializeCombinedLog(directory) {
   const file = combinedFile(directory);
   try { await stat(file); return; }
@@ -68,11 +64,22 @@ export async function initializeCombinedLog(directory) {
   catch (error) { if (error.code !== 'EEXIST') throw error; }
 }
 
-export function appendCombinedLog(directory, channel, text, at = new Date().toISOString()) {
+export function appendCombinedLog(directory, channel, text, at = new Date().toISOString(), policy = DEFAULT_LOG_POLICY) {
   if (!Object.hasOwn(sources, channel) || !text) return;
-  // Bound each record so a large burst still fits in the journal tail window.
-  const records = text.match(/[\s\S]{1,16384}/gu).map(part => JSON.stringify({ at, channel, text: part }) + '\n');
-  appendLog(combinedFile(directory), records.join(''));
+  text = utf8Tail(text, policy.maxBytes * (policy.maxArchives + 1));
+  // Preserve complete JSON records even with a small configured file limit.
+  function* encode(part) {
+    const record = JSON.stringify({ at, channel, text: part }) + '\n';
+    if (Buffer.byteLength(record) <= policy.maxBytes) { yield record; return; }
+    let middle = Math.floor(part.length / 2);
+    if (/[\uDC00-\uDFFF]/.test(part[middle])) middle--;
+    if (!middle) throw new Error('日志文件大小不足以保存单条记录。');
+    yield* encode(part.slice(0, middle));
+    yield* encode(part.slice(middle));
+  }
+  const records = [];
+  for (const match of text.matchAll(/[\s\S]{1,16384}/gu)) records.push(...encode(match[0]));
+  appendLog(combinedFile(directory), records.join(''), policy);
 }
 
 function utf8Tail(text, limit) {
@@ -82,8 +89,8 @@ function utf8Tail(text, limit) {
   return bytes.subarray(start).toString('utf8');
 }
 
-export async function readCombinedLog(directory, limit = 65536) {
-  const journal = await readUtf8Tail(combinedFile(directory), 512 * 1024);
+export async function readCombinedLog(directory, limit = 65536, maxArchives = DEFAULT_LOG_POLICY.maxArchives) {
+  const journal = await readUtf8Tail(combinedFile(directory), 512 * 1024, maxArchives);
   const rows = [];
   const pending = new Map();
   for (const line of journal.split('\n')) {
@@ -136,28 +143,41 @@ export function readableLog(text) {
   }).join('\n');
 }
 
-async function readUtf8Tail(file, limit) {
-  let handle;
-  try {
-    handle = await open(file, 'r');
-    const { size } = await handle.stat();
-    const offset = Math.max(0, size - limit);
-    const buffer = Buffer.alloc(Math.min(size, limit));
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, offset);
-    let start = 0;
-    // The tail window may begin in the middle of a UTF-8 character.
-    if (offset) while (start < bytesRead && (buffer[start] & 0xc0) === 0x80) start++;
-    // A producer may still be writing the final character. Do not flush an
-    // incomplete UTF-8 sequence as a replacement character into the snapshot.
-    return new StringDecoder('utf8').write(buffer.subarray(start, bytesRead));
-  } catch (error) {
-    if (error.code === 'ENOENT') return '';
-    throw error;
-  } finally { await handle?.close(); }
+async function readUtf8Tail(file, limit, maxArchives = DEFAULT_LOG_POLICY.maxArchives) {
+  const chunks = [];
+  const seen = new Set();
+  let remaining = limit;
+  for (let index = 0; index <= maxArchives && remaining > 0; index++) {
+    let handle;
+    try {
+      handle = await open(index ? `${file}.${index}` : file, constants.O_RDONLY | constants.O_NOFOLLOW);
+      const info = await handle.stat();
+      if (!info.isFile()) continue;
+      const { size, dev, ino } = info;
+      const key = `${dev}:${ino}`;
+      // A rotation between two opens can move the current inode into .1.
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const buffer = Buffer.alloc(Math.min(size, remaining));
+      let read = 0;
+      while (read < buffer.length) {
+        const { bytesRead } = await handle.read(buffer, read, buffer.length - read, Math.max(0, size - buffer.length) + read);
+        if (!bytesRead) break;
+        read += bytesRead;
+      }
+      chunks.unshift(buffer.subarray(0, read));
+      remaining -= read;
+    } catch (error) { if (!['ENOENT', 'ELOOP'].includes(error.code)) throw error; }
+    finally { await handle?.close(); }
+  }
+  const buffer = Buffer.concat(chunks);
+  let start = 0;
+  while (start < buffer.length && (buffer[start] & 0xc0) === 0x80) start++;
+  return new StringDecoder('utf8').write(buffer.subarray(start));
 }
 
-export async function readLogTail(file, limit = 65536) {
-  return readableLog(await readUtf8Tail(file, limit));
+export async function readLogTail(file, limit = 65536, maxArchives = DEFAULT_LOG_POLICY.maxArchives) {
+  return readableLog(await readUtf8Tail(file, limit, maxArchives));
 }
 
 export async function streamLogs({ request, response, runtime, auth, channel }) {

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendFile, rename, writeFile } from 'node:fs/promises';
+import { appendFile, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { managementFixture } from '../helpers/management-fixture.js';
 
@@ -101,14 +101,16 @@ test('实时日志通过前端代理推送，兼容外部写入、轮换并在�
   assert.match((await event('log', value => value.text.includes('外部写入'))).text, /外部写入\n$/);
   await rename(file, file + '.1');
   await writeFile(file, '轮换后的中文\n');
-  assert.equal((await event('log', value => value.text.includes('轮换后'))).text, '轮换后的中文\n');
+  const rotated = (await event('log', value => value.text.includes('轮换后'))).text;
+  assert.match(rotated, /外部写入\n轮换后的中文\n$/);
+  assert.match(rotated, /初始中文🙂/);
   assert.equal((await f.request('/api/logout', { method: 'POST', body: {} })).status, 200);
   await event('unauthorized');
   assert.equal((await reader.read()).done, true);
 });
 
 test('统一日志 API 和实时连接合并三个来源，并支持合并记录轮换', { timeout: 10000 }, async t => {
-  const f = await managementFixture();
+  const f = await managementFixture({ logs: { maxBytes: 512, maxArchives: 2 } });
   t.after(() => f.close());
   const { cookie } = await f.login();
   const controller = new AbortController();
@@ -147,6 +149,21 @@ test('统一日志 API 和实时连接合并三个来源，并支持合并记录
   await writeFile(journal, '');
   f.runtime.log('palbox', '轮换后的合并日志\n');
   const rotated = await snapshotIncluding('轮换后的合并日志');
-  assert.doesNotMatch(rotated, /统一游戏消息/);
+  assert.match(rotated, /统一游戏消息/);
   assert.match(rotated, /\[面板\] 轮换后的合并日志/);
+  f.runtime.log('game', '自动轮换中文🙂\n'.repeat(200) + '自动轮换后的最新日志\n');
+  const automatic = await snapshotIncluding('自动轮换后的最新日志');
+  assert.doesNotMatch(automatic, /\ufffd/);
+  assert.equal((await (await f.request('/api/logs?channel=all')).json()).text, automatic);
+  assert.match((await (await f.request('/api/logs?channel=game')).json()).text, /自动轮换后的最新日志/);
+  const files = await readdir(path.join(f.directory, 'logs'));
+  assert.ok(files.includes('combined.jsonl.2'));
+  for (const name of files) {
+    const file = path.join(f.directory, 'logs', name);
+    assert.ok((await stat(file)).size <= 512, name);
+    if (name.startsWith('combined.jsonl')) {
+      const content = await readFile(file, 'utf8');
+      for (const line of content.trimEnd().split('\n')) assert.doesNotThrow(() => JSON.parse(line));
+    }
+  }
 });

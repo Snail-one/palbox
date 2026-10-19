@@ -6,7 +6,8 @@ import { stripVTControlCharacters } from 'node:util';
 import path from 'node:path';
 import { decodeString, parse } from '../../shared/domain/config.js';
 import { failure } from './files.js';
-import { appendLog, appendCombinedLog, initializeCombinedLog, initializeLoginLog, readCombinedLog, readLogTail, timestampLogChunk, withoutLoginLogs } from './logs.js';
+import { appendCombinedLog, initializeCombinedLog, initializeLoginLog, readCombinedLog, readLogTail, timestampLogChunk, withoutLoginLogs } from './logs.js';
+import { appendLog, cleanupLogs, LOG_FILES, logPolicy } from './log-retention.js';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 // SteamCMD block-buffers stdout when it is a pipe. A pseudo-terminal keeps its
@@ -16,7 +17,7 @@ const ptyAvailable = process.platform === 'linux' && existsSync('/usr/bin/script
 export const DEFAULT_SHUTDOWN_MESSAGE = 'Palbox 正在维护服务器';
 
 export class Runtime {
-  constructor(directory, { steamcmd = '/opt/steamcmd/steamcmd.sh', port = 8211, readyTimeout = 180000, stopTimeout = 60000, shutdownWait = 5, shutdownMessage = DEFAULT_SHUTDOWN_MESSAGE, args = [], installArgs = null } = {}) {
+  constructor(directory, { steamcmd = '/opt/steamcmd/steamcmd.sh', port = 8211, readyTimeout = 180000, stopTimeout = 60000, shutdownWait = 5, shutdownMessage = DEFAULT_SHUTDOWN_MESSAGE, args = [], installArgs = null, logs = {} } = {}) {
     this.directory = directory;
     this.server = path.join(directory, 'server');
     this.saved = path.join(this.server, 'Pal/Saved');
@@ -39,29 +40,51 @@ export class Runtime {
     this.closing = false;
     this.logDecoders = new Map();
     this.logLines = new Map();
+    this.logPolicy = logPolicy(logs);
+    this.logCleanupTimer = null;
   }
   async initialize() {
     await mkdir(path.join(this.directory, 'logs'), { recursive: true, mode: 0o700 });
     await initializeLoginLog(this.directory);
     await initializeCombinedLog(this.directory);
+    this.cleanupLogs();
+    if (!this.logCleanupTimer) {
+      this.logCleanupTimer = setInterval(() => this.cleanupLogs(), this.logPolicy.cleanupIntervalMs);
+      this.logCleanupTimer.unref();
+    }
+  }
+  cleanupLogs() {
+    try { cleanupLogs(path.join(this.directory, 'logs'), this.logPolicy); this.logCleanupError = null; }
+    catch (error) {
+      const detail = error.errors?.map(item => item.code || item.message).join(', ') || error.code || error.message;
+      if (this.logCleanupError !== detail) console.error(`无法清理日志：${detail}`);
+      this.logCleanupError = detail;
+    }
   }
   log(channel, value) {
     const file = path.join(this.directory, 'logs', `${channel}.log`);
     try {
+      if (!LOG_FILES.includes(`${channel}.log`)) throw Object.assign(new Error('日志类型不存在。'), { code: 'EINVAL' });
       let text = String(value);
       if (Buffer.isBuffer(value)) {
         if (!this.logDecoders.has(channel)) this.logDecoders.set(channel, new StringDecoder('utf8'));
         text = this.logDecoders.get(channel).write(value);
       }
       if (!this.logLines.has(channel)) this.logLines.set(channel, { prefix: true, at: null });
+      const line = this.logLines.get(channel);
+      const now = Date.now();
+      if (line.writtenAt && now - line.writtenAt > this.logPolicy.retentionMs) { line.prefix = true; line.at = null; }
       const at = new Date().toISOString();
-      appendLog(file, timestampLogChunk(text, at, this.logLines.get(channel)));
-      appendCombinedLog(this.directory, channel, text, at);
+      if (!text) return;
+      appendLog(file, timestampLogChunk(text, at, line), this.logPolicy);
+      appendCombinedLog(this.directory, channel, text, at, this.logPolicy);
+      line.writtenAt = now;
       this.logError = null;
     } catch (error) {
       // A full or read-only log volume must not crash the process supervising a live world.
-      if (this.logError !== error.code) console.error(`无法写入 ${channel} 日志：${error.message}`);
-      this.logError = error.code;
+      const detail = error.code || error.message;
+      if (this.logError !== detail) console.error(`无法写入 ${channel} 日志：${error.message}`);
+      this.logError = detail;
     }
   }
   async installed() {
@@ -199,13 +222,15 @@ export class Runtime {
     if (this.game === child) throw failure('游戏进程尚未退出，请检查系统进程。', 504);
   }
   async logs(channel) {
-    if (channel === 'all') return readCombinedLog(this.directory);
+    if (channel === 'all') return readCombinedLog(this.directory, 65536, this.logPolicy.maxArchives);
     if (!['palbox', 'game', 'steamcmd', 'login'].includes(channel)) throw failure('日志类型不存在。', 404);
-    const text = await readLogTail(path.join(this.directory, 'logs', channel + '.log'));
+    const text = await readLogTail(path.join(this.directory, 'logs', channel + '.log'), 65536, this.logPolicy.maxArchives);
     return channel === 'palbox' ? withoutLoginLogs(text) : text;
   }
   async close() {
     this.closing = true;
+    clearInterval(this.logCleanupTimer);
+    this.logCleanupTimer = null;
     this.kill(this.command, 'SIGTERM');
     try { await this.stop(); } catch { this.kill(this.game, 'SIGKILL'); }
   }

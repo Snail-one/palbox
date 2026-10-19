@@ -15,7 +15,7 @@ import { createProfile, DERIVED_DEFAULT_ORIGIN } from '../../shared/domain/works
 
 const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
 
-export async function managementFixture({ setup = true, username = 'admin', password = 'test-management-password-123', importLimits, editable = true, officialDefaults = true } = {}) {
+export async function managementFixture({ setup = true, username = 'admin', password = 'test-management-password-123', importLimits, logs, editable = true, officialDefaults = true } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'palbox-manager-'));
   await mkdir(path.join(directory, 'server'), { recursive: true });
   if (officialDefaults) await writeFile(path.join(directory, 'server/DefaultPalWorldSettings.ini'), template);
@@ -30,7 +30,7 @@ export async function managementFixture({ setup = true, username = 'admin', pass
   const installScript = path.join(directory, 'install.mjs');
   await writeFile(installScript, `import {mkdir,writeFile} from 'node:fs/promises';\nimport assert from 'node:assert/strict';\nconst args=process.argv.slice(2);\nassert.equal(args[0],'+force_install_dir');\nassert.deepEqual(args.slice(2),['+login','anonymous','+app_update','2394010','validate','+quit']);\nawait mkdir(args[1]+'/Pal/Binaries/Linux',{recursive:true});\nawait writeFile(args[1]+'/Pal/Binaries/Linux/PalServer-Linux-Shipping','fixture',{mode:0o755});\nawait writeFile(args[1]+'/PalServer.sh',${JSON.stringify(launcher)},{mode:0o755});\nconsole.log("Success! App '2394010' fully installed.");\nconsole.log('SteamCMD simulated installation complete');\n`);
   await writeFile(steamcmd, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(installScript)} "$@"\n`, { mode: 0o755 });
-  const runtime = new Runtime(directory, { steamcmd, readyTimeout: 10000, stopTimeout: 5000 });
+  const runtime = new Runtime(directory, { steamcmd, readyTimeout: 10000, stopTimeout: 5000, logs });
   const manager = new Manager({ directory, runtime, importLimits });
   await manager.initialize();
   // Most management tests explicitly work with an independent editable world.
