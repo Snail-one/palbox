@@ -36,6 +36,12 @@ const server = http.createServer(async (request, response) => {
   }
   const value = {
     info: { version: 'test-1.0', servername: '模拟帕鲁服' },
+    settings: {
+      ServerName: decodeString(values.get('ServerName') || '""'),
+      ExpRate: Number(values.get('ExpRate') || 1),
+      ServerPlayerMaxNum: Number(values.get('ServerPlayerMaxNum') || 32),
+      RESTAPIPort: Number(values.get('RESTAPIPort'))
+    },
     metrics: { serverfps: 60, currentplayernum: 1, maxplayernum: 32, uptime: 3600 },
     players: { players: (await bans()).includes('steam_test') ? [] : [{ name: '<script>test</script>', level: 12, userId: 'steam_test' }] }
   }[endpoint] || { ok: true };

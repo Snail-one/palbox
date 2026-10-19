@@ -189,32 +189,38 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       errorNode.hidden = false;
     } finally { button.disabled = false; }
   });
+  let runningRead = 0;
   $('show-running-config').addEventListener('click', async () => {
     const dialog = $('running-config-dialog');
     if (dialog.open) return;
+    const read = ++runningRead;
     $('running-config-error').hidden = true;
+    $('running-config-note').textContent = '当前进程的启动命令，以及游戏 REST API 返回的配置（只读）。';
     $('running-command').textContent = '正在读取…';
     $('running-source').value = '';
     $('running-config-state').textContent = '';
     dialog.showModal();
     try {
       const value = await api.request('running');
+      if (!dialog.open || read !== runningRead) return;
       if (!value.running) {
         $('running-config-note').textContent = '游戏服务未运行，没有可读取的运行参数。';
         $('running-command').textContent = '—';
         return;
       }
-      $('running-config-note').textContent = '当前游戏进程启动时使用的命令和配置（只读）。';
       const quoted = value.args.map(arg => /[\s"']/.test(arg) ? JSON.stringify(arg) : arg).join(' ');
       $('running-command').textContent = `PalServer.sh -port=${value.port}${quoted ? ' ' + quoted : ''}`;
-      $('running-source').value = value.source;
+      $('running-source').value = JSON.stringify(value.settings, null, 2);
       const started = value.startedAt ? ` 启动时间：${new Date(value.startedAt).toLocaleString()}。` : '';
-      $('running-config-state').textContent = `${value.matchesCurrent ? '运行配置与面板当前配置一致。' : '运行配置与面板当前配置不同；应用当前配置并重启后才会生效。'}${started}`;
+      $('running-config-state').textContent = `仅显示游戏 REST API 返回的配置字段。${started}`;
     } catch (caught) {
+      if (!dialog.open || read !== runningRead) return;
+      $('running-command').textContent = '—';
       $('running-config-error').textContent = caught.message;
       $('running-config-error').hidden = false;
     }
   });
+  $('running-config-dialog').addEventListener('close', () => { runningRead++; });
   for (const id of ['running-config-close', 'running-config-done']) $(id).addEventListener('click', () => $('running-config-dialog').close());
   $('edit-game-args').addEventListener('click', () => gameArgsDialog.open((settingsCache?.gameArgs ?? []).join('\n')));
   const installArgsDialog = createArgsDialog({ dom, prefix: 'install-args', onSave: async installArgs => {

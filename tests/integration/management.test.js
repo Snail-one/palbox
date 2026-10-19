@@ -266,10 +266,12 @@ test('SteamCMD、进程、配置应用、备份恢复与故障状态真实联动
   const running = await (await f.request('/api/running')).json();
   assert.equal(running.running, true);
   assert.equal(running.port, 8211);
-  assert.equal(running.matchesCurrent, true);
+  assert.equal(running.settings.ExpRate, 2);
+  assert.equal(running.settings.RESTAPIPort, f.restPort);
   assert.ok(running.startedAt);
   assert.deepEqual(running.args, []);
-  assert.match(running.source, /OptionSettings=/);
+  assert.equal(running.source, undefined);
+  assert.equal(running.matchesCurrent, undefined);
   assert.equal((await f.task('announce', { message: 'test broadcast' })).state, 'succeeded');
   assert.equal((await f.task('kick', { userid: 'steam_test' })).state, 'succeeded');
   assert.equal((await f.task('save-world')).state, 'succeeded');

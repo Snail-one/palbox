@@ -216,7 +216,12 @@ export class SaveImports {
     // Attach rejection handlers immediately and wait for every stream/process
     // before returning, so a failed upload cannot leave work running in the background.
     let processingError;
-    const stop = error => { processingError ??= error; child.kill('SIGKILL'); counter.destroy(error); };
+    const stop = error => {
+      // Killing tar can report a generic exit before pipeline reports its size
+      // limit error. Preserve the more specific rejection after all work settles.
+      if (!processingError || error.status === 413) processingError = error;
+      child.kill('SIGKILL'); counter.destroy(error);
+    };
     const input = pipeline(createReadStream(archive), createGunzip(), counter, child.stdin, { signal }).catch(stop);
     const output = (async () => {
       child.stdout.setEncoding('utf8');

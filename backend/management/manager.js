@@ -557,19 +557,25 @@ export class Manager {
     }
     return { players: [...players.values()], skipped: value.skipped };
   }
-  runningConfiguration() {
+  async runningConfiguration() {
+    const game = this.runtime.game;
+    if (!game) return { running: false };
+    let settings;
+    try { settings = await this.runtime.rest('settings'); }
+    catch (error) {
+      if (!this.runtime.game) return { running: false };
+      if (this.runtime.game !== game) throw failure('游戏进程已变化，请重新打开运行参数。', 409);
+      throw failure(`无法通过游戏 REST API 读取运行配置：${error.message}`, 502);
+    }
     if (!this.runtime.game) return { running: false };
-    const source = this.runtime.runningSource || '';
-    let matchesCurrent = false;
-    try { matchesCurrent = Boolean(source) && output(source) === output(this.store.active().source); }
-    catch { matchesCurrent = false; }
+    if (this.runtime.game !== game) throw failure('游戏进程已变化，请重新打开运行参数。', 409);
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings) || !Object.keys(settings).length) throw failure('游戏 REST API 返回的运行配置格式无效。', 502);
     return {
       running: true,
-      source,
+      settings,
       args: [...(this.runtime.runningArgs || [])],
       port: this.runtime.port,
-      startedAt: this.runtime.startedAt,
-      matchesCurrent
+      startedAt: this.runtime.startedAt
     };
   }
   async status() {
