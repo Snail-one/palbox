@@ -20,6 +20,31 @@ function identity(player) {
   };
 }
 
+function mergeEvents(players, events, clearedAt) {
+  let changed = false;
+  for (const event of events) {
+    const player = identity(event);
+    const type = event.type || 'connected';
+    if (!player || !validDate(event.at) || !['connected', 'joined'].includes(type)) continue;
+    const at = new Date(event.at).toISOString();
+    const receivedAt = validDate(event.receivedAt) ? new Date(event.receivedAt).toISOString() : at;
+    if (clearedAt && receivedAt <= clearedAt) continue;
+    const previous = players.get(player.userId);
+    const latest = !previous || at >= (previous.lastLoginAt && previous.lastLoginAt > previous.lastSeenAt ? previous.lastLoginAt : previous.lastSeenAt);
+    const value = {
+      userId: player.userId, name: latest ? player.name || previous?.name || '' : previous.name,
+      ip: type === 'connected' && (!previous || !previous.ip || at >= previous.lastSeenAt) ? player.ip || previous?.ip || '' : previous?.ip || '',
+      firstSeenAt: previous && previous.firstSeenAt < at ? previous.firstSeenAt : at,
+      lastSeenAt: previous && (type === 'joined' || previous.lastSeenAt > at) ? previous.lastSeenAt : at,
+      lastLoginAt: type === 'joined' && (!previous?.lastLoginAt || at > previous.lastLoginAt) ? at : previous?.lastLoginAt || null,
+      loginStatus: type === 'joined' && (!previous || at >= previous.lastSeenAt) ? 'succeeded' : type === 'connected' && latest ? 'connected' : previous?.loginStatus || 'connected'
+    };
+    if (JSON.stringify(previous) === JSON.stringify(value)) continue;
+    changed = true; players.set(player.userId, value);
+  }
+  return changed;
+}
+
 /** Read game connection/join events, never REST access or chat messages. */
 export function parsePlayerConnection(raw, fallbackAt) {
   let line = stripVTControlCharacters(raw).trim();
@@ -70,30 +95,28 @@ export class PlayerHistory {
     return this.recordEvents(players.map(player => ({ ...player, at })));
   }
   recordEvents(events) {
-    const entries = events.map(event => ({ player: identity(event), type: event.type || 'connected', at: validDate(event.at) ? new Date(event.at).toISOString() : null, receivedAt: validDate(event.receivedAt) ? new Date(event.receivedAt).toISOString() : event.at })).filter(event => event.player && event.at && ['connected', 'joined'].includes(event.type));
     const pending = this.pending.then(async () => {
-      if (!entries.length) return;
       const next = new Map(this.players);
-      let changed = false;
-      for (const { player, at, type, receivedAt } of entries) {
-        if (this.clearedAt && receivedAt <= this.clearedAt) continue;
-        const previous = next.get(player.userId);
-        const latest = !previous || at >= (previous.lastLoginAt && previous.lastLoginAt > previous.lastSeenAt ? previous.lastLoginAt : previous.lastSeenAt);
-        const value = {
-          userId: player.userId, name: latest ? player.name || previous?.name || '' : previous.name,
-          ip: type === 'connected' && (!previous || at >= previous.lastSeenAt) ? player.ip || previous?.ip || '' : previous?.ip || '',
-          firstSeenAt: previous && previous.firstSeenAt < at ? previous.firstSeenAt : at,
-          lastSeenAt: previous && (type === 'joined' || previous.lastSeenAt > at) ? previous.lastSeenAt : at,
-          lastLoginAt: type === 'joined' && (!previous?.lastLoginAt || at > previous.lastLoginAt) ? at : previous?.lastLoginAt || null,
-          loginStatus: type === 'joined' && (!previous || at >= previous.lastSeenAt) ? 'succeeded' : type === 'connected' && latest ? 'connected' : previous?.loginStatus || 'connected'
-        };
-        if (JSON.stringify(previous) === JSON.stringify(value)) continue;
-        changed = true; next.set(player.userId, value);
-      }
+      const changed = mergeEvents(next, events, this.clearedAt);
       if (!changed) return false;
       await jsonWrite(this.file, { version: 1, clearedAt: this.clearedAt, players: [...next.values()] });
       this.players = next;
       return true;
+    });
+    this.pending = pending.catch(() => {});
+    return pending;
+  }
+  restore(batches, { authorize = () => {} } = {}) {
+    const pending = this.pending.then(async () => {
+      authorize();
+      const next = new Map(this.players);
+      const previousCount = next.size;
+      for await (const events of batches) {
+        authorize(); mergeEvents(next, events, null);
+      }
+      await jsonWrite(this.file, { version: 1, clearedAt: null, players: [...next.values()] }, { beforeCommit: authorize });
+      this.players = next; this.clearedAt = null;
+      return { restored: next.size - previousCount, recorded: next.size };
     });
     this.pending = pending.catch(() => {});
     return pending;
@@ -141,6 +164,10 @@ export class PlayerHistoryRecorder {
     if (this.started || this.closed) return;
     this.started = true;
     this.runtime.on('game-log', this.listener);
+    try { for await (const batch of this.readEvents()) await this.commit(batch); }
+    catch (error) { this.report(error); }
+  }
+  async *readEvents() {
     const directory = path.join(this.runtime.directory, 'logs');
     try {
       const files = (await readdir(directory)).filter(file => /^game\.log(?:\.\d+)?$/.test(file));
@@ -161,14 +188,14 @@ export class PlayerHistoryRecorder {
               if (line.length > 65536) continue;
               const event = parsePlayerConnection(line);
               if (event) batch.push(event);
-              if (batch.length >= 250) { await this.commit(batch); batch = []; }
+              if (batch.length >= 250) { yield batch; batch = []; }
             }
             if (readError) throw readError;
-            if (batch.length) await this.commit(batch);
+            if (batch.length) yield batch;
           } finally { lines.close(); input.destroy(); }
-        } catch (error) { if (error.code !== 'ENOENT') this.report(error); }
+        } catch (error) { if (error.code !== 'ENOENT') throw error; }
       }
-    } catch (error) { if (error.code !== 'ENOENT') this.report(error); }
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   report(error) {
     const detail = error.code || error.message;

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { managementFixture } from '../helpers/management-fixture.js';
 import { Manager } from '../../backend/management/manager.js';
 
@@ -41,6 +42,11 @@ test('游戏日志直接记录无需网页，历史需要登录，离线玩家�
   try {
     await cleared.initialize();
     assert.equal((await cleared.historicalPlayers()).recorded, 0, '重启回读旧日志时仍保持清空');
+    assert.deepEqual(await cleared.restorePlayerHistory(), { restored: 1, recorded: 1 });
+    const restored = await cleared.historicalPlayers();
+    assert.equal(restored.players[0].ip, '198.51.100.23');
+    assert.equal(restored.players[0].loginStatus, 'succeeded');
+    assert.equal(JSON.parse(await readFile(cleared.playerHistory.file, 'utf8')).clearedAt, null);
   } finally { await cleared.close(); }
 });
 
@@ -60,4 +66,11 @@ test('历史 API 支持搜索分页并验证输入，封禁仍校验会话和 CS
   assert.equal((await f.request('/api/player-history', { method: 'DELETE', authenticated: false })).status, 401);
   assert.equal((await f.request('/api/player-history', { method: 'DELETE' })).status, 200);
   assert.equal((await (await f.request('/api/player-history')).json()).recorded, 0);
+  assert.equal((await f.request('/api/player-history/restore', { method: 'POST', headers: { 'X-Palbox-CSRF': 'invalid' } })).status, 403);
+  assert.equal((await f.request('/api/player-history/restore', { method: 'POST', authenticated: false })).status, 401);
+  await writeFile(path.join(f.directory, 'logs/game.log'), '[2026-10-19 12:37:55] [LOG] 日志恢复玩家 198.51.100.9 connected the server. (User id: steam_from_log)\n');
+  const response = await f.request('/api/player-history/restore', { method: 'POST' });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { restored: 1, recorded: 1 });
+  assert.equal((await (await f.request('/api/player-history')).json()).players[0].ip, '198.51.100.9');
 });

@@ -142,3 +142,52 @@ test('清理持久保存截止时间，旧日志不会恢复，之后的新连�
   await assert.rejects(reloaded.clear({ authorize() { throw new Error('会话失效'); } }));
   assert.equal(reloaded.list().recorded, 1);
 });
+
+test('恢复合并旧日志并取消截止时间，保留当前较新的昵称、IP 和连接状态', async t => {
+  const { directory, history } = await fixture(t);
+  await history.record([{ userId: 'steam_same', name: '旧昵称', ip: '198.51.100.1' }], first);
+  await history.clear({ at: latest });
+  const newer = '2026-10-18T02:00:00.000Z';
+  await history.record([{ userId: 'steam_same', name: '新昵称', ip: '198.51.100.2' }], newer);
+  async function* batches() {
+    yield [{ userId: 'steam_same', name: '旧昵称', ip: '198.51.100.1', at: first }];
+    yield [{ userId: 'steam_same', name: '旧昵称', type: 'joined', at: latest }, { userId: 'steam_restored', name: '恢复玩家', at: first }];
+  }
+  assert.deepEqual(await history.restore(batches()), { restored: 1, recorded: 2 });
+  const player = history.list({ query: 'steam_same' }).players[0];
+  assert.equal(player.firstSeenAt, first); assert.equal(player.lastSeenAt, newer);
+  assert.equal(player.name, '新昵称'); assert.equal(player.ip, '198.51.100.2'); assert.equal(player.loginStatus, 'connected');
+  assert.equal(history.clearedAt, null);
+  const reloaded = new PlayerHistory(directory); await reloaded.initialize();
+  assert.equal(reloaded.clearedAt, null); assert.deepEqual(reloaded.list(), history.list());
+  assert.deepEqual(await history.restore(batches()), { restored: 0, recorded: 2 });
+});
+
+test('恢复失败或提交时授权失效，保留原历史与清理截止时间', async t => {
+  const { history } = await fixture(t);
+  await history.clear({ at: latest });
+  const previous = await readFile(history.file, 'utf8');
+  async function* failedScan() {
+    yield [{ userId: 'steam_old', at: first }];
+    throw new Error('读取日志失败');
+  }
+  await assert.rejects(history.restore(failedScan()), /读取日志失败/);
+  assert.equal(await readFile(history.file, 'utf8'), previous); assert.equal(history.clearedAt, latest);
+  let authorized = true;
+  async function* revokedScan() { yield [{ userId: 'steam_old', at: first }]; authorized = false; }
+  await assert.rejects(history.restore(revokedScan(), { authorize() { if (!authorized) throw new Error('会话失效'); } }), /会话失效/);
+  assert.equal(await readFile(history.file, 'utf8'), previous); assert.equal(history.list().recorded, 0);
+});
+
+test('恢复期间到达的新连接会排队保存，不被旧日志覆盖', async t => {
+  const { history } = await fixture(t);
+  let start, release;
+  const started = new Promise(resolve => { start = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  async function* batches() { start(); await gate; yield [{ userId: 'steam_same', name: '旧昵称', at: first }]; }
+  const restoring = history.restore(batches()); await started;
+  const incoming = history.record([{ userId: 'steam_same', name: '实时昵称', ip: '198.51.100.8' }], latest);
+  release(); await Promise.all([restoring, incoming]);
+  assert.equal(history.list().players[0].name, '实时昵称');
+  assert.equal(history.list().players[0].ip, '198.51.100.8');
+});

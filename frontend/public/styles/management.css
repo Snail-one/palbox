@@ -271,6 +271,8 @@
   .player-actions .button { min-height: 40px; }
   #banned-management .management-actions { width: 100%; }
   #banned-management .management-actions .button { flex: 1; }
+  #player-history-management .management-actions { width: 100%; }
+  #player-history-management .management-actions .button { flex: 1; }
   #player-history-pagination .button { min-height: 40px; }
 }
 #manager-banned-list, #manager-players-list { font-size: 12px; }

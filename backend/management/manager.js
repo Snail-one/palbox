@@ -605,6 +605,12 @@ export class Manager extends EventEmitter {
     this.playerHistoryRecorder.revision++; this.changed();
     return result;
   }
+  async restorePlayerHistory(checks) {
+    const result = await this.playerHistory.restore(this.playerHistoryRecorder.readEvents(), checks);
+    this.playerHistoryRecorder.error = null;
+    this.playerHistoryRecorder.revision++; this.changed();
+    return result;
+  }
   async runningConfiguration() {
     const game = this.runtime.game;
     if (!game) return { running: false };

@@ -99,7 +99,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   const playerHistoryPanel = document.createElement('section');
   playerHistoryPanel.id = 'player-history-management'; playerHistoryPanel.className = 'management-panel player-management';
   playerHistoryPanel.setAttribute('aria-labelledby', 'player-history-title');
-  playerHistoryPanel.innerHTML = `<div class="management-heading"><h2 id="player-history-title">玩家登录历史</h2><button id="clear-player-history" type="button" class="button secondary danger-hover" disabled><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>清理历史</button></div><p id="player-history-note" class="management-note">从游戏连接日志记录昵称、UserID 和 IP；收到成功登录日志后更新状态。</p><form id="player-history-search" role="search"><label class="sr-only" for="player-history-query">搜索历史玩家</label><input id="player-history-query" type="search" maxlength="200" placeholder="搜索昵称、UserID 或 IP"><button type="submit" class="button secondary">搜索</button></form><p id="player-history-summary" class="management-note" role="status">正在读取…</p><div id="player-history-list" class="player-card-grid"></div><nav id="player-history-pagination" class="backup-pagination" aria-label="玩家历史分页" hidden></nav>`;
+  playerHistoryPanel.innerHTML = `<div class="management-heading"><h2 id="player-history-title">玩家登录历史</h2><div class="management-actions"><button id="restore-player-history" type="button" class="button secondary" title="从保留的游戏日志中恢复历史，并与当前记录合并" disabled><svg class="icon" aria-hidden="true"><use href="#i-restore"/></svg><span id="restore-player-history-label">恢复历史</span></button><button id="clear-player-history" type="button" class="button secondary danger-hover" disabled><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>清理历史</button></div></div><p id="player-history-note" class="management-note">从游戏连接日志记录昵称、UserID 和 IP；收到成功登录日志后更新状态。</p><form id="player-history-search" role="search"><label class="sr-only" for="player-history-query">搜索历史玩家</label><input id="player-history-query" type="search" maxlength="200" placeholder="搜索昵称、UserID 或 IP"><button type="submit" class="button secondary">搜索</button></form><p id="player-history-summary" class="management-note" role="status">正在读取…</p><div id="player-history-list" class="player-card-grid"></div><nav id="player-history-pagination" class="backup-pagination" aria-label="玩家历史分页" hidden></nav>`;
   const playerNavigation = document.createElement('div'); playerNavigation.className = 'player-navigation';
   playerNavigation.innerHTML = `<div class="player-page-heading"><h2>玩家管理</h2><p>查看在线玩家，查询历史账号，管理封禁名单。</p></div><div class="player-tabs" role="tablist" aria-label="玩家管理分区"><button id="players-tab-online" type="button" role="tab" aria-controls="online-player-management" aria-selected="true" tabindex="0"><svg class="icon" aria-hidden="true"><use href="#i-user"/></svg>在线玩家<span id="online-player-count" class="player-tab-count">—</span></button><button id="players-tab-history" type="button" role="tab" aria-controls="player-history-management" aria-selected="false" tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#i-restore"/></svg>登录历史<span id="history-player-count" class="player-tab-count">—</span></button><button id="players-tab-banned" type="button" role="tab" aria-controls="banned-management" aria-selected="false" tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg>封禁名单<span id="banned-player-count" class="player-tab-count">—</span></button></div>`;
   const playerViews = { online: playerPanel, history: playerHistoryPanel, banned: bannedPanel };
@@ -184,6 +184,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   let playerHistoryRequest = 0;
   let playerHistorySearchTimer = null;
   let clearingPlayerHistory = false;
+  let restoringPlayerHistory = false;
   let logChannel = 'all';
   let nativeBackupPage = 0;
   let nativeBackupRenderKey = null;
@@ -688,7 +689,8 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     if (key === playerHistoryRenderKey) return;
     playerHistoryRenderKey = key;
     $('history-player-count').textContent = String(value.recorded);
-    $('clear-player-history').disabled = clearingPlayerHistory || !value.recorded;
+    $('clear-player-history').disabled = clearingPlayerHistory || restoringPlayerHistory || !value.recorded;
+    $('restore-player-history').disabled = clearingPlayerHistory || restoringPlayerHistory;
     $('player-history-note').textContent = value.error || '从游戏连接日志记录昵称、UserID 和 IP；收到成功登录日志后更新状态，按 UserID 合并。';
     $('player-history-summary').textContent = playerHistoryQuery ? `找到 ${value.total} 位玩家 · 已记录 ${value.recorded} 位` : `共记录 ${value.recorded} 位玩家 · 最近连接优先`;
     const list = $('player-history-list'); list.replaceChildren();
@@ -966,7 +968,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   $('clear-player-history').addEventListener('click', async () => {
     const confirmed = await ask({ title: '清理全部玩家登录历史？', description: '将删除所有已记录的玩家昵称、UserID、IP 和连接时间，包括当前搜索条件外的记录。游戏存档、封禁名单与原始游戏日志保留；清理后只记录新发生的事件，旧日志不会重新导入。', confirm: '清理历史', danger: true, symbol: 'trash' });
     if (!confirmed) return;
-    clearingPlayerHistory = true; $('clear-player-history').disabled = true;
+    clearingPlayerHistory = true; $('clear-player-history').disabled = true; $('restore-player-history').disabled = true;
     try {
       await api.request('player-history', { method: 'DELETE' });
       clearTimeout(playerHistorySearchTimer); playerHistoryQuery = ''; playerHistoryPage = 1; $('player-history-query').value = '';
@@ -974,6 +976,23 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     } catch (caught) { error(caught.message); }
     finally {
       clearingPlayerHistory = false; playerHistoryRenderKey = null;
+      if (playerHistoryCache) renderPlayerHistory(playerHistoryCache);
+    }
+  });
+  $('restore-player-history').addEventListener('click', async () => {
+    if (clearingPlayerHistory || restoringPlayerHistory) return;
+    restoringPlayerHistory = true;
+    $('clear-player-history').disabled = true; $('restore-player-history').disabled = true;
+    $('restore-player-history-label').textContent = '恢复中…';
+    try {
+      const result = await api.request('player-history/restore', { method: 'POST' });
+      clearTimeout(playerHistorySearchTimer); playerHistoryQuery = ''; playerHistoryPage = 1; $('player-history-query').value = '';
+      await loadPlayerHistory();
+      notify(result.restored ? `已恢复 ${result.restored} 位历史玩家，当前共 ${result.recorded} 位` : '恢复完成，没有新增历史玩家；仅能恢复保留的游戏日志中的记录。');
+    } catch (caught) { error(caught.message); }
+    finally {
+      restoringPlayerHistory = false; playerHistoryRenderKey = null;
+      $('restore-player-history-label').textContent = '恢复历史';
       if (playerHistoryCache) renderPlayerHistory(playerHistoryCache);
     }
   });

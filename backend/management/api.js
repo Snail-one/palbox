@@ -139,6 +139,9 @@ export function createManagementApi(manager, options = {}) {
       if (pathname === '/api/player-history' && request.method === 'DELETE') {
         json(200, await manager.clearPlayerHistory(checks)); return;
       }
+      if (pathname === '/api/player-history/restore' && request.method === 'POST') {
+        json(200, await manager.restorePlayerHistory(checks)); return;
+      }
       if (pathname === '/api/update-check' && request.method === 'GET') { json(200, await manager.updateInfo()); return; }
       if (pathname === '/api/tasks' && request.method === 'POST') {
         const input = await body(request, 8192);
