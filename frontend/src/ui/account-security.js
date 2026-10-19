@@ -18,7 +18,7 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
   dialog.innerHTML = `<div class="dialog-heading"><span class="dialog-icon"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg></span><button type="button" class="icon-button" id="security-close" aria-label="关闭账号"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
     <h2 id="account-security-title">账号</h2>
     <p id="security-username" class="management-note"></p>
-    <div class="account-settings-actions" role="group" aria-label="账号设置"><button id="account-username-button" type="button" class="button secondary" aria-controls="username-section" aria-expanded="false" disabled>修改用户名</button><button id="account-password-button" type="button" class="button secondary" aria-controls="password-section" aria-expanded="false" disabled>修改密码</button><button id="account-totp-button" type="button" class="button secondary" aria-controls="security-section" aria-expanded="false" disabled>二次验证</button></div>
+    <div class="account-settings-actions" role="group" aria-label="账号设置"><button id="account-username-button" type="button" class="button secondary" aria-controls="username-section" aria-expanded="false" disabled>修改用户名</button><button id="account-password-button" type="button" class="button secondary" aria-controls="password-section" aria-expanded="false" disabled>修改密码</button><button id="account-totp-button" type="button" class="button secondary" aria-controls="security-section" aria-expanded="false" disabled>二次验证<span id="account-totp-status" class="account-totp-status" role="status" hidden></span></button></div>
     <p id="security-status" role="status">正在读取…</p>
     <section id="username-section" aria-labelledby="username-section-title" hidden><h3 id="username-section-title" class="account-section-title">修改用户名</h3>
       <p id="username-hint">用户名需要 1–64 位。修改后，其他设备需要使用新用户名重新登录。</p>
@@ -96,9 +96,16 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
     $('password-error').textContent = ''; $('password-error').hidden = true;
     for (const id of ['security-secret', 'security-account', 'security-recovery-codes']) $(id).textContent = '';
   }
+  function renderTotpStatus(active) {
+    const badge = $('account-totp-status');
+    badge.textContent = active ? '已启用' : '未启用';
+    badge.dataset.enabled = String(active);
+    badge.hidden = false;
+  }
   function render(state) {
     lastState = state;
     enabled = state.enabled;
+    renderTotpStatus(enabled);
     $('security-username').textContent = `当前用户名：${state.username}`;
     stage = 'settings';
     $('security-status').textContent = enabled ? `二次验证已启用 · 剩余 ${state.recoveryCodesRemaining} 个恢复码` : '二次验证未启用。启用后，登录还需要验证器的动态验证码。';
@@ -126,6 +133,7 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
   }
   function showCodes(result) {
     enabled = true; stage = 'recovery';
+    renderTotpStatus(true);
     clearSecrets();
     $('security-status').textContent = '二次验证已启用。请保存恢复码；刚使用过的动态码不能重复使用，请等待下一组。';
     $('security-form').hidden = true;
@@ -142,6 +150,7 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
     panel = null; showPanel();
     for (const id of navigation) $(id).disabled = true;
     $('security-status').textContent = '正在读取…';
+    $('account-totp-status').hidden = true;
     $('security-username').textContent = '';
     $('security-form').hidden = false; $('security-recovery').hidden = true; $('security-setup').hidden = true;
     $('security-credentials').hidden = true; $('security-code-field').hidden = true; $('security-regenerate').hidden = true;
