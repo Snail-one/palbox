@@ -102,7 +102,12 @@
 .save-management .backup-retention-settings { gap: 10px; align-items: center; margin: 0; padding: 12px 18px; border-top: 1px solid var(--line); background: #fafafa; }
 .backup-retention-settings label { margin: 0; gap: 7px; }
 .backup-retention-settings input { width: 60px; padding: 5px; text-align: center; font-variant-numeric: tabular-nums; }
-.backup-retention-settings .button { margin-left: auto; padding: 5px 12px; min-height: 32px; }
+.backup-retention-settings input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+.backup-retention-settings input::-webkit-inner-spin-button,
+.backup-retention-settings input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.backup-retention-status { margin-left: auto; color: #318267; font-size: 11px; }
+.backup-retention-status[data-state="pending"], .backup-retention-status[data-state="saving"] { color: var(--muted); }
+.backup-retention-status[data-state="invalid"], .backup-retention-status[data-state="error"] { color: #b3433e; }
 .backup-status-note { display: flex; align-items: flex-start; gap: 7px; margin: 14px 0 20px; font-size: 11px; }
 .backup-status-note .icon { width: 14px; height: 14px; flex-shrink: 0; margin-top: 2px; }
 .backup-policy { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); }
@@ -152,7 +157,7 @@
   .backup-entry-actions .button { min-height: 40px; font-size: 11px; padding: 8px; }
   .save-management .backup-retention-settings { padding: 12px 15px; }
   .backup-retention-settings .backup-retention-hint { display: none; }
-  .backup-retention-settings .button, .backup-retention-settings input { min-height: 40px; }
+  .backup-retention-settings input { min-height: 40px; }
 }
 #native-backups { margin-top: 12px; font-size: 11px; scroll-margin-top: 90px; }
 .backup-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }

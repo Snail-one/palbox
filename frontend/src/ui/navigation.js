@@ -71,10 +71,18 @@ export function createNavigation({ dom, window, isDirty, onSave, onConfiguration
     if (isDirty()) { event.preventDefault(); event.returnValue = ''; }
   });
   document.addEventListener('keydown', event => {
-    const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
+    const active = document.activeElement;
+    const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName);
     const modalOpen = Boolean(document.querySelector('dialog[open]'));
     const configuring = !$('configuration-page').hidden;
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's' && !modalOpen && configuring) { event.preventDefault(); onSave(); }
+    if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229 && !event.repeat &&
+        !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey &&
+        !modalOpen && configuring && !$('configuration-editor').hidden &&
+        active.tagName === 'INPUT' && active.matches('.field-input, .raw-input') && !active.disabled && !active.readOnly) {
+      event.preventDefault();
+      onSave();
+    }
     if (event.key === '/' && !typing && !modalOpen && configuring && !$('configuration-editor').hidden) { event.preventDefault(); $('search').focus(); }
     if (event.key === 'Escape' && !modalOpen) closeSidebar();
   });

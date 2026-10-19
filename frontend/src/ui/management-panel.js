@@ -5,6 +5,7 @@ import { gameServiceState } from './game-service-state.js';
 import { createRunningConfigPanel } from './running-config-panel.js';
 import { compactLogDisplay } from './log-display.js';
 import { createTimeFormatter } from './time.js';
+import { createBackupRetentionAutosave } from './backup-retention-autosave.js';
 
 const BACKUP_GROUPS = {
   manual: '手动备份',
@@ -133,7 +134,14 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   let settingsRequest = null;
   let settingsCache = null;
   let backupRenderKey = null;
-  const backupRetentionDrafts = new Map();
+  const retentionAutosave = createBackupRetentionAutosave({
+    getSaved: category => settingsCache?.backupRetentions?.[category] ?? 5,
+    async save(category, count) {
+      const saved = await api.request('settings', { method: 'PUT', body: { backupRetentions: { [category]: count } } });
+      settingsCache = { ...saved, backupRetentions: { ...settingsCache?.backupRetentions, [category]: saved.backupRetentions[category] } };
+    },
+    onState: renderRetentionState
+  });
   let checkingUpdate = false;
   let loadingBans = false;
   let lastBanError = '';
@@ -276,9 +284,17 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     await refresh();
   } });
   for (const button of actionButtons) button.addEventListener('click', () => button.dataset.action === 'import-save' ? saveImport.open() : action(button.dataset.action));
+  function renderRetentionState(category, state) {
+    const status = $(`backup-retention-status-${category}`);
+    if (!status) return;
+    status.dataset.state = state.status;
+    status.textContent = { saved: '已保存', pending: '待保存', saving: '保存中…', invalid: '请输入 1～20 的整数', error: '保存失败，回车重试' }[state.status];
+    status.title = state.error || '';
+    $(`backup-retention-${category}`).setAttribute('aria-invalid', String(state.status === 'invalid'));
+  }
   async function loadBackups() {
     const backups = await api.request('backups');
-    const renderKey = JSON.stringify([backups, settingsCache?.backupRetentions, Boolean(lastStatus?.task)]);
+    const renderKey = JSON.stringify([backups, Boolean(lastStatus?.task)]);
     if (renderKey === backupRenderKey) return;
     const totalBytes = backups.reduce((total, backup) => total + backup.bytes, 0);
     $('save-backup-summary').textContent = `${backups.length} 份 · ${formatBytes(totalBytes)}`;
@@ -317,26 +333,23 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       const retentionLabel = document.createElement('label'); retentionLabel.textContent = '保留';
       const retentionInput = document.createElement('input'); retentionInput.type = 'number'; retentionInput.min = '1'; retentionInput.max = '20'; retentionInput.required = true;
       retentionInput.id = `backup-retention-${category}`; retentionInput.setAttribute('aria-label', `${title}保留数量`);
-      retentionInput.value = backupRetentionDrafts.get(category) ?? settingsCache?.backupRetentions?.[category] ?? 5;
-      retentionInput.addEventListener('input', () => backupRetentionDrafts.set(category, retentionInput.value));
+      retentionInput.value = retentionAutosave.getState(category).value;
+      retentionInput.title = '修改后自动保存；按回车立即保存';
+      retentionInput.addEventListener('input', () => retentionAutosave.input(category, retentionInput.value));
+      retentionInput.addEventListener('change', () => { retentionAutosave.input(category, retentionInput.value); void retentionAutosave.flush(category); });
+      retentionInput.addEventListener('blur', () => { void retentionAutosave.flush(category); });
       retentionLabel.append(retentionInput, '份');
       const limit = document.createElement('span'); limit.className = 'backup-retention-hint'; limit.textContent = '最多 20 份';
-      const save = document.createElement('button'); save.type = 'submit'; save.className = 'button secondary'; save.textContent = '保存';
-      policy.append(retentionLabel, limit, save);
-      policy.addEventListener('submit', async event => {
+      const status = document.createElement('span'); status.className = 'backup-retention-status'; status.id = `backup-retention-status-${category}`;
+      status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
+      retentionInput.setAttribute('aria-describedby', status.id);
+      policy.append(retentionLabel, limit, status);
+      policy.addEventListener('submit', event => {
         event.preventDefault();
-        if (!policy.reportValidity()) return;
-        retentionInput.disabled = true; save.disabled = true;
-        try {
-          const saved = await api.request('settings', { method: 'PUT', body: { backupRetentions: { [category]: Number(retentionInput.value) } } });
-          settingsCache = { ...saved, backupRetentions: { ...settingsCache?.backupRetentions, [category]: saved.backupRetentions[category] } };
-          backupRetentionDrafts.delete(category); backupRenderKey = null;
-          notify(`${title}保留数量已保存`);
-          await loadBackups();
-        } catch (caught) { error(caught.message); }
-        finally { retentionInput.disabled = false; save.disabled = false; }
+        void retentionAutosave.flush(category);
       });
       group.append(list, policy); groups.set(category, list); $('manager-backups').append(group);
+      renderRetentionState(category, retentionAutosave.getState(category));
     }
     for (const backup of backups) {
       const row = document.createElement('div'); row.className = 'backup-row'; row.dataset.backupId = backup.id;

@@ -39,7 +39,7 @@ export function createLoginLogsPanel({ dom, api, window }) {
     const table = el('table', 'login-log-table');
     const head = el('thead');
     const heading = el('tr');
-    for (const label of ['时间（本地）', '登录结果', '来源 IP', '详情']) {
+    for (const label of ['时间', '登录结果', '来源 IP', '详情']) {
       const cell = el('th', '', label);
       cell.scope = 'col';
       heading.append(cell);

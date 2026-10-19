@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import { createNavigation } from '../../frontend/src/ui/navigation.js';
 
 class Element {
-  constructor() {
+  constructor(tagName = 'DIV', className = '') {
+    this.tagName = tagName;
     this.hidden = false;
     this.attributes = new Map();
     this.dataset = {};
     this.listeners = new Map();
     this.links = [];
-    const classes = new Set();
+    const classes = new Set(className.split(/\s+/));
     this.classList = {
       contains: name => classes.has(name),
       remove: name => classes.delete(name),
@@ -21,6 +22,7 @@ class Element {
   hasAttribute(name) { return this.attributes.has(name); }
   removeAttribute(name) { this.attributes.delete(name); }
   querySelectorAll() { return this.links; }
+  matches(selector) { return selector.split(',').some(rule => this.classList.contains(rule.trim().slice(1))); }
   addEventListener(name, callback) { this.listeners.set(name, callback); }
   focus() { this.focused = true; }
 }
@@ -145,4 +147,48 @@ test('登录日志有独立导航，直接进入和前后切换不混用游戏�
   app.go('#login-logs');
   assert.equal(app.$('login-logs-page').hidden, false);
   assert.equal(app.$('configuration-apply').hidden, true);
+});
+
+test('配置表单和参数列表的单行输入按回车立即保存并保留焦点', () => {
+  for (const [route, className] of [['#configuration', 'field-input'], ['#configuration/advanced', 'raw-input']]) {
+    const app = setup(route);
+    const input = new Element('INPUT', className);
+    app.document.activeElement = input;
+    let prevented = false;
+    app.key({ key: 'Enter', preventDefault() { prevented = true; } });
+    assert.equal(app.saves, 1);
+    assert.equal(prevented, true);
+    assert.equal(app.document.activeElement, input);
+  }
+});
+
+test('回车保存不干扰源码换行、搜索、选择器、按钮和只读控件', () => {
+  for (const [tagName, className, properties] of [
+    ['TEXTAREA', '', {}], ['INPUT', '', {}], ['SELECT', 'field-input', {}], ['BUTTON', '', {}],
+    ['INPUT', 'field-input', { readOnly: true }], ['INPUT', 'raw-input', { disabled: true }]
+  ]) {
+    const app = setup('#configuration');
+    app.document.activeElement = Object.assign(new Element(tagName, className), properties);
+    app.key({ key: 'Enter', preventDefault() { assert.fail('不应阻止控件默认行为'); } });
+    assert.equal(app.saves, 0);
+  }
+});
+
+test('中文输入法确认、组合键、长按、弹窗和其他页面不触发回车保存', () => {
+  for (const properties of [
+    { isComposing: true }, { keyCode: 229 }, { repeat: true },
+    { ctrlKey: true }, { metaKey: true }, { altKey: true }, { shiftKey: true }
+  ]) {
+    const app = setup('#configuration');
+    app.document.activeElement = new Element('INPUT', 'field-input');
+    app.key({ key: 'Enter', ...properties, preventDefault() { assert.fail('不应触发保存'); } });
+    assert.equal(app.saves, 0);
+  }
+  for (const route of ['#game', '#saves/archives', '#configuration/profiles', '#login-logs', '#configuration']) {
+    const app = setup(route);
+    app.document.activeElement = new Element('INPUT', 'field-input');
+    if (route === '#configuration') app.document.querySelector = selector => selector === 'dialog[open]' ? {} : null;
+    app.key({ key: 'Enter', preventDefault() { assert.fail('不应触发配置保存'); } });
+    assert.equal(app.saves, 0);
+  }
 });
