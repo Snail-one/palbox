@@ -3,6 +3,7 @@ import { createSaveImportDialog } from './save-import-dialog.js';
 import { formatBytes } from './format.js';
 import { gameServiceState } from './game-service-state.js';
 import { createRunningConfigPanel } from './running-config-panel.js';
+import { compactLogDisplay } from './log-display.js';
 
 function uptimeLabel(seconds) {
   if (!Number.isFinite(seconds)) return '—';
@@ -344,7 +345,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   }
   function renderLogs(text) {
     const panel = $('manager-logs');
-    const content = text || '暂无日志';
+    const content = compactLogDisplay(text || '') || '暂无日志';
     if (panel.textContent === content) return;
     const bottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 30;
     const scrollTop = panel.scrollTop;

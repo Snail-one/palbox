@@ -1,5 +1,5 @@
 export const logTimestamp = at => `[${at.replace('T', ' ').replace(/Z$/, ' UTC')}]`;
-const sources = { game: '游戏', steamcmd: '安装更新', palbox: '面板' };
+const sources = { game: 'game', steamcmd: 'update', palbox: 'PalBox' };
 const isLogin = text => /^(?:\[[^\]\r\n]+\]\s+)?登录(?:成功|失败|尝试过于频繁)（/.test(text);
 
 export function readableLog(text) {

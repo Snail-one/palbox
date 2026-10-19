@@ -123,7 +123,7 @@ test('全部日志按接收顺序合并来源，保留跨块文本并清理终�
   runtime.log('steamcmd', bytes.subarray(0, 1));
   runtime.log('steamcmd', bytes.subarray(1));
   const lines = (await runtime.logs('all')).trimEnd().split('\n').map(line => line.replace(/^\[[^\]]+\] /, ''));
-  assert.deepEqual(lines, ['[游戏] 游戏中文🙂', '[安装更新] 安装 20%', '[面板] 任务完成', '[游戏] 跨块消息', '[面板] 插入其他来源', '[安装更新] 分块中文🙂']);
+  assert.deepEqual(lines, ['[game] 游戏中文🙂', '[update] 安装 20%', '[PalBox] 任务完成', '[game] 跨块消息', '[PalBox] 插入其他来源', '[update] 分块中文🙂']);
   assert.equal(await new Runtime(directory).logs('all'), await runtime.logs('all'), '重建 Runtime 后可读取已保存的统一日志');
   assert.match(await readFile(path.join(directory, 'logs/game.log'), 'utf8'), /\x1b\[32m/);
 });
@@ -140,14 +140,14 @@ test('统一日志首次保留原有历史且不重复导入，超长中文日�
   await runtime.initialize();
   const history = await runtime.logs('all');
   assert.equal(history.split('已有游戏日志').length - 1, 1);
-  assert.match(history, /\[面板\] 已有面板日志/);
-  assert.match(history, /\[面板\] 新增日志/);
+  assert.match(history, /\[PalBox\] 已有面板日志/);
+  assert.match(history, /\[PalBox\] 新增日志/);
   assert.doesNotMatch(history, /登录成功/);
   assert.match(await runtime.logs('login'), /登录成功（127.0.0.1）/);
   runtime.log('game', '中文🙂'.repeat(16000) + '最后一行\n');
   const text = await runtime.logs('all');
   assert.ok(Buffer.byteLength(text) <= 65536);
-  assert.match(text, /\[游戏\] /);
+  assert.match(text, /\[game\] /);
   assert.match(text, /最后一行\n$/);
   assert.doesNotMatch(text, /\ufffd/);
 });

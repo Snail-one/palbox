@@ -182,9 +182,9 @@ test('统一日志 API 和实时连接合并三个来源，并支持合并记录
   f.runtime.log('steamcmd', '统一安装消息\n');
   f.runtime.log('palbox', '统一面板消息\n');
   const snapshot = await snapshotIncluding('统一面板消息');
-  assert.match(snapshot, /\[游戏\] 统一游戏消息/);
-  assert.match(snapshot, /\[安装更新\] 统一安装消息/);
-  assert.match(snapshot, /\[面板\] 统一面板消息/);
+  assert.match(snapshot, /\[game\] 统一游戏消息/);
+  assert.match(snapshot, /\[update\] 统一安装消息/);
+  assert.match(snapshot, /\[PalBox\] 统一面板消息/);
   assert.ok(snapshot.indexOf('统一游戏消息') < snapshot.indexOf('统一安装消息'));
   assert.ok(snapshot.indexOf('统一安装消息') < snapshot.indexOf('统一面板消息'));
   assert.equal((await (await f.request('/api/logs?channel=all')).json()).text, snapshot);
@@ -194,7 +194,7 @@ test('统一日志 API 和实时连接合并三个来源，并支持合并记录
   f.runtime.log('palbox', '轮换后的合并日志\n');
   const rotated = await snapshotIncluding('轮换后的合并日志');
   assert.match(rotated, /统一游戏消息/);
-  assert.match(rotated, /\[面板\] 轮换后的合并日志/);
+  assert.match(rotated, /\[PalBox\] 轮换后的合并日志/);
   f.runtime.log('game', '自动轮换中文🙂\n'.repeat(200) + '自动轮换后的最新日志\n');
   const automatic = await snapshotIncluding('自动轮换后的最新日志');
   assert.doesNotMatch(automatic, /\ufffd/);

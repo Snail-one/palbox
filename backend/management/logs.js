@@ -6,7 +6,7 @@ import path from 'node:path';
 import { API_SECURITY_HEADERS } from '../security-headers.js';
 import { appendLog, DEFAULT_LOG_POLICY } from './log-retention.js';
 
-const sources = { game: '游戏', steamcmd: '安装更新', palbox: '面板' };
+const sources = { game: 'game', steamcmd: 'update', palbox: 'PalBox' };
 const combinedFile = directory => path.join(directory, 'logs/combined.jsonl');
 const isLoginRecord = text => /^(?:\[[^\]\r\n]+\]\s+)?登录(?:成功|失败|尝试过于频繁)（/.test(text);
 
