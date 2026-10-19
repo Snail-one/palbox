@@ -69,7 +69,7 @@ test('导入根目录官方快照并恢复运行中的世界', { skip: process.p
   assert.equal((await f.task('stop')).state, 'succeeded');
 });
 
-test('支持 SaveGames 布局，停服导入后保持停止', { skip: process.platform !== 'linux' }, async t => {
+test('SaveGames 布局导入到游戏当前 ID，不创建归档中的世界 ID，保持停服', { skip: process.platform !== 'linux' }, async t => {
   const f = await managementFixture(); t.after(() => f.close()); await f.login();
   const tmp = await mkdtemp(path.join(tmpdir(), 'palbox-import-')); t.after(() => rm(tmp, { recursive: true, force: true }));
   const world = path.join(saved(f), 'SaveGames/0/WORLDID');
@@ -78,29 +78,38 @@ test('支持 SaveGames 布局，停服导入后保持停止', { skip: process.pl
   await writeFile(path.join(world, 'LevelMeta.sav'), 'old');
   assert.equal((await f.task('install')).state, 'succeeded');
   const bytes = await archive(tmp, {
-    'SaveGames/0/WORLDID/Level.sav': 'imported',
-    'SaveGames/0/WORLDID/LevelMeta.sav': 'imported-meta',
-    'SaveGames/0/WORLDID/Players/p.sav': 'player'
+    'SaveGames/0/ARCHIVEID/Level.sav': 'imported',
+    'SaveGames/0/ARCHIVEID/LevelMeta.sav': 'imported-meta',
+    'SaveGames/0/ARCHIVEID/Players/p.sav': 'player'
   });
   const staged = await (await f.upload('/api/save-import', bytes)).json();
   assert.equal(staged.layout, 'savegames');
-  assert.equal(staged.worldId, 'WORLDID');
+  assert.equal(staged.worldId, 'ARCHIVEID');
   await waitTask(f, 'import-save', { id: staged.id });
   assert.equal(await readFile(path.join(world, 'Level.sav'), 'utf8'), 'imported');
+  assert.deepEqual(await readdir(path.dirname(world)), ['WORLDID']);
   assert.equal(f.runtime.game, null);
 });
 
-test('没有世界时使用存档 ID 或生成世界 ID', { skip: process.platform !== 'linux' }, async t => {
+test('未知当前世界 ID 时拒绝导入；已有游戏配置 ID 时使用该 ID 恢复', { skip: process.platform !== 'linux' }, async t => {
   const f = await managementFixture(); t.after(() => f.close()); await f.login();
   const tmp = await mkdtemp(path.join(tmpdir(), 'palbox-import-')); t.after(() => rm(tmp, { recursive: true, force: true }));
   assert.equal((await f.task('install')).state, 'succeeded');
-  const bytes = await archive(tmp, { 'Level.sav': 'a', 'LevelMeta.sav': 'b' });
+  for (const entries of [{ 'Level.sav': 'a', 'LevelMeta.sav': 'b' }, { 'SaveGames/0/ARCHIVEID/Level.sav': 'a', 'SaveGames/0/ARCHIVEID/LevelMeta.sav': 'b' }]) {
+    await rm(path.join(tmp, 'source'), { recursive: true, force: true });
+    const bytes = await archive(tmp, entries);
+    const staged = await (await f.upload('/api/save-import', bytes)).json();
+    const task = await f.task('import-save', { id: staged.id });
+    assert.equal(task.state, 'failed');
+    assert.match(task.message, /无法确定游戏运行的世界 ID/);
+    await assert.rejects(readdir(path.join(saved(f), 'SaveGames/0')), { code: 'ENOENT' });
+  }
+  await writeFile(path.join(saved(f), 'Config/LinuxServer/GameUserSettings.ini'), 'DedicatedServerName=GAMEID\n');
+  const bytes = await archive(tmp, { 'SaveGames/0/ARCHIVEID/Level.sav': 'a', 'SaveGames/0/ARCHIVEID/LevelMeta.sav': 'b' });
   const staged = await (await f.upload('/api/save-import', bytes)).json();
   await waitTask(f, 'import-save', { id: staged.id });
-  const worlds = await readdir(path.join(saved(f), 'SaveGames/0'));
-  assert.equal(worlds.length, 1);
-  assert.match(worlds[0], /^[A-F0-9]{32}$/);
-  assert.equal(await readFile(path.join(saved(f), 'SaveGames/0', worlds[0], 'Level.sav'), 'utf8'), 'a');
+  assert.deepEqual(await readdir(path.join(saved(f), 'SaveGames/0')), ['GAMEID']);
+  assert.equal(await readFile(path.join(saved(f), 'SaveGames/0/GAMEID/Level.sav'), 'utf8'), 'a');
 });
 
 test('多个世界且没有活动世界时拒绝导入', { skip: process.platform !== 'linux' }, async t => {

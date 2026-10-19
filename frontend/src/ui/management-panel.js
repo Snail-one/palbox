@@ -137,7 +137,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   saves.className = 'management-panel save-management';
   saves.setAttribute('aria-labelledby', 'save-management-title');
   saves.innerHTML = `
-    <div class="management-heading backup-page-heading"><div><h2 id="save-management-title">完整备份</h2><p class="management-note">完整保留世界、玩家存档和游戏配置；时间按本地时区显示（${timeFormat.timeZone}）。</p></div><div class="management-actions"><button class="button primary" data-action="backup" disabled><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>创建完整备份</button></div></div>
+    <div class="management-heading backup-page-heading"><div><h2 id="save-management-title">完整备份</h2><p class="management-note">完整保留当前世界目录内的内容；时间按本地时区显示（${timeFormat.timeZone}）。</p></div><div class="management-actions"><button class="button primary" data-action="backup" disabled><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>创建完整备份</button></div></div>
     <div class="backup-overview"><div class="backup-stat"><span>全部归档</span><strong id="save-backup-summary" role="status">正在读取…</strong></div><div class="backup-stat"><span>最近备份</span><span id="save-backup-latest">正在读取…</span></div><div class="backup-stat"><span>保留策略</span><span>各分类单独设置 · 每类最多 20 份</span></div></div>
     <p id="complete-backup-note" class="backup-status-note management-note"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><span id="complete-backup-status">创建手动备份前，请先停止游戏服务。</span></p>
     <div id="manager-backups">正在读取完整备份…</div>`;
@@ -209,10 +209,10 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     if (confirm && ['stop', 'force-stop', 'restart', 'update', 'apply', 'backup', 'restore', 'restore-native', 'reset-save', 'kick'].includes(name)) {
       const descriptions = {
         apply: '将当前配置写入游戏，不创建备份。游戏服正在运行时会先存档、停服，再应用并重启。',
-        backup: '仅在游戏服停止时备份完整存档和配置，完成后保持停服。',
-        restore: '用这份完整备份恢复游戏配置和世界存档。当前存档会先备份到“恢复前备份”，面板中的配置预设保持不变。',
+        backup: '仅在游戏服停止时备份当前世界目录的全部内容，包括玩家存档和目录内的官方备份历史，完成后保持停服。',
+        restore: '将备份中的世界内容恢复到游戏当前的世界 ID 目录，替换该目录的全部内容。当前世界会先备份到“恢复前备份”，游戏配置和封禁名单保留。',
         'restore-native': '将当前世界和玩家存档恢复到所选官方备份。会先存档、停服并创建完整备份，归入“恢复前备份”，保留当前配置及官方备份历史；原先运行的游戏服会重新启动。',
-        'reset-save': '将先创建完整备份，单独保存在“重置前备份”中，再清空 Pal/Saved/SaveGames/0 下的全部内容，包括所有世界、玩家存档和该目录中的官方备份历史。备份失败时中止重置；游戏配置和完整备份归档保留。必须先停止游戏服务器，完成后保持停服。',
+        'reset-save': '将先创建当前世界的完整备份，单独保存在“重置前备份”中，再清空 Pal/Saved/SaveGames/0 下的全部内容，包括世界、玩家存档和该目录中的官方备份历史。备份失败时中止重置；游戏配置和完整备份归档保留。必须先停止游戏服务器，完成后保持停服。',
         update: '仅在游戏服停止时使用 SteamCMD 更新服务端，不自动创建备份，更新完成后保持停服。',
         stop: '保存世界后停止游戏服，管理面板继续运行。',
         'force-stop': '立即强制停止游戏服，可能丢失最近一次未保存的进度。仅在正常停止失败时使用。',

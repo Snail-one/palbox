@@ -47,12 +47,24 @@ test('缺失、空目录、配置文件、空存档和链接不能冒充可备�
   await rejected();
 });
 
-test('停服时有实际世界存档才能生成可读取的完整备份', async t => {
+test('完整备份与恢复只作用于当前世界，保留配置、封禁名单和旧世界目录', async t => {
   const { manager, runtime, directory } = await fixture(t);
   const world = path.join(runtime.saved, 'SaveGames/0/WORLD1');
-  await mkdir(world, { recursive: true });
+  await mkdir(path.join(world, 'Players'), { recursive: true });
+  await mkdir(path.join(world, 'backup/world/history'), { recursive: true });
   await writeFile(path.join(world, 'Level.sav'), 'world-data');
+  await writeFile(path.join(world, 'Players/player.sav'), 'player-data');
+  await writeFile(path.join(world, 'WorldOption.sav'), 'world-options');
+  await writeFile(path.join(world, 'backup/world/history/Level.sav'), 'official-history');
   await manager.ensureConfig();
+  const config = await readFile(runtime.config, 'utf8');
+  const selection = path.join(runtime.saved, 'Config/LinuxServer/GameUserSettings.ini');
+  await writeFile(selection, 'DedicatedServerName=WORLD1\n');
+  const oldWorld = path.join(runtime.saved, 'SaveGames/0/OLD/Level.sav');
+  await mkdir(path.dirname(oldWorld), { recursive: true });
+  await writeFile(oldWorld, 'keep-old-world');
+  const banlist = path.join(runtime.saved, 'SaveGames/banlist.txt');
+  await writeFile(banlist, 'keep-banlist');
   assert.equal((await manager.status()).hasWorldSave, true);
   await manager.submit('backup');
   await manager.operation;
@@ -61,10 +73,52 @@ test('停服时有实际世界存档才能生成可读取的完整备份', async
   assert.ok(task.backup);
   const list = await runtime.run('tar', ['-tzf', manager.backupFile(task.backup)]);
   assert.match(list, /Pal\/Saved\/SaveGames\/0\/WORLD1\/Level\.sav/);
-  assert.match(list, /Pal\/Saved\/Config\/LinuxServer\/PalWorldSettings\.ini/);
+  assert.ok(list.trim().split('\n').every(name => name.startsWith('Pal/Saved/SaveGames/0/WORLD1/')));
+  assert.doesNotMatch(list, /Config|banlist|\/OLD\//);
   assert.equal(runtime.game, null);
   assert.equal((await manager.backups()).length, 1);
   assert.equal((await readdir(path.join(directory, 'backups/manual'))).some(name => name.endsWith('.partial')), false);
+  await writeFile(path.join(world, 'Level.sav'), 'new-world');
+  await writeFile(path.join(world, 'Players/player.sav'), 'new-player');
+  await writeFile(path.join(world, 'new-file.sav'), 'remove-on-restore');
+  await writeFile(runtime.config, config + '\n; current configuration\n');
+  await manager.restore(task.backup);
+  assert.equal(await readFile(path.join(world, 'Level.sav'), 'utf8'), 'world-data');
+  assert.equal(await readFile(path.join(world, 'Players/player.sav'), 'utf8'), 'player-data');
+  assert.equal(await readFile(path.join(world, 'WorldOption.sav'), 'utf8'), 'world-options');
+  assert.equal(await readFile(path.join(world, 'backup/world/history/Level.sav'), 'utf8'), 'official-history');
+  await assert.rejects(readFile(path.join(world, 'new-file.sav')), { code: 'ENOENT' });
+  assert.equal(await readFile(runtime.config, 'utf8'), config + '\n; current configuration\n');
+  assert.equal(await readFile(selection, 'utf8'), 'DedicatedServerName=WORLD1\n');
+  assert.equal(await readFile(oldWorld, 'utf8'), 'keep-old-world');
+  assert.equal(await readFile(banlist, 'utf8'), 'keep-banlist');
+});
+
+test('旧 Saved 备份只提取世界内容，恢复到游戏当前 ID，不创建备份中的 ID', async t => {
+  const { manager, runtime, directory } = await fixture(t);
+  const legacy = path.join(directory, 'legacy');
+  const source = path.join(legacy, 'Pal/Saved/SaveGames/0/BACKUP_WORLD');
+  await mkdir(source, { recursive: true });
+  await writeFile(path.join(source, 'Level.sav'), 'archived-world');
+  await mkdir(path.join(legacy, 'Pal/Saved/Config/LinuxServer'), { recursive: true });
+  await writeFile(path.join(legacy, 'Pal/Saved/Config/LinuxServer/PalWorldSettings.ini'), 'must-not-restore-config');
+  const id = 'manual/legacy.tar.gz';
+  await runtime.run('tar', ['-czf', manager.backupFile(id), '-C', legacy, '--', 'Pal/Saved']);
+  await assert.rejects(manager.restore(id), /无法确定游戏运行的世界 ID/);
+  await assert.rejects(readdir(path.join(runtime.saved, 'SaveGames/0')), { code: 'ENOENT' });
+  await manager.ensureConfig();
+  const config = await readFile(runtime.config, 'utf8');
+  await writeFile(path.join(runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'), 'DedicatedServerName=ACTIVE_WORLD\n');
+  const target = path.join(runtime.saved, 'SaveGames/0/ACTIVE_WORLD');
+  await mkdir(target, { recursive: true });
+  await writeFile(path.join(target, 'Level.sav'), 'current-world');
+  await manager.restore(id);
+  assert.equal(await readFile(path.join(target, 'Level.sav'), 'utf8'), 'archived-world');
+  assert.deepEqual(await readdir(path.dirname(target)), ['ACTIVE_WORLD']);
+  assert.equal(await readFile(runtime.config, 'utf8'), config);
+  assert.equal(await readFile(path.join(runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'), 'utf8'), 'DedicatedServerName=ACTIVE_WORLD\n');
+  const protection = (await manager.backups()).find(backup => backup.category === 'before-restore');
+  assert.equal(await runtime.run('tar', ['-xOzf', manager.backupFile(protection.id), '--', 'Pal/Saved/SaveGames/0/ACTIVE_WORLD/Level.sav']), 'current-world');
 });
 
 test('旧版超过 20 份的保留设置在启动时迁移到 20，管理员记录保留', async t => {
@@ -131,16 +185,14 @@ test('手动、恢复前、导入前和重置前备份独立保留，恢复保�
   assert.equal(runtime.game, null);
 });
 
-test('自动保护备份跳过空目录，但保留已有游戏配置的恢复能力', async t => {
+test('自动保护备份跳过空世界，配置文件不会单独生成备份', async t => {
   const { manager, runtime } = await fixture(t);
   await mkdir(path.join(runtime.saved, 'SaveGames/0/EMPTY'), { recursive: true });
   assert.equal(await manager.backup('manual'), null);
   assert.deepEqual(await manager.backups(), []);
   await manager.ensureConfig();
-  const id = await manager.backup('manual');
-  assert.ok(id);
-  const list = await runtime.run('tar', ['-tzf', manager.backupFile(id)]);
-  assert.match(list, /Pal\/Saved\/Config\/LinuxServer\/PalWorldSettings\.ini/);
+  assert.equal(await manager.backup('before-import'), null);
+  assert.deepEqual(await manager.backups(), []);
   await assert.rejects(manager.submit('backup'), /尚无可备份的世界存档/);
 });
 
