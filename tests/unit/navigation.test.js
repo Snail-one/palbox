@@ -67,7 +67,7 @@ function setup(hash = '#game') {
   };
 }
 
-test('官方与手动备份可独立进入，切换时仅显示对应页面并更新导航', () => {
+test('官方与完整备份可独立进入，切换时仅显示对应页面并更新导航', () => {
   const app = setup('#saves');
   assert.equal(app.$('saves-page').hidden, false);
   assert.equal(app.$('saves-native').hidden, false);
@@ -85,13 +85,13 @@ test('官方与手动备份可独立进入，切换时仅显示对应页面并�
   assert.equal(app.$('saves-archives').hidden, false);
   assert.equal(app.$('saves-navigation').links[0].hasAttribute('aria-current'), false);
   assert.equal(app.$('saves-navigation').links[1].getAttribute('aria-current'), 'page');
-  assert.equal(app.document.title, 'PalBox · 存档管理 · 手动备份');
+  assert.equal(app.document.title, 'PalBox · 存档管理 · 完整备份');
   app.go('#saves');
   assert.equal(app.$('saves-native').hidden, false);
   assert.equal(app.$('saves-archives').hidden, true);
 });
 
-test('直接加载手动备份地址可恢复子页面，旧存档管理地址仍可访问官方备份', () => {
+test('直接加载完整备份地址可恢复子页面，旧存档管理地址仍可访问官方备份', () => {
   const direct = setup('#saves/archives');
   assert.equal(direct.$('saves-archives').hidden, false);
   assert.equal(direct.$('saves-native').hidden, true);

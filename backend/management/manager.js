@@ -233,6 +233,7 @@ export class Manager extends EventEmitter {
     if (action === 'backup' && payload.category && payload.category !== 'manual') throw failure('定时备份已交由游戏官方机制，面板仅支持手动完整备份。');
     if (this.closing) throw failure('管理服务正在关闭。', 503);
     if (this.busy) throw failure('已有任务正在执行，请稍后再试。', 409);
+    if (action === 'update' && this.runtime.game) throw failure('请先停止游戏服再更新服务端。', 409);
     if (action === 'reset-save') this.requireResetAllowed(payload);
     if (action === 'backup' && !this.runtime.game) {
       await this.requireWorldSave();
@@ -300,14 +301,10 @@ export class Manager extends EventEmitter {
         if (payload.start) await this.startGame();
         break;
       case 'update': {
-        const running = Boolean(this.runtime.game);
-        if (running) await this.stopGame({ requireSave: true });
-        await this.backup('before-update');
         await this.installGame();
         try { await this.store.syncDefaultProfile(); } catch (error) { this.runtime.log('palbox', `同步游戏默认配置失败：${error.message}\n`); }
         this.updateCache = null;
         this.versionCache = null;
-        if (running) await this.startGame();
         break;
       }
       case 'start': await this.ensureConfig(); await this.startGame(); break;

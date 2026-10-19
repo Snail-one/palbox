@@ -27,7 +27,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     <div class="server-primary-actions" role="group" aria-label="游戏服务操作">
         <span id="game-state" class="save-status" data-state="pending" role="status" title="正在连接面板，读取游戏服务状态。">连接中</span>
         <button class="button primary" data-action="install" hidden>安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop" hidden>停止</button><button class="button secondary" data-action="restart" hidden>重启</button>
-        <button class="button secondary" data-action="force-stop" title="仅在正常停止无效时使用，可能丢失最近一次未保存的进度。">强制停止</button><button class="button secondary" data-action="update" title="更新前会自动备份，运行中的游戏服务将短暂停服。">更新服务端</button><button class="button secondary" id="show-running-config" disabled>运行参数</button><button class="button secondary" id="edit-game-args" disabled>启动参数</button><button class="button secondary" id="edit-install-args" disabled>安装参数</button><button class="button secondary" id="edit-shutdown-wait" title="设置关服倒计时和游戏内提示文字" disabled>关服设置</button>
+        <button class="button secondary" data-action="force-stop" title="仅在正常停止无效时使用，可能丢失最近一次未保存的进度。">强制停止</button><button class="button secondary" data-action="update" title="请先停止游戏服再更新；更新后保持停服。">更新服务端</button><button class="button secondary" id="show-running-config" disabled>运行参数</button><button class="button secondary" id="edit-game-args" disabled>启动参数</button><button class="button secondary" id="edit-install-args" disabled>安装参数</button><button class="button secondary" id="edit-shutdown-wait" title="设置关服倒计时和游戏内提示文字" disabled>关服设置</button>
     </div>
     <button type="button" id="refresh-status" class="button secondary" title="读取当前页面所需的最新状态">刷新状态</button>
     <button type="button" id="show-task-history" class="button secondary" aria-haspopup="dialog" aria-controls="task-history">任务记录</button>`;
@@ -93,7 +93,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   saves.setAttribute('aria-labelledby', 'save-management-title');
   saves.innerHTML = `
     <div class="management-heading"><h2 id="save-management-title">完整备份归档</h2><div class="management-actions"><button class="button primary" data-action="backup" disabled>创建完整备份</button></div></div>
-    <p id="complete-backup-note" class="management-note">包含世界、玩家存档和游戏配置。手动创建完整备份时会先存档并停服，完成后按原状态启动。</p>
+    <p id="complete-backup-note" class="management-note">汇总手动完整备份及历史更新前、定时归档，包含世界、玩家存档和游戏配置。手动创建时会先存档并停服，完成后按原状态启动。</p>
     <div class="save-backup-toolbar"><span id="save-backup-summary" role="status">正在读取…</span><form id="backup-settings"><label>每类保留<input id="backup-retention" aria-label="每类完整备份保留数量" disabled type="number" min="1" max="100" required>份</label><button class="button secondary" type="submit" disabled>保存设置</button></form></div>
     <div id="manager-backups">正在读取完整备份…</div>`;
   $('saves-archives').append(saves);
@@ -149,7 +149,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
         restore: '用这份完整备份恢复游戏配置和世界存档。当前存档会先备份，面板中的配置预设保持不变。',
         'restore-native': '将当前世界和玩家存档恢复到所选官方备份。会先存档、停服并创建完整备份，保留当前配置及官方备份历史；原先运行的游戏服会重新启动。',
         'reset-save': '将清空 Pal/Saved/SaveGames/0 下的全部内容，包括所有世界、玩家存档和该目录中的官方备份历史。不会自动创建备份；游戏配置和完整备份归档保留。必须先停止游戏服务器，完成后保持停服。',
-        update: '先保存世界、停服并备份，再用 SteamCMD 更新。更新完成后恢复原来的运行状态。',
+        update: '仅在游戏服停止时使用 SteamCMD 更新服务端，不自动创建备份，更新完成后保持停服。',
         stop: '保存世界后停止游戏服，管理面板继续运行。',
         'force-stop': '立即强制停止游戏服，可能丢失最近一次未保存的进度。仅在正常停止失败时使用。',
         restart: '保存世界并重启游戏服。', kick: '将选中的玩家移出游戏服。'
@@ -535,7 +535,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       if (name === 'install') button.hidden = value.installed;
       if (name === 'start') button.hidden = !value.installed || value.running;
       if (name === 'stop' || name === 'restart') button.hidden = !value.running;
-      button.disabled = Boolean(value.task) || (name === 'install' && value.installed) || (['start', 'update', 'restart', 'import-save'].includes(name) && !value.installed) || (name === 'start' && value.running) || (['stop', 'force-stop', 'restart', 'save-world'].includes(name) && !value.running);
+      button.disabled = Boolean(value.task) || (name === 'install' && value.installed) || (['start', 'update', 'restart', 'import-save'].includes(name) && !value.installed) || (['start', 'update'].includes(name) && value.running) || (['stop', 'force-stop', 'restart', 'save-world'].includes(name) && !value.running);
       if (name === 'reset-save') button.disabled ||= value.running;
       if (name === 'backup') {
         const noSave = !value.hasWorldSave && !value.running;
@@ -548,7 +548,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     $('check-update').disabled = checkingUpdate || !value.installed || Boolean(value.task);
     $('complete-backup-note').textContent = !value.hasWorldSave && !value.running
       ? '尚无可备份的世界存档，请先启动游戏并生成存档。已有备份仍可下载或恢复。'
-      : '包含世界、玩家存档和游戏配置。手动创建完整备份时会先存档并停服，完成后按原状态启动；恢复任何备份前都会先备份当前数据。';
+      : '汇总手动完整备份及历史更新前、定时归档，包含世界、玩家存档和游戏配置。手动创建时会先存档并停服，完成后按原状态启动；恢复任何备份前都会先备份当前数据。';
     const playerActionDisabled = Boolean(value.task) || !value.running || !value.ready;
     $('ban-player').disabled = playerActionDisabled;
     $('unban-player').disabled = playerActionDisabled;
@@ -672,7 +672,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       const value = await api.request('update-check', { timeout: 150000 });
       if (!value.installed) showUpdateStatus('服务端尚未安装。');
       else if (value.error) showUpdateStatus(`更新检查失败：${value.error}`, { error: true });
-      else if (value.updateAvailable) showUpdateStatus(`发现新版本：已安装 build ${value.installedBuild}，Steam 最新 build ${value.latestBuild}。可点击「更新服务端」。`);
+      else if (value.updateAvailable) showUpdateStatus(`发现新版本：已安装 build ${value.installedBuild}，Steam 最新 build ${value.latestBuild}。可在停服后点击「更新服务端」。`);
       else showUpdateStatus(`已是最新版本（build ${value.installedBuild}）。`);
     } catch (caught) { showUpdateStatus(`更新检查失败：${caught.message}`, { error: true }); }
     finally {
