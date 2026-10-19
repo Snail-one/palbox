@@ -163,6 +163,7 @@ npm run test:e2e
 npm run test:e2e:managed
 npm run test:e2e:logs
 npm run test:e2e:on-demand
+npm run test:e2e:running
 ```
 
 测试默认自行启动临时服务并在结束后关闭。管理测试使用模拟游戏进程，不会下载真实游戏。日志专项测试覆盖统一窗口的多来源合并与筛选、状态接口阻塞时的实时更新、中文与终端控制码、频道切换、断线重连和滚动位置。Playwright 仅用于开发测试，生产运行不依赖它。

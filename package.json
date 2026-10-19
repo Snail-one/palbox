@@ -23,6 +23,7 @@
     "test:e2e:managed": "node tests/e2e/management.cjs",
     "test:e2e:logs": "node tests/e2e/logs.cjs",
     "test:e2e:on-demand": "node tests/e2e/on-demand.cjs",
+    "test:e2e:running": "node tests/e2e/running-config.cjs",
     "test:browser": "npm run test:e2e"
   },
   "devDependencies": {

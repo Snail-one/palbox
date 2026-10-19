@@ -171,6 +171,42 @@ dialog::backdrop {
   overflow-wrap: anywhere;
 }
 
+.running-config-dialog { width: min(1040px,calc(100vw - 28px)); }
+.running-config-dialog > .source-caption, .running-config-dialog #running-json .source-caption { margin: 12px 0 4px; padding: 0; border: 0; background: transparent; }
+.running-config-dialog .dialog-heading { margin-bottom: 8px; }
+.running-config-dialog > p { margin-bottom: 12px; }
+.running-config-dialog > .management-note { margin: 8px 0 14px; }
+.running-config-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.running-config-tools input[type=search] { flex: 1; min-width: 180px; padding: 9px 12px; border: 1px solid #e4e4e4; border-radius: 6px; font-size: 12px; }
+.running-categories { flex-wrap: wrap; gap: 4px; margin: 12px 0 0; padding: 0; border: 0; overflow: visible; }
+.running-categories .category-button { margin: 0; padding: 7px 10px; border-radius: 6px; font-size: 12px; }
+.running-category-count { color: var(--muted); font-size: 10px; }
+.running-field-list { max-height: 42dvh; overflow: auto; padding: 1px 10px 1px 1px; overscroll-behavior: contain; }
+.running-parameter-group + .running-parameter-group { margin-top: 20px; }
+.running-group-title { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 13px; }
+.running-group-title > .icon { width: 16px; height: 16px; }
+.running-fields { margin: 0; gap: 12px; }
+.running-fields .field { padding: 14px; margin: 0; border: 1px solid #e8e4df; border-radius: 8px; }
+.running-field-description { margin: 8px 0 12px; color: var(--muted); font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.running-fields .field-input { background: var(--input-bg); }
+.running-boolean-value { display: flex; align-items: center; gap: 9px; min-height: 37px; font-size: 12px; }
+.running-boolean-value .toggle { background: #d6d3ce; }
+.running-boolean-value .toggle[data-enabled=true] { background: var(--accent); }
+.running-boolean-value .toggle[data-enabled=true]:after { transform: translateX(14px); }
+.running-boolean-value code { margin-inline-start: auto; color: var(--muted); font-size: 11px; }
+.running-platforms { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 37px; }
+.running-structured-value { max-height: 180px; margin: 0; padding: 10px; background: var(--input-bg); border-radius: 6px; font: 11px/1.7 var(--mono); white-space: pre-wrap; overflow: auto; overflow-wrap: anywhere; }
+.running-enum-label { margin: 6px 0 0; color: var(--muted); font-size: 11px; }
+.running-config-dialog .source-view-editor { width: 100%; height: 48dvh; min-height: 180px; margin: 8px 0 0; }
+@media (max-width: 600px) {
+  .running-config-dialog { padding: 18px; }
+  .running-config-tools input[type=search] { flex-basis: 100%; min-width: 0; }
+  .running-categories { flex-wrap: nowrap; overflow-x: auto; }
+  .running-fields { grid-template-columns: minmax(0,1fr); }
+  .running-fields .field.wide { grid-column: auto; }
+  .running-field-list { max-height: 38dvh; padding-inline-end: 4px; }
+}
+
 .dialog-heading {
   display: flex;
   justify-content: space-between;

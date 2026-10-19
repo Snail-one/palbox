@@ -1,8 +1,8 @@
 import { createArgsDialog } from './args-dialog.js';
 import { createSaveImportDialog } from './save-import-dialog.js';
 import { formatBytes } from './format.js';
-import { filterPollingLogs } from './log-filter.js';
 import { gameServiceState } from './game-service-state.js';
+import { createRunningConfigPanel } from './running-config-panel.js';
 
 function uptimeLabel(seconds) {
   if (!Number.isFinite(seconds)) return '—';
@@ -47,7 +47,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   logs.id = 'game-logs';
   logs.className = 'management-panel';
   logs.setAttribute('aria-label', '运行日志');
-  logs.innerHTML = `<div class="management-heading log-heading"><h2>运行日志</h2><div class="log-controls"><div class="segmented log-type-buttons" id="manager-log-channel" role="group" aria-label="日志类型"><button type="button" class="selected" data-log-channel="all" aria-pressed="true">全部日志</button><button type="button" data-log-channel="game" aria-pressed="false">游戏日志</button><button type="button" data-log-channel="steamcmd" aria-pressed="false">安装与更新</button><button type="button" data-log-channel="palbox" aria-pressed="false">面板日志</button></div><label class="log-toggle" title="显示面板读取状态及运行参数产生的 REST 成功访问记录"><input type="checkbox" role="switch" class="sr-only" id="show-polling-logs"><span class="toggle" aria-hidden="true"></span><span>显示接口访问</span></label></div></div><p id="manager-log-status" class="management-note" role="status">正在连接实时日志…</p><pre id="manager-logs" tabindex="0">正在读取日志…</pre>`;
+  logs.innerHTML = `<div class="management-heading log-heading"><h2>运行日志</h2><div class="log-controls"><div class="segmented log-type-buttons" id="manager-log-channel" role="group" aria-label="日志类型"><button type="button" class="selected" data-log-channel="all" aria-pressed="true">全部日志</button><button type="button" data-log-channel="game" aria-pressed="false">游戏日志</button><button type="button" data-log-channel="steamcmd" aria-pressed="false">安装与更新</button><button type="button" data-log-channel="palbox" aria-pressed="false">面板日志</button></div></div></div><p id="manager-log-status" class="management-note" role="status">正在连接实时日志…</p><pre id="manager-logs" tabindex="0">正在读取日志…</pre>`;
   $('game-overview').append(logs);
   const logHistoryActions = document.createElement('div');
   logHistoryActions.className = 'log-history-actions';
@@ -118,9 +118,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   let bannedCache = null;
   let bannedRenderKey = '';
   let logChannel = 'all';
-  let showPollingLogs = false;
   let nativeBackupPage = 0;
-  let lastLogText = '';
   let logGeneration = 0;
   let closeLogs = null;
   let logHistory = null;
@@ -205,14 +203,15 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     } finally { button.disabled = false; }
   });
   let runningRead = 0;
+  const runningPanel = createRunningConfigPanel({ dom });
   $('show-running-config').addEventListener('click', async () => {
     const dialog = $('running-config-dialog');
     if (dialog.open) return;
     const read = ++runningRead;
     $('running-config-error').hidden = true;
-    $('running-config-note').textContent = '当前进程的启动命令，以及游戏 REST API 返回的配置（只读）。';
+    $('running-config-note').textContent = '查看游戏当前生效的参数，仅供查看。修改配置请前往配置管理并应用。';
     $('running-command').textContent = '正在读取…';
-    $('running-source').value = '';
+    runningPanel.clear();
     $('running-config-state').textContent = '';
     dialog.showModal();
     try {
@@ -225,7 +224,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       }
       const quoted = value.args.map(arg => /[\s"']/.test(arg) ? JSON.stringify(arg) : arg).join(' ');
       $('running-command').textContent = `PalServer.sh -port=${value.port}${quoted ? ' ' + quoted : ''}`;
-      $('running-source').value = JSON.stringify(value.settings, null, 2);
+      runningPanel.render(value.settings);
       const started = value.startedAt ? ` 启动时间：${new Date(value.startedAt).toLocaleString()}。` : '';
       $('running-config-state').textContent = `仅显示游戏 REST API 返回的配置字段。${started}`;
     } catch (caught) {
@@ -235,7 +234,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       $('running-config-error').hidden = false;
     }
   });
-  $('running-config-dialog').addEventListener('close', () => { runningRead++; });
+  $('running-config-dialog').addEventListener('close', () => { runningRead++; runningPanel.clear(); });
   for (const id of ['running-config-close', 'running-config-done']) $(id).addEventListener('click', () => $('running-config-dialog').close());
   $('edit-game-args').addEventListener('click', () => gameArgsDialog.open((settingsCache?.gameArgs ?? []).join('\n')));
   const installArgsDialog = createArgsDialog({ dom, prefix: 'install-args', onSave: async installArgs => {
@@ -341,8 +340,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   }
   function renderLogs(text) {
     const panel = $('manager-logs');
-    lastLogText = text || '';
-    const content = (showPollingLogs ? lastLogText : filterPollingLogs(lastLogText)) || '暂无日志';
+    const content = text || '暂无日志';
     if (panel.textContent === content) return;
     const bottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 30;
     const scrollTop = panel.scrollTop;
@@ -357,7 +355,6 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     closeLogs?.();
     closeLogs = null;
     activeLogChannel = null;
-    lastLogText = '';
   }
   function syncLogs() {
     if (!pageActive || stopped || document.hidden || $('game-page').hidden || $('game-overview').hidden) { stopLogs(); return; }
@@ -633,12 +630,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       option.setAttribute('aria-pressed', String(selected));
     }
     $('manager-logs').textContent = '正在读取日志…';
-    lastLogText = '';
     syncLogs();
-  });
-  $('show-polling-logs').addEventListener('change', event => {
-    showPollingLogs = event.currentTarget.checked;
-    if (lastLogText) renderLogs(lastLogText);
   });
   function loadSettings() {
     settingsRequest ??= api.request('settings').then(settings => {
