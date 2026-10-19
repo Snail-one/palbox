@@ -54,7 +54,8 @@ services:
       PALBOX_LOG_BACKUPS: "1"
       PALBOX_LOG_RETENTION_DAYS: "7"
     networks:
-      - management
+      management:
+        ipv4_address: 172.30.83.3
     volumes:
       # 数据保存在此 Compose 文件旁的 data 目录。
       - "./data:/data"

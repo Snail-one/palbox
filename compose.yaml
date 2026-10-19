@@ -57,7 +57,8 @@ services:
       PALBOX_LOG_BACKUPS: "1"
       PALBOX_LOG_RETENTION_DAYS: "7"
     networks:
-      - management
+      management:
+        ipv4_address: 172.30.83.3
     volumes:
       # 宿主机数据目录，存放服务端、存档、备份和日志。
       - "./data:/data"

@@ -42,7 +42,7 @@ ssh -N -L 127.0.0.1:18080:127.0.0.1:8080 用户名@服务器IP
 
 使用 HTTPS 反向代理时，设置后端 `PALBOX_SECURE_COOKIE=true`，并只在前端的 `PALBOX_TRUSTED_PROXIES` 填写该反向代理的实际连接 IP 或 CIDR，例如 `172.30.83.1`（应先核实实际地址）。反向代理须覆盖或正确追加 `X-Forwarded-For`，不能直接透传用户伪造的地址。默认前端不采信任何转发头，普通内网客户端也不能自行声明来源。
 
-Compose 使用专用 `management` 网络，前端固定为 `172.30.83.2`；后端的 `PALBOX_TRUSTED_PROXIES` 只配置此地址。若网段与现有网络冲突，需一起修改网络 `subnet`、前端 `ipv4_address` 和后端可信地址。不要把后端 HTTP 端口映射到公网。分别运行进程时，后端默认只信任 `127.0.0.1`、`::1`；该变量也支持逗号分隔的 IP/CIDR 列表，空字符串表示全部不信任，无效配置会阻止启动。
+`compose.yaml` 和 `compose.ghcr.yaml` 均使用专用 `management` 网络，前端固定为 `172.30.83.2`、后端固定为 `172.30.83.3`，避免两个服务启动时争用地址；后端的 `PALBOX_TRUSTED_PROXIES` 只配置前端地址。若网段与现有网络冲突，需一起修改网络 `subnet`、前后端 `ipv4_address` 和后端可信地址。修改网络地址池后，先 `docker compose down` 再 `docker compose up -d` 重建网络；使用在线镜像配置时，两条命令均加上 `-f compose.ghcr.yaml`，即 `docker compose -f compose.ghcr.yaml down` 和 `docker compose -f compose.ghcr.yaml up -d`；此过程会停止游戏服，`./data` 绑定目录中的存档、配置和备份会保留。不要把后端 HTTP 端口映射到公网。分别运行进程时，后端默认只信任 `127.0.0.1`、`::1`；该变量也支持逗号分隔的 IP/CIDR 列表，空字符串表示全部不信任，无效配置会阻止启动。
 
 使用 `npm start` / `dev.sh` 同时启动两个进程时，`PALBOX_TRUSTED_PROXIES` 配置前端的外接代理；后端继续信任回环地址，需要覆盖时单独设置 `API_TRUSTED_PROXIES`。
 
