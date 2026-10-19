@@ -13,6 +13,14 @@ const BACKUP_GROUPS = {
   scheduled: '旧定时归档',
   'before-update': '历史更新前备份'
 };
+const BACKUP_GROUP_DETAILS = {
+  manual: ['file', '手动创建，用于日常留档', '停止游戏后，可创建第一份完整备份。'],
+  'before-restore': ['restore', '恢复备份前自动保存当前数据', '恢复备份时，会自动在这里保留当前数据。'],
+  'before-import': ['upload', '导入外部存档前自动保存', '导入存档时，会自动在这里保留原存档。'],
+  'before-reset': ['shield', '清空世界存档前自动保存', '重置存档时，会先在这里保留完整备份。'],
+  scheduled: ['restore', '旧版定时任务创建的归档', ''],
+  'before-update': ['server', '旧版更新前创建的归档', '']
+};
 
 function uptimeLabel(seconds) {
   if (!Number.isFinite(seconds)) return '—';
@@ -101,9 +109,9 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   saves.className = 'management-panel save-management';
   saves.setAttribute('aria-labelledby', 'save-management-title');
   saves.innerHTML = `
-    <div class="management-heading"><h2 id="save-management-title">完整备份归档</h2><div class="management-actions"><button class="button primary" data-action="backup" disabled>创建完整备份</button></div></div>
-    <p id="complete-backup-note" class="management-note">手动备份、恢复前备份、导入前备份和重置前备份分别显示，包含世界、玩家存档和游戏配置。创建手动备份前需先停止游戏服，完成后保持停服。</p>
-    <div class="save-backup-toolbar"><span id="save-backup-summary" role="status">正在读取…</span><form id="backup-settings"><label>每类保留<input id="backup-retention" aria-label="每类完整备份保留数量" disabled type="number" min="1" max="20" required>份</label><button class="button secondary" type="submit" disabled>保存设置</button></form></div>
+    <div class="management-heading backup-page-heading"><div><h2 id="save-management-title">完整备份</h2><p class="management-note">完整保留世界、玩家存档和游戏配置，按来源独立归档。</p></div><div class="management-actions"><button class="button primary" data-action="backup" disabled><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>创建完整备份</button></div></div>
+    <div class="backup-overview"><div class="backup-stat"><span>全部归档</span><strong id="save-backup-summary" role="status">正在读取…</strong></div><div class="backup-stat"><span>最近备份</span><span id="save-backup-latest">正在读取…</span></div><form id="backup-settings"><div><label>每类保留<input id="backup-retention" aria-label="每类完整备份保留数量" disabled type="number" min="1" max="20" required>份</label><span class="backup-retention-hint">各类独立计算 · 1–20 份</span></div><button class="button secondary" type="submit" disabled>保存设置</button></form></div>
+    <p id="complete-backup-note" class="backup-status-note management-note"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><span id="complete-backup-status">创建手动备份前，请先停止游戏服务。</span></p>
     <div id="manager-backups">正在读取完整备份…</div>`;
   $('saves-archives').append(saves);
   const configurationApply = $('configuration-apply');
@@ -269,28 +277,45 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     const totalBytes = backups.reduce((total, backup) => total + backup.bytes, 0);
     $('save-backup-summary').textContent = `${backups.length} 份 · ${formatBytes(totalBytes)}`;
     $('save-backup-summary').title = `${totalBytes} 字节`;
+    $('save-backup-latest').textContent = backups.length ? new Date(backups[0].createdAt).toLocaleString('zh-CN', { hour12: false }) : '尚无备份';
     $('manager-backups').replaceChildren();
-    if (!backups.length) $('manager-backups').textContent = '暂无完整备份。手动创建后，可在这里下载或恢复。';
+    if (!backups.length) {
+      const empty = document.createElement('p'); empty.className = 'backup-empty-summary'; empty.textContent = '暂无完整备份，创建或执行相关操作后会显示在对应分类中。'; $('manager-backups').append(empty);
+    }
     const groups = new Map();
     for (const [category, title] of Object.entries(BACKUP_GROUPS)) {
       const entries = backups.filter(backup => backup.category === category);
       if (!entries.length && ['scheduled', 'before-update'].includes(category)) continue;
       const group = document.createElement('section'); group.className = 'backup-category'; group.dataset.backupCategory = category;
+      const [icon, description, emptyDescription] = BACKUP_GROUP_DETAILS[category];
+      const header = document.createElement('div'); header.className = 'backup-category-header';
+      const badge = document.createElement('span'); badge.className = 'backup-category-icon'; badge.setAttribute('aria-hidden', 'true');
+      badge.innerHTML = `<svg class="icon"><use href="#i-${icon}"/></svg>`;
+      const details = document.createElement('div'); details.className = 'backup-category-details';
       const heading = document.createElement('h3'); heading.id = `backup-category-${category}`; heading.textContent = title;
       group.setAttribute('aria-labelledby', heading.id);
-      const summary = document.createElement('span'); summary.className = 'subtle-tag';
-      summary.textContent = `${entries.length} 份 · ${formatBytes(entries.reduce((total, backup) => total + backup.bytes, 0))}`;
-      heading.append(summary); group.append(heading);
+      const note = document.createElement('p'); note.textContent = description; details.append(heading, note);
+      const summary = document.createElement('div'); summary.className = 'backup-category-summary';
+      const count = document.createElement('strong'); count.textContent = `${entries.length} 份`;
+      const size = document.createElement('span'); size.textContent = formatBytes(entries.reduce((total, backup) => total + backup.bytes, 0));
+      summary.append(count, size); header.append(badge, details, summary); group.append(header);
+      const list = document.createElement('div'); list.className = 'backup-category-entries';
+      if (entries.length) { list.tabIndex = 0; list.setAttribute('role', 'region'); list.setAttribute('aria-label', `${title}列表`); }
       if (!entries.length) {
-        const empty = document.createElement('p'); empty.className = 'management-note'; empty.textContent = `暂无${title}。`; group.append(empty);
+        const empty = document.createElement('div'); empty.className = 'backup-category-empty';
+        const title = document.createElement('strong'); title.textContent = '暂无备份';
+        const hint = document.createElement('p'); hint.textContent = emptyDescription; empty.append(title, hint); list.append(empty);
       }
-      groups.set(category, group); $('manager-backups').append(group);
+      group.append(list); groups.set(category, list); $('manager-backups').append(group);
     }
     for (const backup of backups) {
       const row = document.createElement('div'); row.className = 'backup-row'; row.dataset.backupId = backup.id;
-      const label = document.createElement('span');
+      const label = document.createElement('span'); label.className = 'backup-entry-info';
       const category = BACKUP_GROUPS[backup.category];
-      label.textContent = `${new Date(backup.createdAt).toLocaleString()} · ${category} · ${formatBytes(backup.bytes)}`;
+      const created = new Date(backup.createdAt);
+      const date = document.createElement('time'); date.dateTime = backup.createdAt; date.textContent = created.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
+      const meta = document.createElement('span'); meta.className = 'backup-entry-meta'; meta.textContent = `${created.toLocaleTimeString('zh-CN', { hour12: false })} · ${formatBytes(backup.bytes)}`;
+      label.append(date, meta);
       label.title = `${backup.bytes} 字节`;
       const download = document.createElement('a'); download.className = 'button secondary'; download.textContent = '下载'; download.href = `/api/backup?id=${encodeURIComponent(backup.id)}`; download.setAttribute('download', '');
       const restore = document.createElement('button'); restore.className = 'button secondary'; restore.textContent = '恢复'; restore.disabled = Boolean(lastStatus?.task); restore.addEventListener('click', () => action('restore', { id: backup.id }));
@@ -299,7 +324,8 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
         const confirmed = await ask({ title: '删除这份完整备份？', description: `${new Date(backup.createdAt).toLocaleString()} · ${category} · ${formatBytes(backup.bytes)}。确认后永久删除这份归档，无法撤销。当前游戏存档保持不变。`, confirm: '删除备份', danger: true, symbol: 'trash' });
         if (confirmed) await action('delete-backup', { id: backup.id }, false);
       });
-      row.append(label, download, restore, remove); groups.get(backup.category).append(row);
+      const actions = document.createElement('div'); actions.className = 'backup-entry-actions'; actions.append(download, restore, remove);
+      row.append(label, actions); groups.get(backup.category).append(row);
     }
   }
   async function loadNativeBackups() {
@@ -570,9 +596,9 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     }
     $('show-running-config').disabled = !value.running;
     $('check-update').disabled = checkingUpdate || !value.installed || Boolean(value.task);
-    $('complete-backup-note').textContent = !value.hasWorldSave && !value.running
+    $('complete-backup-status').textContent = !value.hasWorldSave && !value.running
       ? '尚无可备份的世界存档，请先启动游戏并生成存档。已有备份仍可下载或恢复。'
-      : '手动备份、恢复前备份、导入前备份和重置前备份分别显示，包含世界、玩家存档和游戏配置。创建手动备份前需先停止游戏服，完成后保持停服；恢复、导入或重置前会自动创建对应分类的保护备份。';
+      : value.running ? '游戏正在运行，请先停止游戏服务，再创建手动备份。' : '游戏已停止，可以创建手动备份；完成后保持停服。';
     const playerActionDisabled = Boolean(value.task) || !value.running || !value.ready;
     $('ban-player').disabled = playerActionDisabled;
     $('unban-player').disabled = playerActionDisabled;
