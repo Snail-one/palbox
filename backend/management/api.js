@@ -83,6 +83,10 @@ export function createManagementApi(manager, options = {}) {
       // Revalidate after body reads and inside queued writes, using this request's
       // original cookie and CSRF token so logout/rotation also revokes pending work.
       const checks = { authorize: () => auth.require(request, true) };
+      if (pathname === '/api/security/password' && request.method === 'POST') {
+        const input = await body(request, 16384, AUTH_BODY_TIMEOUT_MS);
+        json(200, await auth.changePassword(request, input, response)); return;
+      }
       if (pathname === '/api/security/totp' && request.method === 'GET') {
         json(200, auth.securityStatus()); return;
       }

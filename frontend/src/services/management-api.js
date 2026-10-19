@@ -34,7 +34,7 @@ export function createManagementClient({ fetch, csrf = '' }) {
     },
     async request(path, { method = 'GET', body, timeout = 20000 } = {}) {
       let finish;
-      const updating = method === 'POST' && path.startsWith('security/totp/') ? new Promise(resolve => { finish = resolve; }) : null;
+      const updating = method === 'POST' && path.startsWith('security/') ? new Promise(resolve => { finish = resolve; }) : null;
       if (updating) securityUpdates.add(updating);
       try {
         const response = await fetch('/api/' + path, {

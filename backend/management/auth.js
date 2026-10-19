@@ -233,6 +233,29 @@ export class Authentication {
     this.factorFailures = null;
     return this.issueSession(request, response, { audit: false });
   }
+  async changePassword(request, input, response) {
+    this.require(request, true);
+    if (typeof input.newPassword !== 'string' || input.newPassword.length < 12) throw failure('新密码至少需要 12 位。', 400);
+    if (input.newPassword.length > 1024) throw failure('新密码不能超过 1024 位。', 400);
+    const checked = await this.reauthenticate(request, input.currentPassword, response);
+    if (input.newPassword === input.currentPassword) throw failure('新密码不能与当前密码相同。', 400);
+    const password = await passwordRecord(input.newPassword);
+    await this.updateAdmin(admin => {
+      this.require(request, true);
+      if (checked.signature !== this.signature(admin)) throw failure('账号验证设置已变化，请重新打开账号。', 409);
+      const next = { ...admin, ...password };
+      if (admin.totp) {
+        this.factorAttempt(response);
+        const verified = verifyFactor(admin.totp, input.code);
+        if (!verified) this.failedFactor(request, checked.attempts, '动态验证码或恢复码不正确、已使用或已过期。', '修改密码二次验证失败');
+        next.totp = verified;
+      }
+      return next;
+    }, { authorize: () => this.require(request, true) });
+    const rotated = this.rotateSession(request, response);
+    this.log(`管理员密码已修改（${this.clientAddress(request)}）\n`);
+    return { ...this.securityStatus(), ...rotated };
+  }
   async confirmEnrollment(request, code, response) {
     const session = this.require(request, true);
     const { attempts } = this.attempt(request, response);

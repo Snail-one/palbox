@@ -102,6 +102,26 @@ test('绑定过期后不启用，旧密码会话不能跨二次验证设置变�
   assert.equal(auth.session(sessionRequest), null);
 });
 
+test('修改密码写入失败不改变密码、不消费恢复码且不撤销现有会话', async () => {
+  const { auth, codes } = await fixture();
+  const sessionResponse = response();
+  const { csrf } = auth.issueSession(request(), sessionResponse);
+  const current = request('203.0.113.8', { cookie: sessionResponse.headers['Set-Cookie'].split(';')[0], 'x-palbox-csrf': csrf });
+  const before = structuredClone(auth.adminRecord);
+  const write = auth.updateAdmin;
+  auth.updateAdmin = async change => { change(structuredClone(auth.adminRecord)); throw new Error('disk unavailable'); };
+  const result = response();
+  const input = { currentPassword: 'correct-password', newPassword: 'new-correct-password', code: codes[0] };
+  await assert.rejects(auth.changePassword(current, input, result), /disk unavailable/);
+  assert.deepEqual(auth.adminRecord, before);
+  assert.ok(auth.session(current));
+  assert.equal(result.headers['Set-Cookie'], undefined);
+  auth.updateAdmin = write;
+  assert.ok((await auth.changePassword(current, input, response())).csrf);
+  assert.equal(auth.adminRecord.totp.recoveryHashes.length, 9);
+  assert.equal(auth.session(current), null);
+});
+
 test('挑战在等待账号写入时过期或被撤销，也不能建立会话', async () => {
   for (const expired of [true, false]) {
     const { auth, codes, start } = await fixture();

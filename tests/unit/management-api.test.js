@@ -34,7 +34,7 @@ test('安全设置轮换会话时日志自动重连，延迟到达的旧连接�
   assert.deepEqual(logs, ['new log']);
   assert.deepEqual(errors, []);
   close();
-  const next = api.request('security/totp/recovery-codes', { method: 'POST' });
+  const next = api.request('security/password', { method: 'POST' });
   resolveResponse({ ok: true, json: async () => ({ csrf: 'newer' }) });
   await next;
   assert.equal(sources.length, 2, '关闭订阅后不会重新打开日志连接');

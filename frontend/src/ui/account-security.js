@@ -21,6 +21,17 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
       <div class="dialog-actions" id="security-actions"><button type="button" class="button secondary" id="security-regenerate" hidden>重新生成恢复码</button><button class="button primary" id="security-submit" type="submit" disabled>启用二次验证</button></div>
     </form>
     <div id="security-recovery" hidden><p>请保存以下恢复码。每个只能使用一次，仅在此显示。手机丢失时可使用管理员密码和恢复码登录。</p><pre id="security-recovery-codes" class="security-recovery-codes"></pre><button type="button" id="security-copy-codes" class="button secondary">复制恢复码</button><div class="dialog-actions"><button type="button" id="security-saved" class="button primary">我已保存恢复码</button></div></div>
+    <details id="password-section" class="account-password-section" hidden><summary>修改密码</summary>
+      <p id="password-hint">新密码需要 12–1024 位。修改后，其他设备需要重新登录。</p>
+      <form id="password-form"><fieldset id="password-fields" aria-label="修改密码" disabled>
+        <label class="dialog-name-label" for="password-current">当前密码<input id="password-current" type="password" autocomplete="current-password" required maxlength="1024"></label>
+        <label class="dialog-name-label" for="password-new">新密码<input id="password-new" type="password" autocomplete="new-password" required minlength="12" maxlength="1024" aria-describedby="password-hint"></label>
+        <label class="dialog-name-label" for="password-confirm">确认新密码<input id="password-confirm" type="password" autocomplete="new-password" required minlength="12" maxlength="1024"></label>
+        <label id="password-code-field" class="dialog-name-label" for="password-code" hidden>动态验证码或恢复码<input id="password-code" type="text" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" maxlength="40"></label>
+        <p id="password-error" class="alert error" role="alert" hidden></p>
+        <div class="dialog-actions"><button id="password-submit" class="button primary" type="submit">修改密码</button></div>
+      </fieldset></form>
+    </details>
     <div class="account-session-actions"><button id="manager-logout" type="button" class="button secondary"><svg class="icon" aria-hidden="true"><use href="#i-logout"/></svg>退出登录</button></div>`;
   document.body.append(dialog);
   let stage = 'loading';
@@ -29,7 +40,9 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
   function error(message = '') { $('security-error').textContent = message; $('security-error').hidden = !message; }
   function clearSecrets() {
     $('security-qr').removeAttribute('src'); $('security-qr').hidden = true;
-    for (const id of ['security-password', 'security-code']) $(id).value = '';
+    for (const id of ['security-password', 'security-code', 'password-current', 'password-new', 'password-confirm', 'password-code']) $(id).value = '';
+    $('password-confirm').setCustomValidity('');
+    $('password-error').textContent = ''; $('password-error').hidden = true;
     for (const id of ['security-secret', 'security-account', 'security-recovery-codes']) $(id).textContent = '';
   }
   function render(state) {
@@ -48,6 +61,10 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
     $('security-submit').textContent = enabled ? '关闭二次验证' : '开始绑定验证器';
     $('security-submit').disabled = false;
     $('security-regenerate').hidden = !enabled;
+    $('password-section').hidden = false;
+    $('password-fields').disabled = busy;
+    $('password-code-field').hidden = !enabled;
+    $('password-code').required = enabled;
     clearSecrets(); error();
   }
   function showCodes(result) {
@@ -56,12 +73,14 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
     $('security-status').textContent = '二次验证已启用。请保存恢复码；刚使用过的动态码不能重复使用，请等待下一组。';
     $('security-form').hidden = true;
     $('security-recovery').hidden = false;
+    $('password-section').hidden = true;
     $('security-recovery-codes').textContent = result.recoveryCodes.join('\n');
     $('security-close').disabled = true; $('manager-logout').disabled = true;
   }
   button.addEventListener('click', async () => {
     if (dialog.open) return;
     clearSecrets(); error(); stage = 'loading';
+    $('password-section').hidden = true; $('password-section').open = false;
     $('security-status').textContent = '正在读取…';
     $('security-form').hidden = false; $('security-recovery').hidden = true; $('security-setup').hidden = true;
     $('security-credentials').hidden = true; $('security-code-field').hidden = true; $('security-regenerate').hidden = true;
@@ -84,6 +103,7 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
   async function submit(regenerate = false) {
     if (busy || stage === 'loading' || stage === 'recovery') return;
     busy = true; error();
+    $('password-fields').disabled = true;
     $('security-submit').disabled = true; $('security-regenerate').disabled = true; $('security-close').disabled = true; $('manager-logout').disabled = true;
     try {
       const password = $('security-password').value;
@@ -101,6 +121,7 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
         $('security-code').required = true; $('security-code').inputMode = 'numeric';
         $('security-code-label').textContent = '6 位动态验证码';
         $('security-submit').textContent = '验证并启用';
+        $('password-section').hidden = true;
         stage = 'enrolling'; $('security-code').focus();
       } else {
         const route = regenerate ? 'recovery-codes' : 'disable';
@@ -111,9 +132,35 @@ export function createAccountSecurity({ dom, api, clipboard, notify }) {
     } catch (caught) { error(caught.message); }
     finally {
       busy = false; $('security-submit').disabled = false; $('security-regenerate').disabled = false;
+      $('password-fields').disabled = stage !== 'settings';
       $('security-close').disabled = stage === 'recovery'; $('manager-logout').disabled = stage === 'recovery';
     }
   }
+  function validatePasswordConfirmation() {
+    $('password-confirm').setCustomValidity($('password-confirm').value === $('password-new').value ? '' : '两次输入的新密码不一致。');
+  }
+  $('password-new').addEventListener('input', validatePasswordConfirmation);
+  $('password-confirm').addEventListener('input', validatePasswordConfirmation);
+  $('password-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    if (busy || stage !== 'settings') return;
+    validatePasswordConfirmation();
+    if (!$('password-form').reportValidity()) return;
+    const input = { currentPassword: $('password-current').value, newPassword: $('password-new').value, code: $('password-code').value.trim() };
+    busy = true;
+    $('password-error').hidden = true;
+    $('password-fields').disabled = true;
+    for (const id of ['security-submit', 'security-regenerate', 'security-close', 'manager-logout']) $(id).disabled = true;
+    try {
+      render(await api.request('security/password', { method: 'POST', body: input }));
+      notify('密码已修改，其他设备需要重新登录');
+    } catch (caught) {
+      $('password-error').textContent = caught.message; $('password-error').hidden = false;
+    } finally {
+      busy = false; $('password-fields').disabled = false;
+      for (const id of ['security-submit', 'security-regenerate', 'security-close', 'manager-logout']) $(id).disabled = false;
+    }
+  });
   $('manager-logout').addEventListener('click', async () => {
     if (busy || stage === 'recovery') return;
     $('manager-logout').disabled = true;
