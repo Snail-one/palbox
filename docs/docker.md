@@ -30,6 +30,22 @@ docker compose logs -f frontend palbox
 
 初始化完成前，只有来自回环或内网地址（RFC1918、IPv6 ULA、链路本地，包括可信反向代理转发的私网地址）的请求可以创建管理员；公网来源会返回 403。仍建议先在本机或可信内网完成初始化，再把端口暴露到更大范围。管理员登录失败按客户端地址计次，连续失败后仅短暂冷却，避免攻击者长期锁死登录。
 
+### 只有 IP 的远程访问
+
+保留默认 `127.0.0.1:8080` 绑定，在自己的电脑上建立 SSH 隧道（替换用户名和服务器 IP）：
+
+```sh
+ssh -N -L 127.0.0.1:18080:127.0.0.1:8080 用户名@服务器IP
+```
+
+保持 SSH 连接，浏览器打开 <http://127.0.0.1:18080>。跨网络传输由 SSH 加密，无需域名，可完成首次初始化、TOTP 绑定及日常管理；此方式保持 `PALBOX_SECURE_COOKIE=false`。SSH 连接断开后需要重新建立隧道。
+
+使用 HTTPS 反向代理时，设置后端 `PALBOX_SECURE_COOKIE=true`，并只在前端的 `PALBOX_TRUSTED_PROXIES` 填写该反向代理的实际连接 IP 或 CIDR，例如 `172.30.83.1`（应先核实实际地址）。反向代理须覆盖或正确追加 `X-Forwarded-For`，不能直接透传用户伪造的地址。默认前端不采信任何转发头，普通内网客户端也不能自行声明来源。
+
+Compose 使用专用 `management` 网络，前端固定为 `172.30.83.2`；后端的 `PALBOX_TRUSTED_PROXIES` 只配置此地址。若网段与现有网络冲突，需一起修改网络 `subnet`、前端 `ipv4_address` 和后端可信地址。不要把后端 HTTP 端口映射到公网。分别运行进程时，后端默认只信任 `127.0.0.1`、`::1`；该变量也支持逗号分隔的 IP/CIDR 列表，空字符串表示全部不信任，无效配置会阻止启动。
+
+使用 `npm start` / `dev.sh` 同时启动两个进程时，`PALBOX_TRUSTED_PROXIES` 配置前端的外接代理；后端继续信任回环地址，需要覆盖时单独设置 `API_TRUSTED_PROXIES`。
+
 前端静态页面与代理响应附带 CSP、X-Frame-Options、Referrer-Policy 和 Permissions-Policy；JSON API 与下载响应附带 `default-src 'none'` 的 CSP。JSON 请求体同时受大小上限和读取截止时间约束，超时连接会被关闭。TLS 终止、HSTS 和公网访问控制仍由反向代理负责。
 
 已有 `settings.json` 时沿用其中的管理员账号。旧版 `settings.json`（`admin` 只有 `salt`/`hash`、没有 `username`）不兼容当前版本：启动会失败并提示先备份数据目录、删除对应的 `palbox/settings.json` 后重新初始化；配置库、存档、备份和日志不受影响。镜像入口以 root 处理挂载目录归属后，通过 gosu 切换到普通用户，游戏和 Node 均以该用户运行；默认使用 `1000:1000`，需要时可通过可选的 `PUID`/`PGID` 环境变量覆盖。
@@ -43,6 +59,8 @@ docker compose up -d --build
 此操作保留挂载的数据目录。安装日志若仍出现 `Missing configuration`，需继续排查 Steam 应用信息与网络访问；更换基础镜像或语言环境不能据此保证修复该错误。
 
 管理员可在侧栏「账号」启用可选的 TOTP 二次验证。绑定时需重新输入管理员密码，用验证器扫描二维码或手动输入密钥，再用动态码确认。启用后先验证密码，再验证动态码或一次性恢复码，只有第二步通过后才建立登录会话。请保存启用时显示的 10 个恢复码；重新生成恢复码或关闭功能也需密码与第二因素。服务器和手机需保持时间同步，已成功使用的动态码不能重复使用。配置保存在 `palbox/settings.json` 的 `admin.totp`，重建容器时随数据目录保留；游戏备份不包含这份登录资料。
+
+启用、关闭或重置恢复码后，全部旧会话与未完成验证都会失效，当前浏览器自动领取新的 Cookie 和 CSRF 值，日志连接自动重连。第二因素失败同时按来源 IP 和管理员账号累计：账号在 5 分钟内累计 10 次失败会冷却 5 秒，换 IP 或重新提交正确密码不能清除计数；冷却到期后可重试，成功完成验证会清除账号计数。未通过密码的伪造挑战不计入账号冷却。
 
 如果验证器和恢复码均丢失，具有宿主机数据目录权限的管理员可停止后端，备份 `palbox/settings.json` 后仅移除 `admin.totp` 字段，保留用户名、密码摘要和其他设置，再重启后端，用原密码登录并重新绑定。
 
@@ -134,6 +152,8 @@ Docker 部署的全部配置都在 `compose.yaml` 中，不再读取 `.env`。
 | `TZ`（可选） | 容器默认时区 | 需要指定时区时再在 `environment` 中添加，镜像已安装 `tzdata` |
 | `frontend.ports` | `127.0.0.1:8080:8080/tcp` | 网页绑定地址和宿主机端口 |
 | `frontend.environment.PALBOX_API_URL` | `http://palbox:8081` | 前端代理访问的后端地址 |
+| `frontend.environment.PALBOX_TRUSTED_PROXIES` | 空 | 可采信转发头的外接代理 IP/CIDR |
+| `palbox.environment.PALBOX_TRUSTED_PROXIES` | `172.30.83.2` | 仅采信前端容器传入的客户端地址 |
 | `palbox.ports` | `8211:8211/udp` | 游戏 UDP 端口映射 |
 | `volumes` | `./data:/data` | 宿主机数据目录 |
 

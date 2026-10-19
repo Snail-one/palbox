@@ -5,11 +5,16 @@ import { newSecret, newRecoveryCodes, recoveryHash } from '../../backend/managem
 
 const request = (ip = '203.0.113.8', headers = {}) => ({ headers, socket: { remoteAddress: ip } });
 const response = () => ({ headers: {}, setHeader(key, value) { this.headers[key] = value; } });
-async function fixture() {
+async function fixture(options = {}) {
   const codes = newRecoveryCodes();
   let admin = { username: 'admin', ...await passwordRecord('correct-password'), totp: { secret: newSecret(), lastCounter: -1, recoveryHashes: codes.map(recoveryHash) } };
-  const auth = new Authentication(() => admin, { updateAdmin: async change => { admin = change(structuredClone(admin)); } });
-  const start = async () => (await auth.login(request(), 'admin', 'correct-password', response())).challenge;
+  let updates = Promise.resolve();
+  const auth = new Authentication(() => admin, { ...options, updateAdmin: change => {
+    const operation = updates.then(() => { admin = change(structuredClone(admin)); });
+    updates = operation.catch(() => {});
+    return operation;
+  } });
+  const start = async ip => (await auth.login(request(ip), 'admin', 'correct-password', response())).challenge;
   return { auth, codes, start };
 }
 
@@ -25,6 +30,38 @@ test('过期、变更来源及账号验证设置后的挑战不能建立会话',
     assert.equal(result.headers['Set-Cookie'], undefined);
     assert.equal(auth.sessions.size, 0);
   }
+});
+
+test('更换 IP 和重新验证密码不能绕开账号二次验证冷却，冷却后可恢复登录', async () => {
+  const { auth, start, codes } = await fixture({ maxFailures: 3, cooldownMs: 10000 });
+  for (let index = 1; index <= 3; index++) {
+    const ip = `203.0.113.${index}`;
+    const challenge = await start(ip);
+    await assert.rejects(auth.completeLogin(request(ip), { challenge, code: 'bad' }, response()), { status: 401 });
+  }
+  const blocked = response();
+  await assert.rejects(auth.login(request('198.51.100.1'), 'admin', 'correct-password', blocked), { status: 429 });
+  assert.ok(Number(blocked.headers['Retry-After']) > 0);
+  assert.equal(auth.sessions.size, 0);
+  auth.factorFailures.blockedUntil = Date.now() - 1;
+  const challenge = await start('198.51.100.1');
+  assert.ok((await auth.completeLogin(request('198.51.100.1'), { challenge, code: codes[0] }, response())).csrf);
+  assert.equal(auth.factorFailures, null);
+});
+
+test('无效挑战不能触发账号级冷却，并发有效挑战共用失败预算', async () => {
+  const { auth, start } = await fixture({ maxFailures: 3, cooldownMs: 10000 });
+  for (let index = 1; index <= 6; index++) {
+    await assert.rejects(auth.completeLogin(request(`198.51.100.${index}`), { challenge: 'fake', code: 'bad' }, response()), { status: 401 });
+  }
+  assert.equal(auth.factorFailures, null);
+  const challenges = await Promise.all(Array.from({ length: 6 }, async (_, index) => {
+    const ip = `203.0.113.${index + 1}`;
+    return { ip, challenge: await start(ip) };
+  }));
+  const results = await Promise.allSettled(challenges.map(({ ip, challenge }) => auth.completeLogin(request(ip), { challenge, code: 'bad' }, response())));
+  assert.deepEqual(results.map(result => result.reason.status).sort(), [401, 401, 401, 429, 429, 429]);
+  assert.equal(auth.factorFailures.count, 3);
 });
 
 test('挑战失败五次后销毁，仍持有正确恢复码也需重新通过密码验证', async () => {

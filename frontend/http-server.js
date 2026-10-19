@@ -4,7 +4,7 @@ import { readFile, realpath } from 'node:fs/promises';
 import { isIP } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isLoopbackOrPrivate } from '../shared/domain/network.js';
+import { trustedProxies } from '../shared/domain/trusted-proxies.js';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const securityHeaders = Object.freeze({
@@ -25,19 +25,19 @@ const contentTypes = new Map([
 ]);
 
 /**
- * Resolve the browser address. Forwarding headers are only honored when the
- * immediate peer is a local/private proxy; public clients cannot spoof them.
- * Walking the chain from the right skips trusted private proxies, so a
- * client-supplied prefix cannot impersonate an internal address.
+ * Walk only explicitly trusted proxies, stopping at the nearest untrusted hop.
+ * Direct clients cannot change their address by supplying forwarding headers.
  */
-export function clientAddress(request) {
+export function clientAddress(request, trusted = () => false) {
   const peer = request.socket.remoteAddress || '';
-  if (!isLoopbackOrPrivate(peer)) return peer;
+  if (!trusted(peer)) return peer;
   const forwarded = request.headers['x-forwarded-for'];
-  const chain = typeof forwarded === 'string' ? forwarded.split(',').map(value => value.trim()).filter(value => isIP(value)) : [];
+  const chain = typeof forwarded === 'string' ? forwarded.split(',').map(value => value.trim()) : [];
+  // An invalid hop makes the chain ambiguous; do not silently skip it.
+  if (chain.some(value => !isIP(value))) return '';
   if (chain.length) {
     for (let index = chain.length - 1; index >= 0; index--) {
-      if (!isLoopbackOrPrivate(chain[index])) return chain[index];
+      if (!trusted(chain[index])) return chain[index];
     }
     return chain[0];
   }
@@ -48,7 +48,8 @@ export function clientAddress(request) {
 }
 
 /** Publish browser assets and stream API traffic to the independent backend. */
-export function createServer({ root = projectRoot, apiUrl = 'http://127.0.0.1:8081' } = {}) {
+export function createServer({ root = projectRoot, apiUrl = 'http://127.0.0.1:8081', trustedProxies: proxies = '' } = {}) {
+  const trusted = trustedProxies(proxies);
   const upstream = new URL(apiUrl);
   if (!['http:', 'https:'].includes(upstream.protocol) || upstream.pathname !== '/' || upstream.search || upstream.hash || upstream.username || upstream.password) {
     throw new Error('PALBOX_API_URL 必须是 HTTP(S) 服务地址，不能包含路径、凭据或查询参数。');
@@ -72,7 +73,7 @@ export function createServer({ root = projectRoot, apiUrl = 'http://127.0.0.1:80
     catch { send(400, 'Bad request'); return; }
     if (pathname === '/healthz' && request.method === 'GET') { send(200, 'ok'); return; }
     if (pathname.startsWith('/api/')) {
-      proxy(request, response, upstream); return;
+      proxy(request, response, upstream, trusted); return;
     }
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       headers.Allow = 'GET, HEAD'; send(405, 'Method not allowed'); return;
@@ -104,12 +105,12 @@ export function createServer({ root = projectRoot, apiUrl = 'http://127.0.0.1:80
 
 // Preserve the public Host and Origin for same-origin authentication.
 // Stream uploads and downloads without buffering save archives in memory.
-function proxy(request, response, upstream) {
+function proxy(request, response, upstream, trusted) {
   const transport = upstream.protocol === 'https:' ? https : http;
   const forwarded = { ...request.headers };
   for (const name of (forwarded.connection || '').split(',')) delete forwarded[name.trim().toLowerCase()];
   for (const name of ['connection', 'keep-alive', 'proxy-authorization', 'proxy-authenticate', 'te', 'trailer', 'transfer-encoding', 'upgrade']) delete forwarded[name];
-  const client = clientAddress(request);
+  const client = clientAddress(request, trusted);
   // Overwrite client-supplied values so the API can trust this header for
   // rate limiting, auditing and the first-run setup guard. Unknown values are
   // forwarded explicitly so the API never falls back to the proxy address.

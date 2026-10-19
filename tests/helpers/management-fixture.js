@@ -57,7 +57,13 @@ export async function managementFixture({ setup = true, username = 'admin', pass
   let cookie = '';
   let csrf = '';
   async function request(route, { method = 'GET', body, headers = {}, authenticated = true } = {}) {
-    return fetch(base + route, { method, headers: { 'Content-Type': 'application/json', ...(authenticated ? { Cookie: cookie, 'X-Palbox-CSRF': csrf } : {}), ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const response = await fetch(base + route, { method, headers: { 'Content-Type': 'application/json', ...(authenticated ? { Cookie: cookie, 'X-Palbox-CSRF': csrf } : {}), ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
+    // Like the browser, adopt successful rotation for this client only.
+    if (authenticated && !Object.keys(headers).some(name => name.toLowerCase() === 'cookie') && response.ok && response.headers.has('set-cookie')) {
+      cookie = response.headers.get('set-cookie').split(';')[0];
+      csrf = (await response.clone().json()).csrf ?? '';
+    }
+    return response;
   }
   async function login() {
     const response = await request('/api/login', { method: 'POST', body: { username, password }, authenticated: false });

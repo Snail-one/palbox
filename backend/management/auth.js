@@ -1,7 +1,7 @@
 import { randomBytes, scrypt, timingSafeEqual, createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 import { isIP } from 'node:net';
-import { isLoopbackOrPrivate } from '../../shared/domain/network.js';
+import { trustedProxies as compileTrustedProxies } from '../../shared/domain/trusted-proxies.js';
 import { failure } from './files.js';
 import { newSecret, newRecoveryCodes, recoveryHash, verifyTotp, verifyFactor } from './totp.js';
 
@@ -45,6 +45,7 @@ export class Authentication {
     windowMs = 5 * 60 * 1000,
     maxFailures = 10,
     cooldownMs = 5000,
+    trustedProxies = '127.0.0.1,::1',
     maxEntries = 1000,
     log = () => {},
     updateAdmin = async () => { throw new Error('账号存储未配置'); }
@@ -55,6 +56,7 @@ export class Authentication {
     this.windowMs = windowMs;
     this.maxFailures = maxFailures;
     this.cooldownMs = cooldownMs;
+    this.trustedProxy = compileTrustedProxies(trustedProxies);
     this.maxEntries = maxEntries;
     this.log = log;
     this.updateAdmin = updateAdmin;
@@ -62,6 +64,7 @@ export class Authentication {
     this.enrollments = new Map();
     this.sessions = new Map();
     this.attempts = new Map();
+    this.factorFailures = null;
   }
   get adminRecord() { return typeof this.record === 'function' ? this.record() : this.record; }
   signature(record = this.adminRecord) { return digest(`${record?.hash}:${record?.totp?.secret || ''}`); }
@@ -74,14 +77,12 @@ export class Authentication {
     return { ...session, key };
   }
   /**
-   * The browser talks to the frontend proxy, so trust its dedicated client-IP
-   * header only when the immediate peer is local/private. Direct public
-   * connections always use the socket address, so the header cannot be spoofed
-   * from the internet.
+   * Only the configured frontend proxy may supply the dedicated client-IP
+   * header. The local split-process deployment trusts exact loopback addresses.
    */
   clientAddress(request) {
     const peer = request.socket?.remoteAddress || '';
-    if (!isLoopbackOrPrivate(peer)) return peer;
+    if (!this.trustedProxy(peer)) return peer;
     const forwarded = request.headers?.['x-palbox-client-ip'];
     if (forwarded !== undefined) return typeof forwarded === 'string' && isIP(forwarded) ? forwarded : '';
     return peer;
@@ -114,6 +115,26 @@ export class Authentication {
     this.log(`登录失败（${this.clientAddress(request)}${detail ? `，${detail}` : ''}）\n`);
     throw failure(message, 401);
   }
+  factorAttempt(response) {
+    const now = Date.now();
+    let state = this.factorFailures;
+    if (!state || state.signature !== this.signature() || state.expires <= now || (state.blockedUntil && state.blockedUntil <= now)) {
+      state = { signature: this.signature(), count: 0, expires: now + this.windowMs, blockedUntil: 0 };
+      this.factorFailures = state;
+    }
+    if (state.blockedUntil > now) {
+      response.setHeader('Retry-After', String(Math.max(1, Math.ceil((state.blockedUntil - now) / 1000))));
+      throw failure('二次验证尝试过于频繁，请稍后再试。', 429);
+    }
+    return state;
+  }
+  failedFactor(request, attempts, message, detail) {
+    const state = this.factorFailures;
+    state.count++;
+    state.expires = Date.now() + this.windowMs;
+    if (state.count >= this.maxFailures) state.blockedUntil = Date.now() + this.cooldownMs;
+    this.failed(request, attempts, message, detail);
+  }
   async passwordMatches(password, record) {
     return typeof password === 'string' && password.length <= 1024
       && timingSafeEqual(await hashPassword(password, record.salt), Buffer.from(record.hash, 'hex'));
@@ -128,6 +149,8 @@ export class Authentication {
       this.failed(request, attempts, '用户名或密码不正确。', `用户名 ${JSON.stringify(normalizeUsername(username)).slice(0, 80)}`);
     }
     if (record.totp) {
+      // Correct passwords do not reset second-factor failures from other IPs.
+      this.factorAttempt(response);
       this.prune(this.challenges);
       const challenge = randomBytes(32).toString('hex');
       this.challenges.set(digest(challenge), { ip: this.clientAddress(request), signature: this.signature(), expires: Date.now() + 5 * 60 * 1000, failures: 0, pending: false });
@@ -135,7 +158,7 @@ export class Authentication {
     }
     return this.issueSession(request, response);
   }
-  issueSession(request, response) {
+  issueSession(request, response, { audit = true } = {}) {
     const ip = this.clientAddress(request);
     const now = Date.now();
     this.attempts.delete(ip);
@@ -145,7 +168,7 @@ export class Authentication {
     const csrf = randomBytes(24).toString('hex');
     this.sessions.set(digest(token), { csrf, expires: now + this.sessionMs, signature: this.signature() });
     response.setHeader('Set-Cookie', `palbox_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(this.sessionMs / 1000)}${this.secureCookie ? '; Secure' : ''}`);
-    this.log(`登录成功（${ip}）\n`);
+    if (audit) this.log(`登录成功（${ip}）\n`);
     return { csrf };
   }
   prune(map) {
@@ -161,20 +184,25 @@ export class Authentication {
       this.failed(request, attempts, '二次验证已失效，请重新输入用户名和密码。', '二次验证已失效');
     }
     if (challenge.pending) throw failure('二次验证正在进行，请稍后重试。', 409);
+    this.factorAttempt(response);
     challenge.pending = true;
     try {
       await this.updateAdmin(admin => {
         if (this.challenges.get(key) !== challenge || challenge.expires <= Date.now() || challenge.signature !== this.signature(admin) || !admin.totp) throw failure('二次验证已失效，请重新登录。', 401);
+        // Recheck inside the serialized write: concurrent requests may have
+        // exhausted the shared budget while this request was waiting.
+        this.factorAttempt(response);
         const next = verifyFactor(admin.totp, input.code);
         if (!next) {
           challenge.failures++;
           if (challenge.failures >= 5) this.challenges.delete(key);
-          this.failed(request, attempts, '动态验证码或恢复码不正确、已使用或已过期。', '二次验证失败');
+          this.failedFactor(request, attempts, '动态验证码或恢复码不正确、已使用或已过期。', '二次验证失败');
         }
         return { ...admin, totp: next };
       });
       this.challenges.delete(key);
       if (challenge.signature !== this.signature()) throw failure('账号验证设置已变化，请重新登录。', 401);
+      this.factorFailures = null;
       return this.issueSession(request, response);
     } finally { challenge.pending = false; }
   }
@@ -198,12 +226,12 @@ export class Authentication {
     this.enrollments.set(session.key, { secret, signature: checked.signature, expires: Date.now() + 10 * 60 * 1000 });
     return { secret, account: this.adminRecord.username, issuer: 'PalBox', period: 30, digits: 6 };
   }
-  retainSession(session) {
-    for (const key of this.sessions.keys()) if (key !== session.key) this.sessions.delete(key);
-    const current = this.sessions.get(session.key);
-    if (current) current.signature = this.signature();
+  rotateSession(request, response) {
+    this.sessions.clear();
     this.challenges.clear();
     this.enrollments.clear();
+    this.factorFailures = null;
+    return this.issueSession(request, response, { audit: false });
   }
   async confirmEnrollment(request, code, response) {
     const session = this.require(request, true);
@@ -214,33 +242,33 @@ export class Authentication {
     await this.updateAdmin(admin => {
       this.require(request, true);
       if (this.enrollments.get(session.key) !== pending || pending.expires <= Date.now() || admin.totp || pending.signature !== this.signature(admin)) throw failure('绑定或账号验证设置已变化，请重新开始。', 409);
+      this.factorAttempt(response);
       const counter = verifyTotp(pending.secret, code);
-      if (counter === null) this.failed(request, attempts, '动态验证码不正确或已过期。', '绑定二次验证失败');
+      if (counter === null) this.failedFactor(request, attempts, '动态验证码不正确或已过期。', '绑定二次验证失败');
       return { ...admin, totp: { secret: pending.secret, lastCounter: counter, recoveryHashes: codes.map(recoveryHash) } };
     });
-    this.retainSession(session);
-    this.attempts.delete(this.clientAddress(request));
+    const rotated = this.rotateSession(request, response);
     this.log(`二次验证已启用（${this.clientAddress(request)}）\n`);
-    return { ...this.securityStatus(), recoveryCodes: codes };
+    return { ...this.securityStatus(), recoveryCodes: codes, ...rotated };
   }
   async changeSecurity(request, input, response, disable = false) {
-    const session = this.require(request, true);
+    this.require(request, true);
     const checked = await this.reauthenticate(request, input.password, response);
     const codes = disable ? null : newRecoveryCodes();
     await this.updateAdmin(admin => {
       this.require(request, true);
       if (checked.signature !== this.signature(admin) || !admin.totp) throw failure('账号验证设置已变化，请重新打开账号安全。', 409);
+      this.factorAttempt(response);
       const verified = verifyFactor(admin.totp, input.code);
-      if (!verified) this.failed(request, checked.attempts, '动态验证码或恢复码不正确、已使用或已过期。', '账号安全二次验证失败');
+      if (!verified) this.failedFactor(request, checked.attempts, '动态验证码或恢复码不正确、已使用或已过期。', '账号安全二次验证失败');
       const next = { ...admin };
       if (disable) delete next.totp;
       else next.totp = { ...verified, recoveryHashes: codes.map(recoveryHash) };
       return next;
     });
-    this.retainSession(session);
-    this.attempts.delete(this.clientAddress(request));
+    const rotated = this.rotateSession(request, response);
     this.log(`二次验证${disable ? '已关闭' : '恢复码已重新生成'}（${this.clientAddress(request)}）\n`);
-    return { ...this.securityStatus(), ...(codes ? { recoveryCodes: codes } : {}) };
+    return { ...this.securityStatus(), ...(codes ? { recoveryCodes: codes } : {}), ...rotated };
   }
   verifyOrigin(request) {
     const origin = request.headers.origin;

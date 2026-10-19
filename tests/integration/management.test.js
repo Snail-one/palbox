@@ -359,7 +359,7 @@ test('首次访问通过网页初始化管理员，重启沿用账号，密码�
   });
   const settingsFile = path.join(directory, 'palbox/settings.json');
   // 旧的环境变量即使存在也必须被忽略，服务照常启动并等待网页初始化。
-  const initialized = launch({ PALBOX_ADMIN_PASSWORD: password, PALBOX_ADMIN_PASSWORD_FILE: '/nonexistent/palbox-password' });
+  const initialized = launch({ PALBOX_ADMIN_PASSWORD: password, PALBOX_ADMIN_PASSWORD_FILE: '/nonexistent/palbox-password', PALBOX_TRUSTED_PROXIES: '127.0.0.1' });
   await ready(initialized);
   assert.equal((await fetch(`http://127.0.0.1:${port}/healthz`)).status, 200);
   assert.equal((await fetch(`http://127.0.0.1:${apiPort}/`)).status, 404);

@@ -22,7 +22,9 @@ function start(entry, env) {
   child.on('error', error => { console.error(error.message); close(1); });
   child.on('exit', code => { children.delete(child); close(code ?? 1); });
 }
-start('backend/index.js', { HOST: apiHost, PORT: apiPort });
+// Frontend and backend have different proxy boundaries even when launched
+// together. An external proxy allowlist must not replace loopback API trust.
+start('backend/index.js', { HOST: apiHost, PORT: apiPort, PALBOX_TRUSTED_PROXIES: process.env.API_TRUSTED_PROXIES ?? '127.0.0.1,::1' });
 start('frontend/index.js', { PORT: port, PALBOX_API_URL: process.env.PALBOX_API_URL || `http://${address}:${apiPort}` });
 process.on('SIGINT', () => close());
 process.on('SIGTERM', () => close());

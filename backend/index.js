@@ -15,7 +15,7 @@ try {
   const secureCookie = /^(?:true|1)$/i.test(process.env.PALBOX_SECURE_COOKIE || '');
   manager = new Manager({ directory: process.env.PALBOX_DATA_DIR || fileURLToPath(new URL('../data', import.meta.url)), steamcmd: process.env.PALBOX_STEAMCMD || '/opt/steamcmd/steamcmd.sh', port: port(process.env.PALBOX_GAME_PORT || '8211', 'PALBOX_GAME_PORT'), webPort: listenPort });
   await manager.initialize();
-  const api = createManagementApi(manager, { secureCookie });
+  const api = createManagementApi(manager, { secureCookie, trustedProxies: process.env.PALBOX_TRUSTED_PROXIES });
   const server = createServer({ api });
   server.on('error', error => { console.error(`启动失败：${error.message}`); process.exitCode = 1; manager?.close(); });
   server.listen(listenPort, host, () => {

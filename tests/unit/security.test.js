@@ -6,12 +6,13 @@ import { body } from '../../backend/management/api.js';
 import { saveName, worldName } from '../../backend/management/native-backups.js';
 import { clientAddress as frontendClientAddress } from '../../frontend/http-server.js';
 import { isLoopbackOrPrivate } from '../../shared/domain/network.js';
+import { trustedProxies } from '../../shared/domain/trusted-proxies.js';
 
 const record = async password => ({ username: 'admin', ...await passwordRecord(password) });
 const request = (address, headers = {}) => ({ socket: { remoteAddress: address }, headers });
 const response = () => ({ headers: {}, setHeader(name, value) { this.headers[name] = value; } });
 
-test('网络地址分类只信任回环、内网和链路本地地址', () => {
+test('初始化网络地址分类识别回环、内网和链路本地地址', () => {
   for (const address of ['127.0.0.1', '127.8.9.10', '::1', '10.1.2.3', '172.16.0.1', '172.31.255.255', '192.168.1.5', '169.254.1.1', '::ffff:192.168.1.5', '::ffff:7f00:1', 'fd00::1', 'fe80::1']) {
     assert.equal(isLoopbackOrPrivate(address), true, address);
   }
@@ -30,25 +31,41 @@ test('备份与世界中继 ID 拒绝末尾换行', () => {
 test('客户端地址仅在可信代理来源时使用转发头', () => {
   const auth = new Authentication(null);
   assert.equal(auth.clientAddress(request('127.0.0.1', { 'x-palbox-client-ip': '203.0.113.9' })), '203.0.113.9');
-  assert.equal(auth.clientAddress(request('172.18.0.2', { 'x-palbox-client-ip': '198.51.100.7' })), '198.51.100.7');
+  assert.equal(auth.clientAddress(request('172.18.0.2', { 'x-palbox-client-ip': '198.51.100.7' })), '172.18.0.2');
   assert.equal(auth.clientAddress(request('203.0.113.1', { 'x-palbox-client-ip': '10.0.0.1' })), '203.0.113.1');
   assert.equal(auth.clientAddress(request('203.0.113.1', { 'x-palbox-client-ip': 'not-an-ip' })), '203.0.113.1');
   assert.equal(auth.clientAddress(request('127.0.0.1', { 'x-palbox-client-ip': 'not-an-ip' })), '');
   assert.equal(auth.clientAddress(request('127.0.0.1', { 'x-palbox-client-ip': 'unknown' })), '');
   assert.equal(auth.clientAddress(request('127.0.0.1')), '127.0.0.1');
   assert.equal(auth.clientAddress(request('127.0.0.1', { 'x-palbox-client-ip': '10.0.0.1\n' })), '');
+  const docker = new Authentication(null, { trustedProxies: '172.30.83.2' });
+  assert.equal(docker.clientAddress(request('::ffff:172.30.83.2', { 'x-palbox-client-ip': '198.51.100.7' })), '198.51.100.7');
+  assert.equal(docker.clientAddress(request('172.30.83.3', { 'x-palbox-client-ip': '198.51.100.7' })), '172.30.83.3');
+  assert.equal(new Authentication(null, { trustedProxies: '' }).clientAddress(request('127.0.0.1', { 'x-palbox-client-ip': '198.51.100.7' })), '127.0.0.1');
 });
 
-test('代理转发链从右向左跳过内网代理，拒绝伪造前缀', () => {
+test('代理默认忽略转发头；显式信任后从右向左停在第一个非可信跳点', () => {
   const input = (peer, headers = {}) => ({ socket: { remoteAddress: peer }, headers });
-  assert.equal(frontendClientAddress(input('127.0.0.1', { 'x-forwarded-for': '203.0.113.9' })), '203.0.113.9');
-  assert.equal(frontendClientAddress(input('127.0.0.1', { 'x-forwarded-for': '10.0.0.1, 203.0.113.9' })), '203.0.113.9');
-  assert.equal(frontendClientAddress(input('127.0.0.1', { 'x-forwarded-for': '203.0.113.9, 10.0.0.1' })), '203.0.113.9');
-  assert.equal(frontendClientAddress(input('127.0.0.1', { 'x-forwarded-for': '10.0.0.1, 10.0.0.2' })), '10.0.0.1');
-  assert.equal(frontendClientAddress(input('127.0.0.1', { 'x-forwarded-for': 'garbage' })), '');
-  assert.equal(frontendClientAddress(input('127.0.0.1', { 'x-forwarded-for': 'garbage', 'x-real-ip': '198.51.100.7' })), '198.51.100.7');
+  for (const peer of ['127.0.0.1', '172.18.0.2', '203.0.113.1']) {
+    assert.equal(frontendClientAddress(input(peer, { 'x-forwarded-for': '203.0.113.9', 'x-real-ip': '10.0.0.1' })), peer);
+  }
+  const trusted = trustedProxies('127.0.0.1,10.0.0.2');
+  const address = headers => frontendClientAddress(input('127.0.0.1', headers), trusted);
+  assert.equal(address({ 'x-forwarded-for': '203.0.113.9' }), '203.0.113.9');
+  assert.equal(address({ 'x-forwarded-for': '10.0.0.1, 203.0.113.9' }), '203.0.113.9');
+  assert.equal(address({ 'x-forwarded-for': '203.0.113.9, 10.0.0.1' }), '10.0.0.1');
+  assert.equal(address({ 'x-forwarded-for': '203.0.113.9, 10.0.0.2' }), '203.0.113.9');
+  assert.equal(address({ 'x-forwarded-for': 'garbage' }), '');
+  assert.equal(address({ 'x-forwarded-for': 'garbage, 10.0.0.2', 'x-real-ip': '198.51.100.7' }), '');
+  assert.equal(address({ 'x-real-ip': '198.51.100.7' }), '198.51.100.7');
   assert.equal(frontendClientAddress(input('127.0.0.1')), '127.0.0.1');
-  assert.equal(frontendClientAddress(input('203.0.113.1', { 'x-forwarded-for': '10.0.0.1' })), '203.0.113.1');
+});
+
+test('可信代理列表校验 IP/CIDR 并支持 IPv4 映射和 IPv6', () => {
+  const trusted = trustedProxies('192.0.2.0/24,2001:db8::/64,::1');
+  for (const ip of ['192.0.2.8', '::ffff:192.0.2.8', '::ffff:c000:208', '2001:db8::8', '::1']) assert.equal(trusted(ip), true, ip);
+  for (const ip of ['192.0.3.8', '2001:db8:1::8', 'garbage', '']) assert.equal(trusted(ip), false, ip);
+  for (const entry of ['localhost', '10.0.0.1/33', '::1/129', '127.0.0.1/-1', '10.0.0.1/8/x', '::1/']) assert.throws(() => trustedProxies(entry), /PALBOX_TRUSTED_PROXIES/);
 });
 
 test('登录限流只短暂冷却，不会永久锁死管理员', async () => {

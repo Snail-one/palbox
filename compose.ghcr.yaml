@@ -16,6 +16,11 @@ services:
       - "127.0.0.1:8080:8080/tcp"
     environment:
       PALBOX_API_URL: "http://palbox:8081"
+      # 外接代理时只填写该代理 IP/CIDR；默认忽略客户端转发头。
+      PALBOX_TRUSTED_PROXIES: ""
+    networks:
+      management:
+        ipv4_address: 172.30.83.2
     depends_on:
       palbox:
         condition: service_healthy
@@ -33,6 +38,14 @@ services:
       # 首次打开网页时创建面板管理员，无需在此配置登录密码。
       PALBOX_GAME_PORT: "8211"
       PALBOX_SECURE_COOKIE: "false"
+      PALBOX_TRUSTED_PROXIES: "172.30.83.2"
+    networks:
+      - management
     volumes:
       # 数据保存在此 Compose 文件旁的 data 目录。
       - "./data:/data"
+networks:
+  management:
+    ipam:
+      config:
+        - subnet: 172.30.83.0/29
