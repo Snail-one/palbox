@@ -40,6 +40,8 @@ test('导入根目录官方快照并恢复运行中的世界', { skip: process.p
   await writeFile(path.join(world, 'Players/old.sav'), 'old-player');
   await writeFile(path.join(world, 'backup/world/2026.01.01-00.00.00/Level.sav'), 'history');
   assert.equal((await f.task('install')).state, 'succeeded');
+  const selection = path.join(saved(f), 'Config/LinuxServer/GameUserSettings.ini');
+  await writeFile(selection, 'DedicatedServerName=ACTIVE\n');
   assert.equal((await f.task('start')).state, 'succeeded');
   const config = await readFile(f.runtime.config);
   const oldPid = f.runtime.game.pid;
@@ -53,7 +55,15 @@ test('导入根目录官方快照并恢复运行中的世界', { skip: process.p
   const staged = await response.json();
   assert.equal(staged.layout, 'root');
   assert.equal(staged.worldId, null);
-  await waitTask(f, 'import-save', { id: staged.id });
+  await rm(selection);
+  const missingSelection = await f.task('import-save', { id: staged.id });
+  assert.equal(missingSelection.state, 'failed');
+  assert.match(missingSelection.message, /GameUserSettings\.ini/);
+  assert.equal(f.runtime.game.pid, oldPid, '缺少世界 ID 时不停止正在运行的游戏');
+  assert.equal(await readFile(path.join(world, 'Level.sav'), 'utf8'), 'old-world');
+  await writeFile(selection, 'DedicatedServerName=ACTIVE\n');
+  const retry = await (await f.upload('/api/save-import', bytes)).json();
+  await waitTask(f, 'import-save', { id: retry.id });
   assert.equal(await readFile(path.join(world, 'Level.sav'), 'utf8'), 'new-world');
   assert.equal(await readFile(path.join(world, 'Players/new.sav'), 'utf8'), 'new-player');
   await assert.rejects(access(path.join(world, 'Players/old.sav')), { code: 'ENOENT' });
@@ -77,6 +87,7 @@ test('SaveGames 布局导入到游戏当前 ID，不创建归档中的世界 ID�
   await writeFile(path.join(world, 'Level.sav'), 'old');
   await writeFile(path.join(world, 'LevelMeta.sav'), 'old');
   assert.equal((await f.task('install')).state, 'succeeded');
+  await writeFile(path.join(saved(f), 'Config/LinuxServer/GameUserSettings.ini'), 'DedicatedServerName=WORLDID\n');
   const bytes = await archive(tmp, {
     'SaveGames/0/ARCHIVEID/Level.sav': 'imported',
     'SaveGames/0/ARCHIVEID/LevelMeta.sav': 'imported-meta',
@@ -112,7 +123,7 @@ test('未知当前世界 ID 时拒绝导入；已有游戏配置 ID 时使用该
   assert.equal(await readFile(path.join(saved(f), 'SaveGames/0/GAMEID/Level.sav'), 'utf8'), 'a');
 });
 
-test('多个世界且没有活动世界时拒绝导入', { skip: process.platform !== 'linux' }, async t => {
+test('没有 GameUserSettings 世界 ID 时拒绝从目录推断导入目标', { skip: process.platform !== 'linux' }, async t => {
   const f = await managementFixture(); t.after(() => f.close()); await f.login();
   const tmp = await mkdtemp(path.join(tmpdir(), 'palbox-import-')); t.after(() => rm(tmp, { recursive: true, force: true }));
   for (const id of ['ONE', 'TWO']) {
@@ -124,7 +135,7 @@ test('多个世界且没有活动世界时拒绝导入', { skip: process.platfor
   const staged = await (await f.upload('/api/save-import', bytes)).json();
   const task = await f.task('import-save', { id: staged.id });
   assert.equal(task.state, 'failed');
-  assert.match(task.message, /无法确定当前世界/);
+  assert.match(task.message, /GameUserSettings\.ini/);
   assert.equal(await readFile(path.join(saved(f), 'SaveGames/0/ONE/Level.sav'), 'utf8'), 'ONE');
   assert.equal(await readFile(path.join(saved(f), 'SaveGames/0/TWO/Level.sav'), 'utf8'), 'TWO');
 });

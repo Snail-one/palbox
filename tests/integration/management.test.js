@@ -285,6 +285,7 @@ test('SteamCMD、进程、配置应用、备份恢复与故障状态真实联动
   await mkdir(path.join(f.runtime.saved, 'SaveGames/0/test-world'), { recursive: true });
   const world = path.join(f.runtime.saved, 'SaveGames/0/test-world/Level.sav');
   await writeFile(world, 'world-v1');
+  await writeFile(path.join(f.runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'), 'DedicatedServerName=test-world\n');
   const starting = await f.request('/api/tasks', { method: 'POST', body: { action: 'start' } });
   assert.equal(starting.status, 202);
   assert.equal((await f.request('/api/tasks', { method: 'POST', body: { action: 'update' } })).status, 409);

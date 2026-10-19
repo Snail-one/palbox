@@ -359,6 +359,7 @@ export class Manager extends EventEmitter {
       case 'delete-backup': await this.deleteBackup(payload.id); break;
       case 'restore': await this.restore(payload.id); break;
       case 'restore-native': {
+        await this.targetWorld();
         const running = Boolean(this.runtime.game);
         await this.native.restore(payload.id, async () => {
           if (running) await this.stopGame({ requireSave: true });
@@ -413,10 +414,7 @@ export class Manager extends EventEmitter {
   async targetWorld() {
     const configured = await this.native.configuredWorld();
     if (configured) return configured;
-    const worlds = await this.native.worlds();
-    if (worlds.length === 1) return worlds[0];
-    if (!worlds.length) throw failure('无法确定游戏运行的世界 ID，请先启动游戏生成世界后再恢复存档。', 409);
-    throw failure('无法确定当前世界，请先设置 DedicatedServerName 或只保留一个世界。', 409);
+    throw failure('无法确定游戏运行的世界 ID：GameUserSettings.ini 中缺少有效的 DedicatedServerName，请先恢复该文件或填写正确的世界 ID。', 409);
   }
   requireResetAllowed(payload) {
     if (payload.confirmation !== 'delete') throw failure('请输入 delete 确认重置存档。', 400);
@@ -431,8 +429,9 @@ export class Manager extends EventEmitter {
     let rollbackFailed = false;
     let failureError = null;
     try {
-      if (wasRunning) await this.stopGame({ requireSave: true });
       const target = await this.targetWorld();
+      if (wasRunning) await this.stopGame({ requireSave: true });
+      if (target !== await this.targetWorld()) throw failure('当前世界已改变，请刷新后重试。', 409);
       task.message = '正在创建导入前完整备份';
       task.backup = await this.backup('before-import');
       const ensured = await this.native.ensureWorld(target);

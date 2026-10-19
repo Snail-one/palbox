@@ -108,10 +108,14 @@ test('旧 Saved 备份只提取世界内容，恢复到游戏当前 ID，不创�
   await assert.rejects(readdir(path.join(runtime.saved, 'SaveGames/0')), { code: 'ENOENT' });
   await manager.ensureConfig();
   const config = await readFile(runtime.config, 'utf8');
-  await writeFile(path.join(runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'), 'DedicatedServerName=ACTIVE_WORLD\n');
   const target = path.join(runtime.saved, 'SaveGames/0/ACTIVE_WORLD');
   await mkdir(target, { recursive: true });
   await writeFile(path.join(target, 'Level.sav'), 'current-world');
+  await assert.rejects(manager.restore(id), /GameUserSettings\.ini/);
+  assert.equal(await readFile(path.join(target, 'Level.sav'), 'utf8'), 'current-world');
+  await writeFile(path.join(runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'), 'DedicatedServerName=../INVALID\n');
+  await assert.rejects(manager.restore(id), /有效的 DedicatedServerName/);
+  await writeFile(path.join(runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'), 'DedicatedServerName=ACTIVE_WORLD\n');
   await manager.restore(id);
   assert.equal(await readFile(path.join(target, 'Level.sav'), 'utf8'), 'archived-world');
   assert.deepEqual(await readdir(path.dirname(target)), ['ACTIVE_WORLD']);
@@ -165,6 +169,7 @@ test('手动、恢复前、导入前和重置前备份独立保留，恢复保�
   await writeFile(level, 'world-v1');
   await manager.ensureConfig();
   await manager.setupAdmin('admin', 'test-backup-password');
+  await writeFile(path.join(runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'), 'DedicatedServerName=WORLD1\n');
   await manager.updateSettings({ backupRetention: 1 });
   for (const category of ['manual', 'before-restore', 'before-import', 'before-reset']) {
     await manager.backup(category);

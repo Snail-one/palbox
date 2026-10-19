@@ -99,6 +99,16 @@ test('不完整、链接、越界和其他世界的官方备份不能恢复，�
     assert.equal(task.state, 'failed', id);
     assert.equal(f.runtime.game.pid, pid);
   }
+  const selection = path.join(f.runtime.saved, 'Config/LinuxServer/GameUserSettings.ini');
+  await rm(selection);
+  const withoutSelection = await f.manager.nativeBackups();
+  assert.equal(withoutSelection.activeWorld, null);
+  assert.equal(withoutSelection.backups.some(entry => entry.canRestore), false);
+  const missingSelection = await f.task('restore-native', { id: backup.id });
+  assert.equal(missingSelection.state, 'failed');
+  assert.match(missingSelection.message, /GameUserSettings\.ini/);
+  assert.equal(f.runtime.game.pid, pid);
+  await writeFile(selection, `DedicatedServerName=${backup.worldId}\n`);
   const get = f.manager.native.get.bind(f.manager.native);
   let first = true;
   f.manager.native.get = async id => {

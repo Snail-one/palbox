@@ -111,7 +111,7 @@ export class NativeBackups {
   }
 
   async list() {
-    const activeWorld = await this.activeWorld();
+    const activeWorld = await this.configuredWorld();
     const backups = [];
     for (const worldId of await this.worlds()) {
       let root;
@@ -232,14 +232,14 @@ export class NativeBackups {
 
   async restore(id, beforeReplace) {
     const backup = await this.get(id);
-    if (backup.worldId !== await this.activeWorld()) throw failure('无法确认该备份属于当前世界，拒绝恢复。', 409);
+    if (backup.worldId !== await this.configuredWorld()) throw failure('无法确认该备份属于 GameUserSettings.ini 指定的当前世界，拒绝恢复。', 409);
     const stage = await mkdtemp(path.join(await backupDirectory(this.directory), '.official-restore-'));
     try {
       const source = path.join(stage, 'save');
       await this.copy(id, source);
       await this.replaceWorld(backup.worldId, source, { beforeSwap: async () => {
         await beforeReplace();
-        if (backup.worldId !== await this.activeWorld()) throw failure('当前世界已改变，请刷新后重试。', 409);
+        if (backup.worldId !== await this.configuredWorld()) throw failure('当前世界已改变，请刷新后重试。', 409);
       } });
     } finally { await rm(stage, { recursive: true, force: true }); }
   }
