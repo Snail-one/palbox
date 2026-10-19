@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdir, access, symlink, utimes } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, access, symlink, utimes, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { managementFixture } from '../helpers/management-fixture.js';
 import { parse } from '../../shared/domain/config.js';
@@ -274,6 +274,31 @@ test('玩家封禁、踢人理由、强制停止与更新检查', { skip: proces
   assert.equal(update.installedBuild, '100');
   assert.equal(update.latestBuild, '200');
   assert.equal(update.updateAvailable, true);
+});
+
+test('尚未运行的新服务端可整体恢复 Saved 和世界 ID 配置，并正常启动', { skip: process.platform !== 'linux' }, async t => {
+  const f = await managementFixture(); t.after(() => f.close()); await f.login();
+  assert.equal((await f.task('install')).state, 'succeeded');
+  const config = await readFile(f.runtime.config, 'utf8');
+  const world = path.join(f.runtime.saved, 'SaveGames/0/ARCHIVED');
+  await mkdir(path.join(world, 'Players'), { recursive: true });
+  await writeFile(path.join(world, 'Level.sav'), 'archived-world');
+  await writeFile(path.join(world, 'Players/player.sav'), 'archived-player');
+  await writeFile(path.join(f.runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'), 'DedicatedServerName=ARCHIVED\n');
+  const backup = await f.task('backup');
+  assert.equal(backup.state, 'succeeded', backup.message);
+  await rm(f.runtime.saved, { recursive: true });
+  assert.equal(f.runtime.startedAt, null);
+  const restored = await f.task('restore', { id: backup.backup });
+  assert.equal(restored.state, 'succeeded', restored.message);
+  assert.equal(f.runtime.game, null);
+  assert.equal(await f.manager.native.configuredWorld(), 'ARCHIVED');
+  assert.equal(await readFile(f.runtime.config, 'utf8'), config);
+  assert.equal(await readFile(path.join(world, 'Level.sav'), 'utf8'), 'archived-world');
+  assert.equal(await readFile(path.join(world, 'Players/player.sav'), 'utf8'), 'archived-player');
+  const started = await f.task('start');
+  assert.equal(started.state, 'succeeded', started.message);
+  assert.equal(f.runtime.ready, true);
 });
 
 test('SteamCMD、进程、配置应用、备份恢复与故障状态真实联动', { skip: process.platform !== 'linux' }, async t => {

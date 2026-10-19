@@ -463,44 +463,43 @@ export class Manager extends EventEmitter {
       catch (error) { throw failure(`存档已导入，但游戏服启动失败：${error.message}`, 500); }
     }
   }
-  async backupWorld({ allowAmbiguous = false } = {}) {
-    const worldId = await this.native.activeWorld();
-    if (!worldId) {
-      if (!allowAmbiguous && !(await this.native.configuredWorld()) && (await this.native.worlds()).length > 1) throw failure('无法确定当前世界，请先设置 DedicatedServerName。', 409);
-      return null;
+  async hasWorldSave() {
+    for (const worldId of await this.native.worlds()) {
+      try {
+        const level = await lstat(path.join(this.runtime.saved, 'SaveGames', '0', worldId, 'Level.sav'));
+        if (level.isFile() && level.size > 0) return true;
+      } catch (error) { if (error.code !== 'ENOENT') throw error; }
     }
-    const directory = await this.native.safeDirectory(['SaveGames', '0', worldId]);
-    try {
-      const level = await lstat(path.join(directory, 'Level.sav'));
-      return level.isFile() && level.size > 0 ? { worldId, directory } : null;
-    } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+    return false;
   }
-  async hasWorldSave() { return Boolean(await this.backupWorld({ allowAmbiguous: true })); }
   async requireWorldSave() {
-    if (!(await this.backupWorld())) throw failure('尚无可备份的世界存档，请先启动游戏并生成存档。', 409);
+    if (!(await this.hasWorldSave())) throw failure('尚无可备份的世界存档，请先启动游戏并生成存档。', 409);
   }
-  async checkWorldFiles(directory) {
+  async checkBackupFiles(directory) {
+    let populated = false;
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       const file = path.join(directory, entry.name);
       const info = await lstat(file);
-      if (info.isDirectory()) await this.checkWorldFiles(file);
-      else if (!info.isFile()) throw failure('世界存档包含链接或特殊文件，拒绝备份或恢复。');
+      if (info.isDirectory()) { if (await this.checkBackupFiles(file)) populated = true; }
+      else if (info.isFile()) populated ||= info.size > 0;
+      else throw failure('备份内容包含链接或特殊文件，拒绝备份或恢复。');
     }
+    return populated;
   }
   async backup(category, protectedId = null) {
     const directory = await backupDirectory(this.directory, category);
-    this.servicePhase('backing', '正在创建当前世界的备份。');
+    this.servicePhase('backing', '正在备份整个 Pal/Saved 目录。');
     // Stop the process before archiving so world/player files belong to one save.
     if (this.runtime.game) throw failure('创建备份前需要停止游戏服。', 409);
-    const world = await this.backupWorld();
-    if (!world) return null;
-    await this.checkWorldFiles(world.directory);
+    try { await this.native.safeDirectory([]); }
+    catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+    if (!(await this.checkBackupFiles(this.runtime.saved))) return null;
     const id = `${category}/${Date.now()}-${randomUUID()}.tar.gz`;
     const file = path.join(this.directory, 'backups', id);
     const stage = await mkdtemp(path.join(directory, '.creating-'));
     const temporary = path.join(stage, 'archive.tar.gz');
     try {
-      await this.runtime.run('tar', ['-czf', temporary, '--hard-dereference', '-C', this.runtime.server, '--', `Pal/Saved/SaveGames/0/${world.worldId}`], 'palbox');
+      await this.runtime.run('tar', ['-czf', temporary, '--hard-dereference', '-C', this.runtime.server, '--', 'Pal/Saved'], 'palbox');
       await backupDirectory(this.directory, category);
       await rename(temporary, file);
     } finally { await rm(stage, { recursive: true, force: true }); }
@@ -557,36 +556,48 @@ export class Manager extends EventEmitter {
     const types = await this.runtime.run('tar', ['-tvzf', file], 'palbox', { captureLimit });
     if (types.length >= captureLimit || types.trim().split('\n').some(line => !['-', 'd'].includes(line[0]))) throw failure('备份包含链接或不支持的文件类型。');
     const worlds = [...new Set(names.map(name => /^Pal\/Saved\/SaveGames\/0\/([A-Za-z0-9_-]{1,128})\/Level\.sav$/.exec(name)?.[1]).filter(Boolean))];
-    if (!worlds.length) throw failure('备份中没有可恢复的世界存档。');
-    const targetWorld = await this.targetWorld();
-    const sourceWorld = worlds.includes(targetWorld) ? targetWorld : worlds.length === 1 ? worlds[0] : null;
-    if (!sourceWorld) throw failure('旧备份包含多个世界，无法确定要恢复的当前世界。', 409);
+    const configured = await this.native.configuredWorld();
+    const currentWorld = configured && (await this.native.worlds()).includes(configured) ? configured : null;
     const stage = path.join(this.runtime.server, `.restore-${randomUUID()}`);
-    const previous = path.join(this.runtime.server, `.world-${randomUUID()}`);
+    const previous = path.join(this.runtime.server, `.saved-${randomUUID()}`);
     await mkdir(stage, { recursive: true });
     const running = Boolean(this.runtime.game);
     try {
-      // Old Saved-wide archives remain usable; extract only the selected world.
-      const relative = `Pal/Saved/SaveGames/0/${sourceWorld}`;
-      await this.runtime.run('tar', ['-xzf', file, '--no-same-owner', '--no-same-permissions', '-C', stage, '--', relative]);
-      const source = path.join(stage, relative);
-      await this.checkWorldFiles(source);
-      const level = await lstat(path.join(source, 'Level.sav'));
-      if (!level.isFile() || !level.size) throw failure('备份中的世界存档为空或无效。');
+      await this.runtime.run('tar', ['-xzf', file, '--no-same-owner', '--no-same-permissions', '-C', stage, '--', 'Pal/Saved']);
+      const saved = path.join(stage, 'Pal/Saved');
+      if (!(await this.checkBackupFiles(saved))) throw failure('备份中没有可恢复的文件。');
+      const archived = new NativeBackups(saved, this.directory);
+      const archivedWorld = await archived.configuredWorld();
+      const sourceWorld = worlds.includes(archivedWorld) ? archivedWorld : worlds.includes(currentWorld) ? currentWorld : worlds.length === 1 ? worlds[0] : null;
+      const wholeSaved = !currentWorld || !sourceWorld;
+      const source = wholeSaved ? saved : path.join(saved, 'SaveGames/0', sourceWorld);
+      if (wholeSaved) {
+        if (worlds.length && !worlds.includes(archivedWorld)) throw failure('备份缺少有效的 GameUserSettings.ini 世界配置，无法整体还原；请先恢复当前世界配置后重试。', 409);
+        try { parse(await readFile(path.join(saved, 'Config/LinuxServer/PalWorldSettings.ini'), 'utf8')); }
+        catch (error) { if (error.code === 'ENOENT') throw failure('备份缺少 PalWorldSettings.ini，无法整体还原。', 409); throw error; }
+      } else {
+        const level = await lstat(path.join(source, 'Level.sav'));
+        if (!level.isFile() || !level.size) throw failure('备份中的世界存档为空或无效。');
+      }
       if (running) await this.stopGame({ requireSave: true });
-      if (targetWorld !== await this.targetWorld()) throw failure('当前世界已改变，请刷新后重试。', 409);
+      if (!wholeSaved && currentWorld !== await this.targetWorld()) throw failure('当前世界已改变，请刷新后重试。', 409);
       await this.backup('before-restore', id);
       await this.checkedBackupFile(id);
-      this.servicePhase('restoring', '正在恢复当前世界的完整存档。');
-      const target = (await this.native.ensureWorld(targetWorld)).directory;
-      await rename(target, previous);
+      this.servicePhase('restoring', wholeSaved ? '正在整体还原 Pal/Saved 中的存档和配置。' : '正在恢复当前世界的存档，保留当前服务器配置。');
+      const target = wholeSaved ? this.runtime.saved : await this.native.safeDirectory(['SaveGames', '0', currentWorld]);
+      await mkdir(path.dirname(target), { recursive: true });
+      let moved = false;
+      try { await rename(target, previous); moved = true; }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
       try { await rename(source, target); }
       catch (error) {
-        try { await rename(previous, target); }
-        catch { throw failure(`恢复回滚失败，原世界已保留在 ${previous}，请检查服务器。`, 500); }
+        if (moved) {
+          try { await rename(previous, target); }
+          catch { throw failure(`恢复回滚失败，原数据已保留在 ${previous}，请检查服务器。`, 500); }
+        }
         throw error;
       }
-      await rm(previous, { recursive: true });
+      if (moved) await rm(previous, { recursive: true });
     } finally { await rm(stage, { recursive: true, force: true }); }
     if (running) await this.startGame();
   }
