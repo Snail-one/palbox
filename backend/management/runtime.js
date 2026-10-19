@@ -79,6 +79,7 @@ export class Runtime extends EventEmitter {
       if (line.writtenAt && now - line.writtenAt > this.logPolicy.retentionMs) { line.prefix = true; line.at = null; }
       const at = new Date().toISOString();
       if (!text) return;
+      if (channel === 'game') this.emit('game-log', { text, at });
       appendLog(file, timestampLogChunk(text, at, line), this.logPolicy);
       appendCombinedLog(this.directory, channel, text, at, this.logPolicy);
       line.writtenAt = now;

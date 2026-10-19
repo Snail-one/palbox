@@ -9,6 +9,7 @@ import { Runtime, DEFAULT_SHUTDOWN_MESSAGE } from './runtime.js';
 import { NativeBackups } from './native-backups.js';
 import { SaveImports } from './save-imports.js';
 import { readBanList } from './banned-players.js';
+import { PlayerHistory, PlayerHistoryRecorder } from './player-history.js';
 import { ManagementStore } from './store.js';
 import { atomicWrite, readJson, jsonWrite, failure } from './files.js';
 import { normalizeUsername, passwordRecord, validUsername } from './auth.js';
@@ -111,6 +112,8 @@ export class Manager extends EventEmitter {
     this.webPort = webPort;
     this.runtime = runtime || new Runtime(this.directory, options);
     this.runtime.on?.('state', () => this.changed());
+    this.playerHistory = new PlayerHistory(this.directory);
+    this.playerHistoryRecorder = new PlayerHistoryRecorder({ history: this.playerHistory, runtime: this.runtime, onChange: () => this.changed() });
     this.native = new NativeBackups(this.runtime.saved, this.directory);
     this.imports = new SaveImports({ directory: this.directory, runtime: this.runtime, native: this.native, limits: importLimits });
     this.tasks = [];
@@ -145,6 +148,7 @@ export class Manager extends EventEmitter {
     this.syncRuntimeArgs();
     this.syncRuntimeInstallArgs();
     await this.store.initialize();
+    await this.playerHistory.initialize();
     await this.runtime.initialize();
     try { await this.imports.initialize(); }
     catch (error) { this.runtime.log('palbox', `导入暂存目录初始化失败：${error.message}\n`); }
@@ -152,6 +156,7 @@ export class Manager extends EventEmitter {
     if (!Array.isArray(this.tasks)) throw new Error('任务记录损坏，请检查 tasks.json。');
     for (const task of this.tasks) if (task.state === 'running') { task.state = 'interrupted'; task.message = '面板重启，任务已中断，请检查日志后重试。'; }
     await this.saveTasks();
+    await this.playerHistoryRecorder.start();
   }
   settingsError() {
     return `settings.json 中的管理员记录或备份设置损坏。请先备份数据目录，再删除 ${this.settingsFile} 后重新启动，并在网页中重新初始化管理员。`;
@@ -585,6 +590,21 @@ export class Manager extends EventEmitter {
     }
     return { players: [...players.values()], skipped: value.skipped };
   }
+  async historicalPlayers(options) {
+    await this.playerHistoryRecorder.pending;
+    await this.playerHistory.pending;
+    const value = this.playerHistory.list(options);
+    const banned = new Set((await this.bannedPlayers()).players.map(player => player.userId));
+    return {
+      ...value, players: value.players.map(player => ({ ...player, banned: banned.has(player.userId) })),
+      error: this.playerHistoryRecorder.error ? '玩家历史暂时无法更新，请查看服务器日志。' : null
+    };
+  }
+  async clearPlayerHistory(checks) {
+    const result = await this.playerHistory.clear(checks);
+    this.playerHistoryRecorder.revision++; this.changed();
+    return result;
+  }
   async runningConfiguration() {
     const game = this.runtime.game;
     if (!game) return { running: false };
@@ -621,6 +641,7 @@ export class Manager extends EventEmitter {
     if (this.runtime.game && (!this.runtime.runningSource || output(this.runtime.runningSource) !== desired)) configuration = 'pending';
     const game = this.runtime.game;
     const status = { stateInstance: this.stateInstance, stateRevision, installed, installedBuild, version: this.versionCache?.version || null, hasWorldSave: await this.hasWorldSave(), running: Boolean(game), ready: this.runtime.ready, configuration, hasConfiguration: Boolean(active), startedAt: this.runtime.startedAt, lastExit: this.runtime.lastExit, task: this.busy, tasks: this.tasks, revision: this.store.revision, port: this.runtime.port };
+    status.playerHistoryRevision = this.playerHistoryRecorder.revision;
     const endpoints = scope === 'overview' ? ['info', 'metrics', 'players'] : scope === 'players' ? ['players'] : [];
     for (const endpoint of endpoints) status[endpoint] = endpoint === 'players' ? [] : null;
     if (game && endpoints.length) {
@@ -792,6 +813,7 @@ export class Manager extends EventEmitter {
   async close() {
     this.closing = true;
     await this.runtime.close();
+    await this.playerHistoryRecorder.close();
     await this.operation;
     await this.settingsUpdates;
   }

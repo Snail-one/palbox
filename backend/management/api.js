@@ -132,6 +132,13 @@ export function createManagementApi(manager, options = {}) {
       }
       if (pathname === '/api/running' && request.method === 'GET') { json(200, await manager.runningConfiguration()); return; }
       if (pathname === '/api/banned-players' && request.method === 'GET') { json(200, await manager.bannedPlayers()); return; }
+      if (pathname === '/api/player-history' && request.method === 'GET') {
+        const query = new URL(request.url, 'http://localhost').searchParams;
+        json(200, await manager.historicalPlayers({ query: query.get('query') || '', page: query.get('page') || '1' })); return;
+      }
+      if (pathname === '/api/player-history' && request.method === 'DELETE') {
+        json(200, await manager.clearPlayerHistory(checks)); return;
+      }
       if (pathname === '/api/update-check' && request.method === 'GET') { json(200, await manager.updateInfo()); return; }
       if (pathname === '/api/tasks' && request.method === 'POST') {
         const input = await body(request, 8192);

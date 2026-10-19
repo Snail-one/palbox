@@ -48,5 +48,10 @@ const server = http.createServer(async (request, response) => {
   response.end(JSON.stringify(value));
   if (endpoint === 'shutdown' || endpoint === 'stop') server.close(() => process.exit(0));
 });
-server.listen(Number(values.get('RESTAPIPort')), '127.0.0.1', () => console.log('Fake PalServer ready'));
+server.listen(Number(values.get('RESTAPIPort')), '127.0.0.1', () => {
+  console.log('Fake PalServer ready');
+  const at = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  console.log(`[${at}] [LOG] <script>test</script> 198.51.100.23 connected the server. (User id: steam_test)`);
+  console.log(`[${at}] [LOG] <script>test</script> joined the server. (User id: steam_test, Player id: 00000000000000000000000000000000)`);
+});
 process.on('SIGTERM', () => server.close(() => process.exit(0)));

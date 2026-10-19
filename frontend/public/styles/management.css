@@ -207,6 +207,15 @@
 #native-backup-note { overflow-wrap: anywhere; }
 #manager-announce input { flex: 1; }
 .player-management .management-heading { flex-wrap: wrap; }
+.player-page-heading { margin-bottom: 18px; }
+.player-page-heading h2 { margin: 0; font-size: 20px; }
+.player-page-heading p { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.player-tabs { display: flex; gap: 5px; width: fit-content; max-width: 100%; margin-bottom: 18px; padding: 5px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.player-tabs [role="tab"] { display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 150px; padding: 10px 14px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+.player-tabs [aria-selected="true"] { color: var(--accent); background: var(--accent-soft); border-color: #f1d5b6; font-weight: 600; }
+.player-tabs .icon { width: 15px; height: 15px; }
+.player-tab-count { min-width: 19px; padding: 1px 5px; border-radius: 4px; background: var(--bg); color: var(--text); font-size: 10px; font-variant-numeric: tabular-nums; }
+.player-tabs [aria-selected="true"] .player-tab-count { background: #fff; color: var(--accent); }
 .player-management h2 .subtle-tag { margin-left: 0; }
 .player-management .management-heading .management-note { margin: 5px 0 0; }
 .player-management .player-broadcast { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin: 20px 0; padding: 16px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); }
@@ -223,6 +232,8 @@
 .player-identity h3 { margin: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 .player-level { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
 .player-status { flex-shrink: 0; padding: 4px 8px; border-radius: 5px; color: #318267; background: #edf7f2; font-size: 10px; }
+.player-status-group { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+.player-ban-badge { padding: 4px 8px; border-radius: 5px; color: #a13c36; background: #fcefed; font-size: 10px; }
 .player-card-details { display: grid; gap: 10px; margin: 18px; }
 .player-card-details > div { display: grid; grid-template-columns: 4.5em minmax(0, 1fr); gap: 12px; font-size: 11px; line-height: 1.7; }
 .player-card-details dt { color: var(--muted); }
@@ -233,6 +244,12 @@
 .player-actions .button { min-height: 34px; font-size: 11px; }
 .player-actions .player-ban-action { color: var(--red); }
 .player-card[data-banned="true"] .player-avatar, .player-card[data-banned="true"] .player-status { color: #a13c36; background: #fcefed; }
+.player-card[data-historical="true"] .player-status { color: #35639c; background: #edf3fa; }
+.player-card[data-historical="true"] .player-status[data-login-status="succeeded"] { color: #318267; background: #edf7f2; }
+.player-card[data-historical="true"] .player-actions { grid-template-columns: minmax(0, 1fr); }
+#player-history-search { align-items: center; gap: 10px; margin: 18px 0 0; }
+#player-history-query { flex: 1 1 180px; min-height: 38px; }
+#player-history-pagination { margin-top: 18px; }
 .player-card[data-banned="true"] .player-actions { grid-template-columns: minmax(0, 1fr); }
 .player-empty { display: grid; justify-items: center; grid-column: 1 / -1; padding: 32px 18px; border: 1px dashed var(--line); border-radius: 10px; text-align: center; }
 .player-empty-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; color: var(--muted); background: var(--bg); }
@@ -240,6 +257,9 @@
 .player-empty h3 { margin: 12px 0 0; font-size: 13px; font-weight: 550; }
 .player-empty p { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.8; }
 @media (max-width: 760px) {
+  .player-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; padding: 4px; gap: 3px; }
+  .player-tabs [role="tab"] { min-width: 0; padding: 10px 5px; gap: 5px; font-size: 11px; }
+  .player-tabs .icon { display: none; }
   .player-card-grid { grid-template-columns: minmax(0, 1fr); gap: 14px; }
   .player-management .player-broadcast { padding: 14px; }
   .player-broadcast-controls { flex-direction: column; }
@@ -251,6 +271,7 @@
   .player-actions .button { min-height: 40px; }
   #banned-management .management-actions { width: 100%; }
   #banned-management .management-actions .button { flex: 1; }
+  #player-history-pagination .button { min-height: 40px; }
 }
 #manager-banned-list, #manager-players-list { font-size: 12px; }
 #banned-management .management-heading { flex-wrap: wrap; }

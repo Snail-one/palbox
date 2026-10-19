@@ -87,15 +87,44 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   $('show-task-history').addEventListener('click', () => { history.showModal(); void refresh({ scope: 'local' }); });
   $('close-task-history').addEventListener('click', () => history.close());
   const playerPanel = document.createElement('section');
+  playerPanel.id = 'online-player-management';
   playerPanel.className = 'management-panel player-management';
   playerPanel.setAttribute('aria-label', '在线玩家与广播');
-  playerPanel.innerHTML = `<div class="management-heading"><div><h2>在线玩家 <span id="online-player-count" class="subtle-tag">—</span></h2><p id="online-player-note" class="management-note">正在读取玩家状态…</p></div></div><form id="manager-announce" class="player-broadcast"><label for="announce-message"><svg class="icon" aria-hidden="true"><use href="#i-globe"/></svg>全服广播</label><div class="player-broadcast-controls"><input id="announce-message" maxlength="500" required placeholder="向在线玩家发送公告…"><button class="button secondary" type="submit" disabled>发送广播</button></div></form><div id="manager-players-list" class="player-card-grid">游戏服尚未连接</div>`;
+  playerPanel.innerHTML = `<div class="management-heading"><div><h2>在线玩家</h2><p id="online-player-note" class="management-note">正在读取玩家状态…</p></div></div><form id="manager-announce" class="player-broadcast"><label for="announce-message"><svg class="icon" aria-hidden="true"><use href="#i-globe"/></svg>全服广播</label><div class="player-broadcast-controls"><input id="announce-message" maxlength="500" required placeholder="向在线玩家发送公告…"><button class="button secondary" type="submit" disabled>发送广播</button></div></form><div id="manager-players-list" class="player-card-grid">游戏服尚未连接</div>`;
   const bannedPanel = document.createElement('section');
   bannedPanel.id = 'banned-management';
   bannedPanel.className = 'management-panel player-management';
   bannedPanel.setAttribute('aria-label', '已封禁玩家');
-  bannedPanel.innerHTML = `<div class="management-heading"><h2>已封禁玩家 <span id="banned-player-count" class="subtle-tag">—</span></h2><div class="management-actions"><button class="button secondary" id="ban-player" disabled>按 ID 封禁</button><button class="button secondary" id="unban-player" disabled>按 ID 解封</button></div></div><p id="banned-player-note" class="management-note">本服封禁名单，游戏服务运行后可封禁或解封。</p><div id="manager-banned-list" class="player-card-grid">正在读取封禁名单…</div>`;
-  $('game-players-view').append(playerPanel, bannedPanel);
+  bannedPanel.innerHTML = `<div class="management-heading"><h2>已封禁玩家</h2><div class="management-actions"><button class="button secondary" id="ban-player" disabled>按 ID 封禁</button><button class="button secondary" id="unban-player" disabled>按 ID 解封</button></div></div><p id="banned-player-note" class="management-note">本服封禁名单，游戏服务运行后可封禁或解封。</p><div id="manager-banned-list" class="player-card-grid">正在读取封禁名单…</div>`;
+  const playerHistoryPanel = document.createElement('section');
+  playerHistoryPanel.id = 'player-history-management'; playerHistoryPanel.className = 'management-panel player-management';
+  playerHistoryPanel.setAttribute('aria-labelledby', 'player-history-title');
+  playerHistoryPanel.innerHTML = `<div class="management-heading"><h2 id="player-history-title">玩家登录历史</h2><button id="clear-player-history" type="button" class="button secondary danger-hover" disabled><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>清理历史</button></div><p id="player-history-note" class="management-note">从游戏连接日志记录昵称、UserID 和 IP；收到成功登录日志后更新状态。</p><form id="player-history-search" role="search"><label class="sr-only" for="player-history-query">搜索历史玩家</label><input id="player-history-query" type="search" maxlength="200" placeholder="搜索昵称、UserID 或 IP"><button type="submit" class="button secondary">搜索</button></form><p id="player-history-summary" class="management-note" role="status">正在读取…</p><div id="player-history-list" class="player-card-grid"></div><nav id="player-history-pagination" class="backup-pagination" aria-label="玩家历史分页" hidden></nav>`;
+  const playerNavigation = document.createElement('div'); playerNavigation.className = 'player-navigation';
+  playerNavigation.innerHTML = `<div class="player-page-heading"><h2>玩家管理</h2><p>查看在线玩家，查询历史账号，管理封禁名单。</p></div><div class="player-tabs" role="tablist" aria-label="玩家管理分区"><button id="players-tab-online" type="button" role="tab" aria-controls="online-player-management" aria-selected="true" tabindex="0"><svg class="icon" aria-hidden="true"><use href="#i-user"/></svg>在线玩家<span id="online-player-count" class="player-tab-count">—</span></button><button id="players-tab-history" type="button" role="tab" aria-controls="player-history-management" aria-selected="false" tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#i-restore"/></svg>登录历史<span id="history-player-count" class="player-tab-count">—</span></button><button id="players-tab-banned" type="button" role="tab" aria-controls="banned-management" aria-selected="false" tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg>封禁名单<span id="banned-player-count" class="player-tab-count">—</span></button></div>`;
+  const playerViews = { online: playerPanel, history: playerHistoryPanel, banned: bannedPanel };
+  const playerViewNames = Object.keys(playerViews);
+  function selectPlayerView(view, focus = false) {
+    for (const [name, panel] of Object.entries(playerViews)) {
+      const active = name === view;
+      const button = $(`players-tab-${name}`);
+      button.setAttribute('aria-selected', String(active)); button.tabIndex = active ? 0 : -1;
+      panel.hidden = !active;
+      if (active && focus) button.focus();
+    }
+  }
+  for (const [index, [name, panel]] of Object.entries(playerViews).entries()) {
+    panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', `players-tab-${name}`); panel.tabIndex = 0;
+    panel.hidden = name !== 'online';
+    const button = playerNavigation.querySelector(`#players-tab-${name}`);
+    button.addEventListener('click', () => selectPlayerView(name));
+    button.addEventListener('keydown', event => {
+      const next = { ArrowRight: (index + 1) % 3, ArrowLeft: (index + 2) % 3, Home: 0, End: 2 }[event.key];
+      if (next === undefined) return;
+      event.preventDefault(); selectPlayerView(playerViewNames[next], true);
+    });
+  }
+  $('game-players-view').append(playerNavigation, playerPanel, playerHistoryPanel, bannedPanel);
   const nativeSaves = document.createElement('section');
   nativeSaves.id = 'native-save-management';
   nativeSaves.className = 'management-panel save-management';
@@ -148,6 +177,13 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   let bannedCache = null;
   let bannedRenderKey = '';
   let playersRenderKey = null;
+  let playerHistoryCache = null;
+  let playerHistoryRenderKey = null;
+  let playerHistoryQuery = '';
+  let playerHistoryPage = 1;
+  let playerHistoryRequest = 0;
+  let playerHistorySearchTimer = null;
+  let clearingPlayerHistory = false;
   let logChannel = 'all';
   let nativeBackupPage = 0;
   let nativeBackupRenderKey = null;
@@ -553,8 +589,9 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     if (dateTime) content.dateTime = dateTime;
     description.append(content); item.append(term, description); details.append(item);
   }
-  function playerCard(player, banned = false) {
+  function playerCard(player, banned = false, historical = false) {
     const row = document.createElement('article'); row.className = 'player-row player-card';
+    if (player.userId) row.dataset.userId = player.userId;
     const label = player.name || player.accountName || (banned ? '昵称未记录' : '玩家');
     row.setAttribute('aria-label', label);
     const header = document.createElement('div'); header.className = 'player-card-header';
@@ -562,12 +599,18 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     avatar.textContent = Array.from(label)[0];
     const identity = document.createElement('div'); identity.className = 'player-identity';
     const title = document.createElement('h3'); title.textContent = label; identity.append(title);
-    if (!banned) {
+    if (!banned && !historical) {
       const level = document.createElement('span'); level.className = 'player-level'; level.textContent = `Lv.${player.level ?? '—'}`; identity.append(level);
     }
-    const badge = document.createElement('span'); badge.className = 'player-status'; badge.textContent = banned ? '已封禁' : '在线';
+    const badge = document.createElement('span'); badge.className = 'player-status'; badge.textContent = banned ? '已封禁' : historical ? player.loginStatus === 'succeeded' ? '登录成功' : '已连接' : '在线';
+    if (historical) row.dataset.historical = 'true';
+    if (historical) badge.dataset.loginStatus = player.loginStatus;
     row.dataset.banned = String(banned);
-    header.append(avatar, identity, badge);
+    const badges = document.createElement('span'); badges.className = 'player-status-group'; badges.append(badge);
+    if (historical && player.banned) {
+      const banBadge = document.createElement('span'); banBadge.className = 'player-ban-badge'; banBadge.textContent = '已封禁'; badges.append(banBadge);
+    }
+    header.append(avatar, identity, badges);
     const details = document.createElement('dl'); details.className = 'player-card-details';
     playerDetail(details, 'UserID', player.userId || 'ID 未提供', { code: true });
     const actions = document.createElement('div'); actions.className = 'player-actions';
@@ -637,6 +680,60 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
         if (confirmed) await action('unban', { userid: player.userId }, false);
       });
       actions.append(button); list.append(row);
+    }
+  }
+  function renderPlayerHistory(value) {
+    const disabled = !lastStatus?.running || !lastStatus?.ready || Boolean(lastStatus?.task);
+    const key = JSON.stringify([value, disabled, playerHistoryQuery]);
+    if (key === playerHistoryRenderKey) return;
+    playerHistoryRenderKey = key;
+    $('history-player-count').textContent = String(value.recorded);
+    $('clear-player-history').disabled = clearingPlayerHistory || !value.recorded;
+    $('player-history-note').textContent = value.error || '从游戏连接日志记录昵称、UserID 和 IP；收到成功登录日志后更新状态，按 UserID 合并。';
+    $('player-history-summary').textContent = playerHistoryQuery ? `找到 ${value.total} 位玩家 · 已记录 ${value.recorded} 位` : `共记录 ${value.recorded} 位玩家 · 最近连接优先`;
+    const list = $('player-history-list'); list.replaceChildren();
+    if (!value.players.length) playerEmpty(list,
+      playerHistoryQuery ? '没有匹配的玩家' : '暂无玩家连接记录',
+      playerHistoryQuery ? '可尝试其他昵称、UserID 或 IP。' : '收到游戏连接日志后会显示在这里；重启时也会读取保留的游戏日志。');
+    for (const player of value.players) {
+      const { row, details, actions, label } = playerCard(player, false, true);
+      playerDetail(details, '最近 IP', player.ip || '未记录', { code: true });
+      playerDetail(details, '首次连接', timeFormat.dateTime(player.firstSeenAt), { dateTime: player.firstSeenAt });
+      playerDetail(details, '最近连接', timeFormat.dateTime(player.lastSeenAt), { dateTime: player.lastSeenAt });
+      if (player.lastLoginAt) playerDetail(details, '最近登录', timeFormat.dateTime(player.lastLoginAt), { dateTime: player.lastLoginAt });
+      const ban = document.createElement('button'); ban.className = 'button secondary player-ban-action';
+      ban.textContent = player.banned ? '已封禁' : '封禁'; ban.disabled = disabled || player.banned;
+      if (disabled) ban.title = '游戏服务就绪且没有任务执行时可封禁，玩家无需在线';
+      ban.addEventListener('click', async () => {
+        const message = await playerMessage('封禁历史玩家', `封禁 ${label}（${player.userId}），该账号将无法再次加入服务器。`, '封禁', true);
+        if (message !== null) await action('ban', { userid: player.userId, name: label, message }, false);
+      });
+      actions.append(ban); list.append(row);
+    }
+    const pagination = $('player-history-pagination'); pagination.replaceChildren(); pagination.hidden = value.pageCount <= 1;
+    if (value.pageCount > 1) {
+      const status = document.createElement('span'); status.className = 'page-status'; status.textContent = `第 ${value.page} / ${value.pageCount} 页`;
+      const previous = document.createElement('button'); previous.type = 'button'; previous.className = 'button secondary'; previous.textContent = '上一页'; previous.disabled = value.page <= 1;
+      previous.addEventListener('click', () => { playerHistoryPage = value.page - 1; void loadPlayerHistory(); });
+      const next = document.createElement('button'); next.type = 'button'; next.className = 'button secondary'; next.textContent = '下一页'; next.disabled = value.page >= value.pageCount;
+      next.addEventListener('click', () => { playerHistoryPage = value.page + 1; void loadPlayerHistory(); });
+      pagination.append(status, previous, next);
+    }
+  }
+  async function loadPlayerHistory() {
+    const request = ++playerHistoryRequest;
+    $('player-history-list').setAttribute('aria-busy', 'true');
+    try {
+      const value = await api.request(`player-history?query=${encodeURIComponent(playerHistoryQuery)}&page=${playerHistoryPage}`);
+      if (request !== playerHistoryRequest || stopped) return;
+      playerHistoryPage = value.page; playerHistoryCache = value; renderPlayerHistory(value);
+    } catch (caught) {
+      if (request !== playerHistoryRequest) return;
+      playerHistoryRenderKey = null;
+      $('player-history-summary').textContent = '玩家历史暂不可用，请刷新重试。';
+      error(caught.message);
+    } finally {
+      if (request === playerHistoryRequest) $('player-history-list').setAttribute('aria-busy', 'false');
     }
   }
   async function loadBans() {
@@ -712,6 +809,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     $('ban-player').disabled = playerActionDisabled;
     $('unban-player').disabled = playerActionDisabled;
     if (bannedCache) renderBans(bannedCache);
+    if (playerHistoryCache) renderPlayerHistory(playerHistoryCache);
     renderHistory(value.tasks);
     const task = value.task || value.tasks[0];
     if (task) {
@@ -746,9 +844,13 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     closeStatus = api.watchStatus({
       onStatus(value) {
         if (generation !== statusGeneration) return;
+        const historyChanged = lastStatus && value.playerHistoryRevision !== lastStatus.playerHistoryRevision;
         const task = value.tasks?.[0];
         const completed = task && task.state !== 'running' && (task.id === activeTaskId || (lastStatus && task.id !== lastStatus.tasks?.[0]?.id));
-        if (renderStatus(value) && completed) void refresh();
+        if (renderStatus(value)) {
+          if (completed) void refresh();
+          else if (historyChanged && currentScope() === 'players') void loadPlayerHistory();
+        }
       },
       onError(caught) {
         if (generation !== statusGeneration) return;
@@ -770,6 +872,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       const value = await api.request(`status?scope=${scope}`);
       renderStatus(value);
       statusReceived = true;
+      if (scope === 'players') await loadPlayerHistory();
       const savesVisible = !$('saves-page').hidden;
       const archivesVisible = savesVisible && !$('saves-archives').hidden;
       const nativeVisible = savesVisible && !$('saves-native').hidden;
@@ -850,6 +953,30 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     } finally { control.disabled = false; }
   });
   $('manager-announce').addEventListener('submit', event => { event.preventDefault(); action('announce', { message: $('announce-message').value }, false); });
+  function searchPlayerHistory() {
+    clearTimeout(playerHistorySearchTimer);
+    playerHistoryQuery = $('player-history-query').value.trim(); playerHistoryPage = 1;
+    void loadPlayerHistory();
+  }
+  $('player-history-search').addEventListener('submit', event => { event.preventDefault(); searchPlayerHistory(); });
+  $('player-history-query').addEventListener('input', () => {
+    clearTimeout(playerHistorySearchTimer);
+    playerHistorySearchTimer = setTimeout(searchPlayerHistory, 300);
+  });
+  $('clear-player-history').addEventListener('click', async () => {
+    const confirmed = await ask({ title: '清理全部玩家登录历史？', description: '将删除所有已记录的玩家昵称、UserID、IP 和连接时间，包括当前搜索条件外的记录。游戏存档、封禁名单与原始游戏日志保留；清理后只记录新发生的事件，旧日志不会重新导入。', confirm: '清理历史', danger: true, symbol: 'trash' });
+    if (!confirmed) return;
+    clearingPlayerHistory = true; $('clear-player-history').disabled = true;
+    try {
+      await api.request('player-history', { method: 'DELETE' });
+      clearTimeout(playerHistorySearchTimer); playerHistoryQuery = ''; playerHistoryPage = 1; $('player-history-query').value = '';
+      await loadPlayerHistory(); notify('玩家登录历史已清理');
+    } catch (caught) { error(caught.message); }
+    finally {
+      clearingPlayerHistory = false; playerHistoryRenderKey = null;
+      if (playerHistoryCache) renderPlayerHistory(playerHistoryCache);
+    }
+  });
   $('ban-player').addEventListener('click', async () => {
     const userid = await ask({ title: '按 ID 封禁玩家', description: '输入要封禁的玩家 UserID（通常以 steam_ 开头）；可直接粘贴 banlist.txt 中的整行，面板会取逗号前的 ID。默认理由为“管理员已将你封禁”。', name: '', nameLabel: '玩家 UserID', namePlaceholder: 'steam_...', nameMaxLength: 200, required: true, confirm: '封禁', symbol: 'user' });
     if (userid === null) return;
@@ -863,7 +990,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   $('refresh-status').addEventListener('click', () => { void refresh(); });
   document.addEventListener('visibilitychange', () => { void refresh(); });
   window.addEventListener('hashchange', () => { void refresh(); });
-  window.addEventListener('pagehide', () => { pageActive = false; stopLogs(); stopStatus(); });
+  window.addEventListener('pagehide', () => { pageActive = false; clearTimeout(playerHistorySearchTimer); stopLogs(); stopStatus(); });
   window.addEventListener('pageshow', event => { if (event.persisted) { pageActive = true; void refresh(); } });
   refresh();
   return { refresh };

@@ -87,6 +87,7 @@ docker compose up -d --build
 │   ├── workspace.json                 配置库、输入基准与保存版本
 │   ├── settings.json                  管理员用户名、密码哈希、完整备份保留设置、自动启动、启动参数
 │   ├── tasks.json                     最近 40 个任务
+│   ├── player-history.json            玩家连接历史（UserID、昵称、IP、连接时间、登录状态）
 │   └── imports/                       导入存档的临时暂存（1 小时后清理）
 ├── backups/
 │   ├── manual/                        手动备份
