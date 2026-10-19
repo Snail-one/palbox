@@ -60,7 +60,7 @@ export function createParameterView({ dom, editor, catalog, view, onChanged }) {
         });
         wrap.append(reveal);
       }
-      cell.append(entry.key === 'AdminPassword' ? createAdminPasswordControl({ dom, input, wrap, onGenerate(password) {
+      cell.append(['AdminPassword', 'ServerPassword'].includes(entry.key) ? createAdminPasswordControl({ dom, input, wrap, label: field.label, onGenerate(password) {
         input.value = encodeString(password);
         updateValue(entry.key, input.value, input, errorNode);
       } }) : wrap, errorNode);

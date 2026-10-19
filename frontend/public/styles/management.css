@@ -33,9 +33,13 @@
 .account-session-actions #manager-logout { color: var(--red); }
 .account-session-actions #manager-logout:hover { background: #fcf0ef; border-color: #f2d9d6; }
 .account-section-title { margin-top: 18px; font-size: 13px; }
-.account-password-section { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line); }
-.account-password-section summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+.account-settings-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.account-settings-actions .button { flex: 1 1 120px; }
+.account-settings-actions .button[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 .account-password-section fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.account-security-dialog .account-password-input { margin-top: 7px; }
+.account-security-dialog .account-password-input input { min-width: 0; margin-top: 0; padding-right: 42px; }
+.account-password-tools { display: flex; flex-wrap: wrap; gap: 8px; }
 .security-qr { display: block; width: min(256px, 100%); height: auto; aspect-ratio: 1; margin: 16px auto; background: #fff; }
 .server-heading-actions { flex-shrink: 0; }
 .server-primary-actions { display: contents; }

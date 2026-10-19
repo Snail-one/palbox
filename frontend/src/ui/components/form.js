@@ -121,7 +121,7 @@ export function createFormView({ dom, editor, catalog, view, onCategory, onChang
             wrap.append(reveal);
           }
         }
-        box.append(entry.key === 'AdminPassword' ? createAdminPasswordControl({ dom, input: control, wrap, onGenerate(password) {
+        box.append(['AdminPassword', 'ServerPassword'].includes(entry.key) ? createAdminPasswordControl({ dom, input: control, wrap, label: f.label, onGenerate(password) {
           control.value = password;
           updateValue(entry.key, config.encodeString(password), control, errorNode);
         } }) : wrap, errorNode);
