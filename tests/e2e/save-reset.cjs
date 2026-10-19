@@ -1,0 +1,82 @@
+'use strict';
+const { chromium } = require('playwright');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+
+(async () => {
+  const { managementFixture } = await import('../helpers/management-fixture.js');
+  const f = await managementFixture(); let browser, release;
+  try {
+    await f.login(); await f.task('install'); await f.task('start');
+    const root = path.join(f.runtime.saved, 'SaveGames/0');
+    const level = path.join(root, 'WORLD/Level.sav');
+    await fs.mkdir(path.join(root, 'WORLD/Players'), { recursive: true });
+    await fs.writeFile(level, 'world-to-reset');
+    await fs.writeFile(path.join(root, 'WORLD/LevelMeta.sav'), 'meta');
+    await fs.writeFile(path.join(root, 'WORLD/Players/player.sav'), 'player');
+    const config = await fs.readFile(f.runtime.config);
+    const archive = path.join(f.directory, 'backups/manual/keep.tar.gz'); await fs.writeFile(archive, 'archive');
+    browser = await chromium.launch({ headless: true });
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    await context.request.post(f.base + '/api/login', { data: { username: f.username, password: f.password } });
+    const page = await context.newPage(); const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(f.base + '/#saves');
+    const button = page.locator('[data-action="reset-save"]');
+    await page.waitForFunction(() => document.getElementById('game-state')?.textContent === '运行中');
+    assert.equal(await button.isDisabled(), true);
+    await f.task('stop'); await button.waitFor();
+    await page.waitForFunction(() => !document.querySelector('[data-action="reset-save"]').disabled);
+    await button.click();
+    assert.match(await page.locator('#dialog-description').textContent(), /SaveGames\/0.*官方备份历史/);
+    assert.equal(await page.locator('#dialog-confirm').isDisabled(), true);
+    await page.locator('#dialog-name').fill('DELETE');
+    assert.equal(await page.locator('#dialog-confirm').isDisabled(), true);
+    await page.locator('#dialog-name').fill('delete');
+    assert.equal(await page.locator('#dialog-confirm').isDisabled(), false);
+    await page.locator('#dialog-cancel').click();
+    assert.equal(await fs.readFile(level, 'utf8'), 'world-to-reset');
+    assert.equal(f.manager.tasks.some(task => task.action === 'reset-save'), false);
+    console.log('PASS 游戏运行时禁用按钮，准确输入 delete 才能确认，取消不会删除');
+
+    // Another client can start the game after the modal opens; the backend
+    // must reject the now-stale confirmation without stopping or deleting.
+    await button.click(); await page.locator('#dialog-name').fill('delete');
+    await f.task('start');
+    const rejected = page.waitForResponse(response => response.url().endsWith('/api/tasks') && response.request().method() === 'POST');
+    await page.locator('#dialog-confirm').click(); assert.equal((await rejected).status(), 409);
+    assert.equal(await fs.readFile(level, 'utf8'), 'world-to-reset');
+    assert.ok(f.runtime.game);
+    await f.task('stop');
+    await page.waitForFunction(() => !document.querySelector('[data-action="reset-save"]').disabled);
+    const clear = f.manager.native.clearWorlds.bind(f.manager.native);
+    const gate = new Promise(resolve => { release = resolve; });
+    f.manager.native.clearWorlds = async check => { await gate; return clear(check); };
+    await button.click();
+    assert.equal(await page.locator('#dialog-name').inputValue(), '');
+    assert.equal(await page.locator('#dialog-confirm').isDisabled(), true);
+    await page.locator('#dialog-name').fill('delete');
+    const submitted = page.waitForResponse(response => response.url().endsWith('/api/tasks') && response.request().method() === 'POST');
+    await page.locator('#dialog-confirm').click(); assert.equal((await submitted).status(), 202);
+    await page.waitForFunction(() => document.getElementById('game-state').textContent === '重置存档中');
+    assert.equal(await button.isDisabled(), true);
+    assert.equal(await page.locator('#server-service [data-action="start"]').isDisabled(), true);
+    release(); await f.manager.operation;
+    await page.waitForFunction(() => document.querySelector('#task-history-list .backup-row')?.textContent.includes('重置存档 · 已完成'));
+    assert.deepEqual(await fs.readdir(root), []);
+    assert.deepEqual(await fs.readFile(f.runtime.config), config);
+    assert.equal(await fs.readFile(archive, 'utf8'), 'archive');
+    assert.equal(f.runtime.game, null);
+    assert.equal(f.manager.tasks[0].confirmation, undefined, '确认文字不写入任务记录');
+    await page.waitForFunction(() => !document.querySelector('#server-service [data-action="update"]').disabled);
+    await page.locator('#server-service [data-action="update"]').click();
+    assert.equal(await page.locator('#dialog-name-label').isVisible(), false);
+    assert.equal(await page.locator('#dialog-confirm').isDisabled(), false, '普通确认弹窗不继承 delete 输入限制');
+    await page.locator('#dialog-cancel').click();
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    assert.deepEqual(errors, []);
+    console.log('PASS 确认期间启动时后端拒绝，执行期间锁定启动，清空所有存档并保留配置和完整备份');
+  } finally { release?.(); await f.manager.operation; await browser?.close(); await f.close(); }
+})().catch(error => { console.error(error); process.exitCode = 1; });

@@ -228,11 +228,12 @@ export class Manager extends EventEmitter {
   saveTasks() { return jsonWrite(this.tasksFile, this.tasks.slice(0, 40)); }
   async submit(action, payload = {}, { authorize = () => {} } = {}) {
     authorize();
-    const allowed = ['install', 'update', 'start', 'stop', 'force-stop', 'restart', 'apply', 'backup', 'delete-backup', 'restore', 'restore-native', 'import-save', 'save-world', 'announce', 'kick', 'ban', 'unban'];
+    const allowed = ['install', 'update', 'start', 'stop', 'force-stop', 'restart', 'apply', 'backup', 'delete-backup', 'restore', 'restore-native', 'import-save', 'reset-save', 'save-world', 'announce', 'kick', 'ban', 'unban'];
     if (!allowed.includes(action)) throw failure('管理操作不存在。', 404);
     if (action === 'backup' && payload.category && payload.category !== 'manual') throw failure('定时备份已交由游戏官方机制，面板仅支持手动完整备份。');
     if (this.closing) throw failure('管理服务正在关闭。', 503);
     if (this.busy) throw failure('已有任务正在执行，请稍后再试。', 409);
+    if (action === 'reset-save') this.requireResetAllowed(payload);
     if (action === 'backup' && !this.runtime.game) {
       await this.requireWorldSave();
       if (this.closing) throw failure('管理服务正在关闭。', 503);
@@ -354,6 +355,13 @@ export class Manager extends EventEmitter {
         break;
       }
       case 'import-save': await this.restoreImported(payload.id, task); break;
+      case 'reset-save': {
+        this.requireResetAllowed(payload);
+        this.servicePhase('resetting', '正在清空全部世界、玩家存档及官方备份历史。');
+        task.removedEntries = await this.native.clearWorlds(() => this.requireResetAllowed(payload));
+        this.runtime.log('palbox', `重置存档完成：已清空 SaveGames/0 下的 ${task.removedEntries} 个顶层条目。\n`);
+        break;
+      }
       case 'save-world': await this.requireRunning(); await this.runtime.rest('save', {}); break;
       case 'announce':
         await this.requireRunning();
@@ -394,6 +402,10 @@ export class Manager extends EventEmitter {
     if (worlds.length === 1) return worlds[0];
     if (!worlds.length) return imported.worldId || randomUUID().replaceAll('-', '').toUpperCase();
     throw failure('无法确定当前世界，请先设置 DedicatedServerName 或只保留一个世界。', 409);
+  }
+  requireResetAllowed(payload) {
+    if (payload.confirmation !== 'delete') throw failure('请输入 delete 确认重置存档。', 400);
+    if (this.runtime.game) throw failure('请先停止游戏服务器，再重置存档。', 409);
   }
   async restoreImported(id, task) {
     const imported = await this.imports.get(id);

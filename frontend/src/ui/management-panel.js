@@ -80,7 +80,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   nativeSaves.className = 'management-panel save-management';
   nativeSaves.setAttribute('aria-labelledby', 'native-save-title');
   nativeSaves.innerHTML = `
-    <div class="management-heading"><h2 id="native-save-title">官方存档备份 <span id="native-backup-state" class="save-status" data-state="pending">读取中</span></h2><div class="management-actions"><button class="button secondary" data-action="import-save" disabled><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg>导入存档</button><button class="button primary" data-action="save-world" disabled>保存世界</button></div></div>
+    <div class="management-heading"><h2 id="native-save-title">官方存档备份 <span id="native-backup-state" class="save-status" data-state="pending">读取中</span></h2><div class="management-actions"><button class="button secondary" data-action="reset-save" title="仅在游戏服务器停止且没有任务执行时可重置存档" disabled><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>重置存档</button><button class="button secondary" data-action="import-save" disabled><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg>导入存档</button><button class="button primary" data-action="save-world" disabled>保存世界</button></div></div>
     <p class="management-note">游戏自动生成世界和玩家快照，下载无需停服；恢复前会备份当前数据并停服。</p>
     <div class="backup-policy"><p>保留策略：30 秒 5 份 · 10 分钟 6 份 · 1 小时 12 份 · 1 天 7 份</p><a class="button secondary" href="#configuration">备份配置 →</a></div>
     <div class="save-backup-toolbar"><span id="native-backup-summary" role="status">正在读取…</span><p id="native-backup-note" class="management-note"></p></div>
@@ -100,7 +100,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   document.querySelector('.bottom-note > span:last-child').textContent = '配置自动保存 · 应用后在游戏中生效';
   const actionButtons = [...section.querySelectorAll('[data-action]'), ...nativeSaves.querySelectorAll('[data-action]'), ...saves.querySelectorAll('[data-action]'), ...configurationApply.querySelectorAll('[data-action]')];
   actionButtons.forEach(button => { button.disabled = true; });
-  const names = { install: '安装服务端', start: '启动', stop: '停止', 'force-stop': '强制停止', restart: '重启', update: '更新服务端', apply: '应用配置', backup: '创建备份', 'delete-backup': '删除备份', restore: '恢复备份', 'restore-native': '恢复官方备份', 'import-save': '导入存档', 'save-world': '保存世界', announce: '发送广播', kick: '移出玩家', ban: '封禁玩家', unban: '解封玩家' };
+  const names = { install: '安装服务端', start: '启动', stop: '停止', 'force-stop': '强制停止', restart: '重启', update: '更新服务端', apply: '应用配置', backup: '创建备份', 'delete-backup': '删除备份', restore: '恢复备份', 'restore-native': '恢复官方备份', 'import-save': '导入存档', 'reset-save': '重置存档', 'save-world': '保存世界', announce: '发送广播', kick: '移出玩家', ban: '封禁玩家', unban: '解封玩家' };
   let refreshing = false;
   let pendingRefresh = null;
   let closeStatus = null;
@@ -141,18 +141,22 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     }
   }
   async function action(name, payload = {}, confirm = true) {
-    if (confirm && ['stop', 'force-stop', 'restart', 'update', 'apply', 'backup', 'restore', 'restore-native', 'kick'].includes(name)) {
+    if (confirm && ['stop', 'force-stop', 'restart', 'update', 'apply', 'backup', 'restore', 'restore-native', 'reset-save', 'kick'].includes(name)) {
       const descriptions = {
         apply: '将当前配置写入游戏。游戏服正在运行时会先存档、停服、备份，再应用并重启。',
         backup: '备份完整存档和配置。游戏服正在运行时会短暂停服，完成后重新启动。',
         restore: '用这份完整备份恢复游戏配置和世界存档。当前存档会先备份，面板中的配置预设保持不变。',
         'restore-native': '将当前世界和玩家存档恢复到所选官方备份。会先存档、停服并创建完整备份，保留当前配置及官方备份历史；原先运行的游戏服会重新启动。',
+        'reset-save': '将清空 Pal/Saved/SaveGames/0 下的全部内容，包括所有世界、玩家存档和该目录中的官方备份历史。不会自动创建备份；游戏配置和完整备份归档保留。必须先停止游戏服务器，完成后保持停服。',
         update: '先保存世界、停服并备份，再用 SteamCMD 更新。更新完成后恢复原来的运行状态。',
         stop: '保存世界后停止游戏服，管理面板继续运行。',
         'force-stop': '立即强制停止游戏服，可能丢失最近一次未保存的进度。仅在正常停止失败时使用。',
         restart: '保存世界并重启游戏服。', kick: '将选中的玩家移出游戏服。'
       };
-      if (!(await ask({ title: `${names[name]}？`, description: descriptions[name], confirm: names[name], danger: ['restore', 'restore-native', 'kick', 'force-stop'].includes(name), symbol: 'server' }))) return;
+      const confirmed = await ask({ title: `${names[name]}？`, description: descriptions[name], confirm: names[name], danger: ['restore', 'restore-native', 'reset-save', 'kick', 'force-stop'].includes(name), symbol: 'server',
+        ...(name === 'reset-save' ? { name: '', nameLabel: '输入 delete 确认删除', namePlaceholder: 'delete', nameMaxLength: 6, confirmation: 'delete' } : {}) });
+      if (!confirmed) return;
+      if (name === 'reset-save') payload = { ...payload, confirmation: confirmed };
     }
     try {
       if (name === 'apply') payload = { ...payload, ...await getConfiguration() };
@@ -531,6 +535,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       if (name === 'start') button.hidden = !value.installed || value.running;
       if (name === 'stop' || name === 'restart') button.hidden = !value.running;
       button.disabled = Boolean(value.task) || (name === 'install' && value.installed) || (['start', 'update', 'restart', 'import-save'].includes(name) && !value.installed) || (name === 'start' && value.running) || (['stop', 'force-stop', 'restart', 'save-world'].includes(name) && !value.running);
+      if (name === 'reset-save') button.disabled ||= value.running;
       if (name === 'backup') {
         const noSave = !value.hasWorldSave && !value.running;
         button.disabled ||= noSave;

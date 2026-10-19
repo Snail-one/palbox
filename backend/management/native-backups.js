@@ -33,6 +33,20 @@ export class NativeBackups {
     return (await readdir(root, { withFileTypes: true })).filter(entry => entry.isDirectory() && worldName.test(entry.name)).map(entry => entry.name);
   }
 
+  async clearWorlds(assertStopped) {
+    assertStopped();
+    let root;
+    try { root = await this.safeDirectory(['SaveGames', '0']); }
+    catch (error) { if (error.code === 'ENOENT') return 0; throw error; }
+    const entries = await readdir(root);
+    for (const name of entries) {
+      assertStopped();
+      // Remove links themselves; never follow them outside the save directory.
+      await rm(path.join(root, name), { recursive: true, force: true });
+    }
+    return entries.length;
+  }
+
   async configuredWorld() {
     let settings = '';
     try { settings = await readFile(path.join(this.saved, 'Config/LinuxServer/GameUserSettings.ini'), 'utf8'); }

@@ -7,12 +7,13 @@ const phases = {
   'force-stopping': ['强制停止中', '正在强制终止游戏服务。'],
   backing: ['备份中', '正在备份存档和配置。'],
   restoring: ['恢复中', '正在恢复世界和玩家存档。'],
+  resetting: ['重置存档中', '正在清空全部世界和玩家存档。'],
   applying: ['应用配置中', '正在将配置写入游戏文件。']
 };
 const actions = {
   install: 'installing', update: 'updating', stop: 'stopping', 'force-stop': 'force-stopping',
   backup: 'backing', restore: 'restoring', 'restore-native': 'restoring',
-  'import-save': 'restoring', apply: 'applying'
+  'import-save': 'restoring', 'reset-save': 'resetting', apply: 'applying'
 };
 const failureLabels = { install: '安装失败', update: '更新失败', start: '启动失败', restart: '重启失败' };
 
