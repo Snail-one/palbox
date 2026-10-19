@@ -4,6 +4,8 @@ import { Manager } from './management/manager.js';
 import { createManagementApi } from './management/api.js';
 import { logPolicyFromEnv } from './management/log-retention.js';
 
+process.env.TZ = 'UTC';
+
 function port(value, name) {
   if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 65535) throw new Error(`${name} 必须是 1 到 65535 的整数。`);
   return Number(value);

@@ -31,6 +31,11 @@ const MAX_GAME_ARGS_BYTES = 1800;
 const PORT_ARGUMENT = /(?:^|\s)-port(?:=|\s|$)/i;
 const DEFAULT_INSTALL_ARGS = Object.freeze(['+force_install_dir', '{server}', '+login', 'anonymous', '+app_update', '2394010', 'validate', '+quit']);
 
+function validBackupRetentions(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0
+    && Object.entries(value).every(([category, count]) => categories.includes(category) && Number.isInteger(count) && count >= 1 && count <= MAX_BACKUP_RETENTION);
+}
+
 // Accept a raw banlist line such as "steam_<ID>,<PlayerUID>" or a bare
 // 17-digit SteamID64 and reduce it to the UserID used by the REST API.
 function normalizeActionUserId(value) {
@@ -163,6 +168,7 @@ export class Manager extends EventEmitter {
     if (Object.hasOwn(admin, 'totp') && !validTotpRecord(admin.totp)) throw new Error(this.settingsError());
     // Accept the previous limit on disk, then migrate it to the current cap.
     if (!Number.isInteger(settings.backupRetention) || settings.backupRetention < 1 || settings.backupRetention > 100) throw new Error(this.settingsError());
+    if (Object.hasOwn(settings, 'backupRetentions') && !validBackupRetentions(settings.backupRetentions)) throw new Error(this.settingsError());
     if (Object.hasOwn(settings, 'autoStart') && typeof settings.autoStart !== 'boolean') throw new Error(this.settingsError());
     if (Object.hasOwn(settings, 'shutdownWait') && (!Number.isInteger(settings.shutdownWait) || settings.shutdownWait < 0 || settings.shutdownWait > 300)) {
       throw new Error(`settings.json 中的关服倒计时须为 0 到 300 的整数秒。请编辑 ${this.settingsFile} 修正 shutdownWait 后重新启动。`);
@@ -181,6 +187,7 @@ export class Manager extends EventEmitter {
   }
   needsSetup() { return this.setupRequired; }
   get backupRetention() { return this.settings?.backupRetention ?? 5; }
+  get backupRetentions() { return Object.fromEntries(categories.map(category => [category, this.settings?.backupRetentions?.[category] ?? this.backupRetention])); }
   get autoStart() { return this.settings?.autoStart === true; }
   get gameArgs() { return this.settings?.gameArgs ?? []; }
   get installArgs() { return this.settings?.installArgs ?? DEFAULT_INSTALL_ARGS; }
@@ -485,7 +492,7 @@ export class Manager extends EventEmitter {
       await rename(temporary, file);
     } finally { await rm(stage, { recursive: true, force: true }); }
     const list = (await this.backups()).filter(b => b.category === category);
-    for (const old of list.slice(this.backupRetention)) if (old.id !== protectedId) await this.deleteBackup(old.id);
+    for (const old of list.slice(this.backupRetentions[category])) if (old.id !== protectedId) await this.deleteBackup(old.id);
     return id;
   }
   backupFile(id) {
@@ -707,6 +714,7 @@ export class Manager extends EventEmitter {
   publicSettings() {
     return {
       backupRetention: this.backupRetention,
+      backupRetentions: this.backupRetentions,
       autoStart: this.autoStart,
       shutdownWait: this.shutdownWait,
       shutdownMessage: this.shutdownMessage,
@@ -740,16 +748,22 @@ export class Manager extends EventEmitter {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw failure('设置格式不正确。');
     if (Object.hasOwn(value, 'backupIntervalHours')) throw failure('面板定时备份已移除，请使用游戏官方自动备份。');
     const hasRetention = Object.hasOwn(value, 'backupRetention');
+    const hasRetentions = Object.hasOwn(value, 'backupRetentions');
     const hasAutoStart = Object.hasOwn(value, 'autoStart');
     const hasShutdownWait = Object.hasOwn(value, 'shutdownWait');
     const hasShutdownMessage = Object.hasOwn(value, 'shutdownMessage');
     const hasArgs = Object.hasOwn(value, 'gameArgs');
     const hasInstallArgs = Object.hasOwn(value, 'installArgs');
-    if (!hasRetention && !hasAutoStart && !hasShutdownWait && !hasShutdownMessage && !hasArgs && !hasInstallArgs) throw failure('请提供要保存的设置。');
+    if (!hasRetention && !hasRetentions && !hasAutoStart && !hasShutdownWait && !hasShutdownMessage && !hasArgs && !hasInstallArgs) throw failure('请提供要保存的设置。');
     const next = { ...this.settings, gameArgs: [...this.gameArgs], installArgs: [...this.installArgs] };
     if (hasRetention) {
       if (!Number.isInteger(value.backupRetention) || value.backupRetention < 1 || value.backupRetention > MAX_BACKUP_RETENTION) throw failure(`完整备份保留数量须为 1 到 ${MAX_BACKUP_RETENTION}。`);
       next.backupRetention = value.backupRetention;
+      next.backupRetentions = Object.fromEntries(categories.map(category => [category, value.backupRetention]));
+    }
+    if (hasRetentions) {
+      if (!validBackupRetentions(value.backupRetentions)) throw failure('备份分类无效，或保留数量不在 1 到 20 之间。');
+      next.backupRetentions = { ...(next.backupRetentions ?? this.backupRetentions), ...value.backupRetentions };
     }
     if (hasAutoStart) {
       if (typeof value.autoStart !== 'boolean') throw failure('自动启动设置必须为布尔值。');

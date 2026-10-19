@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { BACKUP_CATEGORIES } from '../../backend/management/backup-paths.js';
 import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdir, rm, readdir, symlink, copyFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -19,6 +20,8 @@ test('官方备份在线查看和下载不停止游戏，下载包包含世界�
   assert.equal(result.activeWorld, backup.worldId);
   assert.equal(result.backups.length, 1);
   assert.equal(result.backups[0].canRestore, true);
+  assert.equal(result.backups[0].createdAt, '2026-10-17T12:00:00.000Z');
+  assert.equal(result.backups[0].timestamp, backup.timestamp);
   const download = await f.request('/api/native-backup?id=' + encodeURIComponent(backup.id));
   assert.equal(download.status, 200);
   assert.match(download.headers.get('content-disposition'), /official-/);
@@ -119,7 +122,7 @@ test('旧定时计划自动移除，已有定时归档继续保留', async t => 
   const manager = new Manager({ directory: f.directory }); t.after(() => manager.close());
   await manager.initialize();
   assert.deepEqual(manager.publicSettings(), {
-    backupRetention: 5, autoStart: false, shutdownWait: 5, shutdownMessage: 'Palbox 正在维护服务器', gameArgs: [],
+    backupRetention: 5, backupRetentions: Object.fromEntries(BACKUP_CATEGORIES.map(category => [category, 5])), autoStart: false, shutdownWait: 5, shutdownMessage: 'Palbox 正在维护服务器', gameArgs: [],
     installArgs: ['+force_install_dir', path.join(f.directory, 'server'), '+login', 'anonymous', '+app_update', '2394010', 'validate', '+quit']
   });
   const migrated = JSON.parse(await readFile(settingsFile, 'utf8'));

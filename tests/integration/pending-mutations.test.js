@@ -37,6 +37,7 @@ for (const revoke of ['logout', 'rotation', 'password', 'username']) {
     const settings = await readFile(f.manager.settingsFile);
     const jobs = [
       ['/api/settings', { backupRetention: 7 }],
+      ['/api/settings', { backupRetentions: { manual: 8 } }],
       ['/api/workspace', snapshot],
       ['/api/tasks', { action: 'save-world' }, { method: 'POST' }],
       ['/api/security/password', { currentPassword: f.password, newPassword: 'new-management-password-456' }, { method: 'POST' }],

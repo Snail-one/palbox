@@ -85,7 +85,6 @@
 .management-panel label { font-size: 11px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .management-panel input, .management-panel select { border: 1px solid var(--line); border-radius: 5px; padding: 8px; min-width: 0; font: inherit; }
 .management-panel form { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin: 10px 0; }
-#backup-settings { margin: 0; }
 .save-management .management-heading { flex-wrap: wrap; }
 .task-history-dialog { width: min(760px, calc(100vw - 28px)); }
 .task-history-dialog .management-heading { align-items: center; }
@@ -100,10 +99,10 @@
 .backup-stat > span:first-child, .backup-retention-hint { font-size: 11px; color: var(--muted); }
 .backup-stat strong { font-size: 17px; font-weight: 650; }
 #save-backup-latest { font-size: 12px; overflow-wrap: anywhere; }
-#backup-settings { gap: 10px; align-items: center; padding-left: 20px; border-left: 1px solid var(--line); }
-#backup-settings > div { display: grid; gap: 4px; }
-#backup-settings label { margin: 0; }
-#backup-settings input { width: 62px; padding: 6px; text-align: center; font-variant-numeric: tabular-nums; }
+.save-management .backup-retention-settings { gap: 10px; align-items: center; margin: 0; padding: 12px 18px; border-top: 1px solid var(--line); background: #fafafa; }
+.backup-retention-settings label { margin: 0; gap: 7px; }
+.backup-retention-settings input { width: 60px; padding: 5px; text-align: center; font-variant-numeric: tabular-nums; }
+.backup-retention-settings .button { margin-left: auto; padding: 5px 12px; min-height: 32px; }
 .backup-status-note { display: flex; align-items: flex-start; gap: 7px; margin: 14px 0 20px; font-size: 11px; }
 .backup-status-note .icon { width: 14px; height: 14px; flex-shrink: 0; margin-top: 2px; }
 .backup-policy { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); }
@@ -138,7 +137,7 @@
 .backup-category-empty p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
 @media (max-width: 1100px) {
   .backup-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-  #backup-settings { grid-column: 1 / -1; justify-content: space-between; border-left: 0; border-top: 1px solid var(--line); padding: 14px 0 0; }
+  .backup-overview .backup-stat:last-child { grid-column: 1 / -1; }
 }
 @media (max-width: 760px) {
   #manager-backups { grid-template-columns: minmax(0, 1fr); gap: 14px; }
@@ -151,6 +150,9 @@
   .backup-category .backup-entry-info { grid-template-columns: 1fr auto; align-items: baseline; gap: 8px; }
   .backup-entry-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
   .backup-entry-actions .button { min-height: 40px; font-size: 11px; padding: 8px; }
+  .save-management .backup-retention-settings { padding: 12px 15px; }
+  .backup-retention-settings .backup-retention-hint { display: none; }
+  .backup-retention-settings .button, .backup-retention-settings input { min-height: 40px; }
 }
 #native-backups { margin-top: 12px; font-size: 11px; scroll-margin-top: 90px; }
 .backup-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }

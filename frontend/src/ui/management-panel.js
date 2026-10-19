@@ -4,6 +4,7 @@ import { formatBytes } from './format.js';
 import { gameServiceState } from './game-service-state.js';
 import { createRunningConfigPanel } from './running-config-panel.js';
 import { compactLogDisplay } from './log-display.js';
+import { createTimeFormatter } from './time.js';
 
 const BACKUP_GROUPS = {
   manual: '手动备份',
@@ -33,6 +34,7 @@ function uptimeLabel(seconds) {
 
 export function createManagementPanel({ dom, api, ask, notify, getConfiguration, onDefaultsImported, onWorkspaceChanged }) {
   const { $, document } = dom;
+  const timeFormat = createTimeFormatter();
   const NATIVE_BACKUP_PAGE_SIZE = 10;
   const section = document.createElement('section');
   section.className = 'game-service-toolbar';
@@ -109,8 +111,8 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   saves.className = 'management-panel save-management';
   saves.setAttribute('aria-labelledby', 'save-management-title');
   saves.innerHTML = `
-    <div class="management-heading backup-page-heading"><div><h2 id="save-management-title">完整备份</h2><p class="management-note">完整保留世界、玩家存档和游戏配置，按来源独立归档。</p></div><div class="management-actions"><button class="button primary" data-action="backup" disabled><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>创建完整备份</button></div></div>
-    <div class="backup-overview"><div class="backup-stat"><span>全部归档</span><strong id="save-backup-summary" role="status">正在读取…</strong></div><div class="backup-stat"><span>最近备份</span><span id="save-backup-latest">正在读取…</span></div><form id="backup-settings"><div><label>每类保留<input id="backup-retention" aria-label="每类完整备份保留数量" disabled type="number" min="1" max="20" required>份</label><span class="backup-retention-hint">各类独立计算 · 1–20 份</span></div><button class="button secondary" type="submit" disabled>保存设置</button></form></div>
+    <div class="management-heading backup-page-heading"><div><h2 id="save-management-title">完整备份</h2><p class="management-note">完整保留世界、玩家存档和游戏配置；时间按本地时区显示（${timeFormat.timeZone}）。</p></div><div class="management-actions"><button class="button primary" data-action="backup" disabled><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>创建完整备份</button></div></div>
+    <div class="backup-overview"><div class="backup-stat"><span>全部归档</span><strong id="save-backup-summary" role="status">正在读取…</strong></div><div class="backup-stat"><span>最近备份</span><span id="save-backup-latest">正在读取…</span></div><div class="backup-stat"><span>保留策略</span><span>各分类单独设置 · 每类最多 20 份</span></div></div>
     <p id="complete-backup-note" class="backup-status-note management-note"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><span id="complete-backup-status">创建手动备份前，请先停止游戏服务。</span></p>
     <div id="manager-backups">正在读取完整备份…</div>`;
   $('saves-archives').append(saves);
@@ -130,6 +132,8 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   const retiredStatusInstances = new Set();
   let settingsRequest = null;
   let settingsCache = null;
+  let backupRenderKey = null;
+  const backupRetentionDrafts = new Map();
   let checkingUpdate = false;
   let loadingBans = false;
   let lastBanError = '';
@@ -247,7 +251,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       const quoted = value.args.map(arg => /[\s"']/.test(arg) ? JSON.stringify(arg) : arg).join(' ');
       $('running-command').textContent = `PalServer.sh -port=${value.port}${quoted ? ' ' + quoted : ''}`;
       runningPanel.render(value.settings);
-      const started = value.startedAt ? ` 启动时间：${new Date(value.startedAt).toLocaleString()}。` : '';
+      const started = value.startedAt ? ` 启动时间：${timeFormat.dateTime(value.startedAt)}。` : '';
       $('running-config-state').textContent = `仅显示游戏 REST API 返回的配置字段。${started}`;
     } catch (caught) {
       if (!dialog.open || read !== runningRead) return;
@@ -274,10 +278,13 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   for (const button of actionButtons) button.addEventListener('click', () => button.dataset.action === 'import-save' ? saveImport.open() : action(button.dataset.action));
   async function loadBackups() {
     const backups = await api.request('backups');
+    const renderKey = JSON.stringify([backups, settingsCache?.backupRetentions, Boolean(lastStatus?.task)]);
+    if (renderKey === backupRenderKey) return;
     const totalBytes = backups.reduce((total, backup) => total + backup.bytes, 0);
     $('save-backup-summary').textContent = `${backups.length} 份 · ${formatBytes(totalBytes)}`;
     $('save-backup-summary').title = `${totalBytes} 字节`;
-    $('save-backup-latest').textContent = backups.length ? new Date(backups[0].createdAt).toLocaleString('zh-CN', { hour12: false }) : '尚无备份';
+    $('save-backup-latest').textContent = backups.length ? timeFormat.dateTime(backups[0].createdAt) : '尚无备份';
+    $('save-backup-latest').title = `本地时间（${timeFormat.timeZone}）`;
     $('manager-backups').replaceChildren();
     if (!backups.length) {
       const empty = document.createElement('p'); empty.className = 'backup-empty-summary'; empty.textContent = '暂无完整备份，创建或执行相关操作后会显示在对应分类中。'; $('manager-backups').append(empty);
@@ -306,27 +313,51 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
         const title = document.createElement('strong'); title.textContent = '暂无备份';
         const hint = document.createElement('p'); hint.textContent = emptyDescription; empty.append(title, hint); list.append(empty);
       }
-      group.append(list); groups.set(category, list); $('manager-backups').append(group);
+      const policy = document.createElement('form'); policy.className = 'backup-retention-settings'; policy.dataset.retentionCategory = category;
+      const retentionLabel = document.createElement('label'); retentionLabel.textContent = '保留';
+      const retentionInput = document.createElement('input'); retentionInput.type = 'number'; retentionInput.min = '1'; retentionInput.max = '20'; retentionInput.required = true;
+      retentionInput.id = `backup-retention-${category}`; retentionInput.setAttribute('aria-label', `${title}保留数量`);
+      retentionInput.value = backupRetentionDrafts.get(category) ?? settingsCache?.backupRetentions?.[category] ?? 5;
+      retentionInput.addEventListener('input', () => backupRetentionDrafts.set(category, retentionInput.value));
+      retentionLabel.append(retentionInput, '份');
+      const limit = document.createElement('span'); limit.className = 'backup-retention-hint'; limit.textContent = '最多 20 份';
+      const save = document.createElement('button'); save.type = 'submit'; save.className = 'button secondary'; save.textContent = '保存';
+      policy.append(retentionLabel, limit, save);
+      policy.addEventListener('submit', async event => {
+        event.preventDefault();
+        if (!policy.reportValidity()) return;
+        retentionInput.disabled = true; save.disabled = true;
+        try {
+          const saved = await api.request('settings', { method: 'PUT', body: { backupRetentions: { [category]: Number(retentionInput.value) } } });
+          settingsCache = { ...saved, backupRetentions: { ...settingsCache?.backupRetentions, [category]: saved.backupRetentions[category] } };
+          backupRetentionDrafts.delete(category); backupRenderKey = null;
+          notify(`${title}保留数量已保存`);
+          await loadBackups();
+        } catch (caught) { error(caught.message); }
+        finally { retentionInput.disabled = false; save.disabled = false; }
+      });
+      group.append(list, policy); groups.set(category, list); $('manager-backups').append(group);
     }
     for (const backup of backups) {
       const row = document.createElement('div'); row.className = 'backup-row'; row.dataset.backupId = backup.id;
       const label = document.createElement('span'); label.className = 'backup-entry-info';
       const category = BACKUP_GROUPS[backup.category];
-      const created = new Date(backup.createdAt);
-      const date = document.createElement('time'); date.dateTime = backup.createdAt; date.textContent = created.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
-      const meta = document.createElement('span'); meta.className = 'backup-entry-meta'; meta.textContent = `${created.toLocaleTimeString('zh-CN', { hour12: false })} · ${formatBytes(backup.bytes)}`;
+      const date = document.createElement('time'); date.dateTime = backup.createdAt; date.textContent = timeFormat.date(backup.createdAt);
+      date.title = `本地时间（${timeFormat.timeZone}），原始时间 ${backup.createdAt}`;
+      const meta = document.createElement('span'); meta.className = 'backup-entry-meta'; meta.textContent = `${timeFormat.time(backup.createdAt)} · ${formatBytes(backup.bytes)}`;
       label.append(date, meta);
       label.title = `${backup.bytes} 字节`;
       const download = document.createElement('a'); download.className = 'button secondary'; download.textContent = '下载'; download.href = `/api/backup?id=${encodeURIComponent(backup.id)}`; download.setAttribute('download', '');
       const restore = document.createElement('button'); restore.className = 'button secondary'; restore.textContent = '恢复'; restore.disabled = Boolean(lastStatus?.task); restore.addEventListener('click', () => action('restore', { id: backup.id }));
       const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'button secondary danger-hover'; remove.textContent = '删除'; remove.disabled = Boolean(lastStatus?.task);
       remove.addEventListener('click', async () => {
-        const confirmed = await ask({ title: '删除这份完整备份？', description: `${new Date(backup.createdAt).toLocaleString()} · ${category} · ${formatBytes(backup.bytes)}。确认后永久删除这份归档，无法撤销。当前游戏存档保持不变。`, confirm: '删除备份', danger: true, symbol: 'trash' });
+        const confirmed = await ask({ title: '删除这份完整备份？', description: `${timeFormat.dateTime(backup.createdAt)} · ${category} · ${formatBytes(backup.bytes)}。确认后永久删除这份归档，无法撤销。当前游戏存档保持不变。`, confirm: '删除备份', danger: true, symbol: 'trash' });
         if (confirmed) await action('delete-backup', { id: backup.id }, false);
       });
       const actions = document.createElement('div'); actions.className = 'backup-entry-actions'; actions.append(download, restore, remove);
       row.append(label, actions); groups.get(backup.category).append(row);
     }
+    backupRenderKey = renderKey;
   }
   async function loadNativeBackups() {
     const value = await api.request('native-backups');
@@ -348,8 +379,8 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     for (const backup of value.backups.slice(start, start + NATIVE_BACKUP_PAGE_SIZE)) {
       const row = document.createElement('div'); row.className = 'backup-row';
       const label = document.createElement('span');
-      label.textContent = `${backup.timestamp} · 世界 ${backup.worldId} · ${formatBytes(backup.bytes)}`;
-      label.title = `${backup.bytes} 字节`;
+      label.textContent = `${timeFormat.dateTime(backup.createdAt)} · 世界 ${backup.worldId} · ${formatBytes(backup.bytes)}`;
+      label.title = `${backup.bytes} 字节 · 本地时间（${timeFormat.timeZone}） · 原始目录 ${backup.timestamp}`;
       const download = document.createElement('a'); download.className = 'button secondary'; download.textContent = '下载'; download.href = `/api/native-backup?id=${encodeURIComponent(backup.id)}`; download.setAttribute('download', '');
       const restore = document.createElement('button'); restore.className = 'button secondary'; restore.textContent = '恢复'; restore.disabled = Boolean(lastStatus?.task) || !backup.canRestore;
       if (!backup.canRestore) restore.title = '只能恢复已确认的当前世界备份';
@@ -420,7 +451,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     $('manager-log-status').textContent = '正在连接实时日志…';
     logHistory = api.watchLogHistory(logChannel, {
       onOpen() {
-        if (generation === logGeneration) $('manager-log-status').textContent = '日志实时更新，断线后自动重连；向上滚动可查看历史。';
+        if (generation === logGeneration) $('manager-log-status').textContent = `日志实时更新，断线后自动重连；时间为本地时间（${timeFormat.timeZone}）。`;
       },
       onLog(text) { if (generation === logGeneration) renderLogs(text); },
       onState(state) {
@@ -460,7 +491,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     for (const task of tasks.slice(0, 20)) {
       const row = document.createElement('div'); row.className = 'backup-row';
       const text = document.createElement('span');
-      text.textContent = `${new Date(task.createdAt).toLocaleString()} · ${names[task.action] || task.action} · ${states[task.state] || task.state} · ${task.message}`;
+      text.textContent = `${timeFormat.dateTime(task.createdAt)} · ${names[task.action] || task.action} · ${states[task.state] || task.state} · ${task.message}`;
       row.append(text); list.append(row);
     }
   }
@@ -519,7 +550,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
         details.append(note);
       }
       if (player.bannedAt) {
-        const time = document.createElement('span'); time.textContent = `封禁时间：${new Date(player.bannedAt).toLocaleString()}`;
+        const time = document.createElement('span'); time.textContent = `封禁时间：${timeFormat.dateTime(player.bannedAt)}`;
         details.append(time);
       }
       const button = document.createElement('button'); button.className = 'button secondary'; button.textContent = '解封'; button.disabled = disabled;
@@ -690,11 +721,9 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   });
   function loadSettings() {
     settingsRequest ??= api.request('settings').then(settings => {
-      $('backup-retention').value = settings.backupRetention;
       $('auto-start').checked = Boolean(settings.autoStart);
       $('auto-start').disabled = false;
       settingsCache = settings;
-      $('backup-settings').querySelectorAll('input, button').forEach(control => { control.disabled = false; });
       $('edit-game-args').disabled = false;
       $('edit-install-args').disabled = false;
       $('edit-shutdown-wait').disabled = false;
@@ -729,11 +758,6 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       checkingUpdate = false;
       $('check-update').disabled = !lastStatus?.installed || Boolean(lastStatus?.task);
     }
-  });
-  $('backup-settings').addEventListener('submit', async event => {
-    event.preventDefault();
-    try { await api.request('settings', { method: 'PUT', body: { backupRetention: Number($('backup-retention').value) } }); notify('完整备份保留设置已保存'); }
-    catch (caught) { error(caught.message); }
   });
   $('auto-start').addEventListener('change', async event => {
     const control = event.currentTarget;

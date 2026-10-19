@@ -144,6 +144,20 @@ test('自动保护备份跳过空目录，但保留已有游戏配置的恢复�
   await assert.rejects(manager.submit('backup'), /尚无可备份的世界存档/);
 });
 
+test('不同分类按各自保留数量清理，互不占用名额', async t => {
+  const { manager, runtime } = await fixture(t);
+  const world = path.join(runtime.saved, 'SaveGames/0/WORLD1');
+  await mkdir(world, { recursive: true });
+  await writeFile(path.join(world, 'Level.sav'), 'world-data');
+  await manager.setupAdmin('admin', 'test-backup-password');
+  const counts = { manual: 1, 'before-restore': 2, 'before-import': 3, 'before-reset': 4 };
+  await manager.updateSettings({ backupRetentions: counts });
+  for (const category of Object.keys(counts)) for (let index = 0; index < 5; index++) await manager.backup(category);
+  const archives = await manager.backups();
+  for (const [category, count] of Object.entries(counts)) assert.equal(archives.filter(archive => archive.category === category).length, count);
+  assert.equal(archives.length, 10);
+});
+
 test('备份期间存档消失不能显示成功，也不清理已有归档', async t => {
   const { manager, runtime, directory } = await fixture(t);
   const world = path.join(runtime.saved, 'SaveGames/0/WORLD1');

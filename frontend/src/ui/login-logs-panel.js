@@ -1,12 +1,11 @@
+import { createTimeFormatter } from './time.js';
+
 export function createLoginLogsPanel({ dom, api, window }) {
   const { $, document, el } = dom;
   const content = $('login-log-content');
   const status = $('login-log-status');
-  const timeFormat = new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
-  });
-  const timeZone = timeFormat.resolvedOptions().timeZone;
+  const timeFormat = createTimeFormatter();
+  const timeZone = timeFormat.timeZone;
   let closeLogs = null;
   let generation = 0;
   let pageActive = true;
@@ -54,7 +53,7 @@ export function createLoginLogsPanel({ dom, api, window }) {
       const row = el('tr');
       const utc = timestamp?.[1].match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?) UTC$/);
       const date = utc ? new Date(`${utc[1]}T${utc[2]}Z`) : null;
-      const time = el('td', 'login-log-time', date && !Number.isNaN(date.getTime()) ? timeFormat.format(date) : timestamp?.[1] || '—');
+      const time = el('td', 'login-log-time', date && !Number.isNaN(date.getTime()) ? timeFormat.dateTime(date) : timestamp?.[1] || '—');
       if (timestamp) time.title = timestamp[1];
       const result = el('td', 'login-log-result');
       const state = record ? { 登录成功: 'success', 登录失败: 'failure', 登录尝试过于频繁: 'limited' }[record[1]] : 'unknown';

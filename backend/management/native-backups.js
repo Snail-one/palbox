@@ -121,7 +121,10 @@ export class NativeBackups {
         if (!entry.isDirectory() || !snapshotName.test(entry.name)) continue;
         try {
           const backup = await this.get(`${worldId}/${entry.name}`);
-          backups.push({ id: backup.id, worldId, timestamp: entry.name, bytes: backup.bytes, canRestore: worldId === activeWorld });
+          // Managed game processes run in UTC; keep the original name for IDs/downloads.
+          const date = new Date(`${entry.name.slice(0, 10).replaceAll('.', '-')}T${entry.name.slice(11).replaceAll('.', ':')}Z`);
+          if (Number.isNaN(date.getTime())) continue;
+          backups.push({ id: backup.id, worldId, timestamp: entry.name, createdAt: date.toISOString(), bytes: backup.bytes, canRestore: worldId === activeWorld });
         } catch (error) {
           // Snapshots can disappear during the game's normal rotation, or still be incomplete.
           if (error.code !== 'ENOENT' && !error.status) throw error;

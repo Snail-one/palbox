@@ -122,7 +122,7 @@ export class Runtime extends EventEmitter {
     });
   }
   childEnvironment() {
-    const env = { ...process.env };
+    const env = { ...process.env, TZ: 'UTC' };
     delete env.PALBOX_ADMIN_PASSWORD;
     delete env.PALBOX_ADMIN_PASSWORD_FILE;
     return env;

@@ -47,6 +47,7 @@ services:
     environment:
       # 首次打开网页时创建面板管理员，无需在此配置登录密码。
       PALBOX_GAME_PORT: "8211"
+      TZ: "UTC"
       PALBOX_SECURE_COOKIE: "false"
       PALBOX_TRUSTED_PROXIES: "172.30.83.2"
       # 每个日志文件的 MiB 上限、历史份数、未更新文件的保留天数。

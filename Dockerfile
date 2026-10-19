@@ -7,7 +7,7 @@ FROM debian:13-slim AS backend
 ARG TARGETARCH
 ARG DEBIAN_FRONTEND=noninteractive
 
-ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8 TZ=UTC
 
 # 保留下载、SteamCMD、游戏目录查询、Node.js、入口脚本及 TZ 所需的运行依赖。
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
@@ -63,7 +63,7 @@ WORKDIR /app
 COPY package.json ./
 COPY frontend ./frontend
 COPY shared ./shared
-ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080 PALBOX_API_URL=http://palbox:8081
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080 PALBOX_API_URL=http://palbox:8081 TZ=UTC
 USER node
 EXPOSE 8080/tcp
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
