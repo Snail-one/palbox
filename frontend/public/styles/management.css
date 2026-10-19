@@ -24,9 +24,16 @@
 .configuration-tools .button + .button { border-left: 1px solid var(--line); border-radius: 0; }
 .configuration-tools .button:hover { background: var(--accent-soft); color: var(--accent); }
 .configuration-tools .icon { width: 14px; height: 14px; flex-shrink: 0; }
-#manager-logout { width: 100%; justify-content: flex-start; gap: 9px; min-height: 38px; margin-top: 14px; padding: 8px 4px; border-color: transparent; background: transparent; box-shadow: none; color: var(--muted); font-size: 11px; }
-#manager-logout .icon { width: 14px; height: 14px; }
-#manager-logout:hover { color: var(--red); background: #fcf0ef; border-color: #f2d9d6; }
+.sidebar-account-actions { margin-top: 12px; }
+.sidebar-account-actions .button, .sidebar-bottom > .docs-link { display: flex; align-items: center; justify-content: flex-start; width: 100%; min-width: 0; min-height: 44px; gap: 9px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; box-shadow: none; font-size: 11px; }
+.sidebar-bottom > .docs-link { margin-top: 8px; }
+.sidebar-account-actions .icon, .sidebar-bottom > .docs-link > .icon { width: 14px; height: 14px; flex-shrink: 0; }
+.sidebar-account-actions .button:hover, .sidebar-bottom > .docs-link:hover { color: var(--accent); background: var(--accent-soft); }
+.account-session-actions { display: flex; justify-content: flex-end; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line); }
+.account-session-actions #manager-logout { color: var(--red); }
+.account-session-actions #manager-logout:hover { background: #fcf0ef; border-color: #f2d9d6; }
+.account-section-title { margin-top: 18px; font-size: 13px; }
+.security-qr { display: block; width: min(256px, 100%); height: auto; aspect-ratio: 1; margin: 16px auto; background: #fff; }
 .server-heading-actions { flex-shrink: 0; }
 .server-primary-actions { display: contents; }
 .server-primary-actions [data-action="stop"] { background: var(--red); border-color: var(--red); color: #fff; }
@@ -178,3 +185,12 @@ main:has(#game-page:not([hidden])), main:has(#login-logs-page:not([hidden])) { d
   .game-service-toolbar .server-primary-actions .button { flex: 1 1 auto; min-width: 80px; }
   .management-heading > .button { flex-shrink: 0; font-size: 10px; padding: 7px; }
 }
+
+#login-password-step, #login-totp-step { display: grid; gap: 12px; }
+#login-totp-step input, #security-code { font-family: var(--mono); letter-spacing: .12em; }
+.security-account { display: grid; gap: 6px; margin: 16px 0; }
+.security-account dt { font-size: 12px; }
+.security-account dd { margin: 0 0 10px; overflow-wrap: anywhere; }
+#security-secret { display: block; font-family: var(--mono); padding: 12px; margin-bottom: 8px; background: var(--input-bg); border-radius: 6px; user-select: all; }
+.security-recovery-codes { padding: 16px; background: var(--input-bg); border-radius: 6px; font-family: var(--mono); line-height: 1.9; overflow-wrap: anywhere; white-space: pre-wrap; user-select: all; }
+.account-security-dialog p { margin: 12px 0; font-size: 12px; }

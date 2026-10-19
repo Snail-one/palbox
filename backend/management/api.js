@@ -42,6 +42,7 @@ export async function body(request, limit = 8 * 1024 * 1024, timeoutMs = DEFAULT
 export function createManagementApi(manager, options = {}) {
   const auth = new Authentication(() => manager.settings?.admin ?? null, {
     ...options,
+    updateAdmin: change => manager.updateAdmin(change),
     log: options.log ?? (text => manager.runtime.log('login', text))
   });
   return async function api(request, response, pathname) {
@@ -74,7 +75,21 @@ export function createManagementApi(manager, options = {}) {
         const input = await body(request, 4096, AUTH_BODY_TIMEOUT_MS);
         json(200, await auth.login(request, input.username, input.password, response)); return;
       }
+      if (pathname === '/api/login/totp' && request.method === 'POST') {
+        auth.verifyOrigin(request);
+        json(200, await auth.completeLogin(request, await body(request, 4096, AUTH_BODY_TIMEOUT_MS), response)); return;
+      }
       auth.require(request, !['GET', 'HEAD'].includes(request.method));
+      if (pathname === '/api/security/totp' && request.method === 'GET') {
+        json(200, auth.securityStatus()); return;
+      }
+      if (['/api/security/totp/setup', '/api/security/totp/enable', '/api/security/totp/disable', '/api/security/totp/recovery-codes'].includes(pathname) && request.method === 'POST') {
+        const input = await body(request, 4096, AUTH_BODY_TIMEOUT_MS);
+        if (pathname.endsWith('/setup')) json(200, await auth.beginEnrollment(request, input.password, response));
+        else if (pathname.endsWith('/enable')) json(200, await auth.confirmEnrollment(request, input.code, response));
+        else json(200, await auth.changeSecurity(request, input, response, pathname.endsWith('/disable')));
+        return;
+      }
       if (pathname === '/api/configuration-template' && request.method === 'GET') {
         json(200, await manager.store.newConfigurationTemplate()); return;
       }

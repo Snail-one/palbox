@@ -88,11 +88,6 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     <div id="manager-backups">正在读取完整备份…</div>`;
   $('saves-archives').append(saves);
   const configurationApply = $('configuration-apply');
-  const logout = document.createElement('button');
-  logout.id = 'manager-logout'; logout.className = 'button secondary'; logout.type = 'button';
-  logout.setAttribute('aria-label', '退出登录'); logout.title = '退出当前登录';
-  logout.append(dom.icon('logout'), document.createTextNode('退出'));
-  document.querySelector('.sidebar-bottom .docs-link').before(logout);
   document.querySelector('.bottom-note > span:last-child').textContent = '配置自动保存 · 应用后在游戏中生效';
   const actionButtons = [...section.querySelectorAll('[data-action]'), ...nativeSaves.querySelectorAll('[data-action]'), ...saves.querySelectorAll('[data-action]'), ...configurationApply.querySelectorAll('[data-action]')];
   actionButtons.forEach(button => { button.disabled = true; });
@@ -616,10 +611,6 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     const userid = await ask({ title: '解封玩家', description: '输入要解封的玩家 UserID（通常以 steam_ 开头）。', name: '', nameLabel: '玩家 UserID', namePlaceholder: 'steam_...', nameMaxLength: 200, required: true, confirm: '解封', symbol: 'user' });
     if (userid === null) return;
     action('unban', { userid }, false);
-  });
-  $('manager-logout').addEventListener('click', async () => {
-    try { await getConfiguration(); await api.request('logout', { method: 'POST', body: {} }); document.location.assign('/login.html'); }
-    catch (caught) { error(caught.message); }
   });
   let timer = setInterval(refresh, 5000);
   document.addEventListener('visibilitychange', refresh);

@@ -10,6 +10,7 @@ import { createImportDialog } from './ui/import-dialog.js';
 import { createNavigation } from './ui/navigation.js';
 import { createManagementPanel } from './ui/management-panel.js';
 import { createLoginLogsPanel } from './ui/login-logs-panel.js';
+import { createAccountSecurity } from './ui/account-security.js';
 
 /** Composition root: connect UI callbacks to domain/application services. */
 export function createApp({ document, window, catalog, repository, clipboard, files, management }) {
@@ -184,6 +185,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
     return { profileId: workspace.active?.id, revision: repository.revision };
   } });
   createLoginLogsPanel({ dom, api: management, window });
+  createAccountSecurity({ dom, api: management, clipboard, notify: notifications.toast });
   repository.subscribe?.(() => {
     notifications.storage(repository.error || workspace.message);
     summary.render();

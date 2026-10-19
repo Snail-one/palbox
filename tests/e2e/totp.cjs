@@ -1,0 +1,103 @@
+'use strict';
+const { chromium } = require('playwright');
+const assert = require('node:assert/strict');
+
+(async () => {
+  const { managementFixture } = await import('../helpers/management-fixture.js');
+  const { totpCode } = await import('../../backend/management/totp.js');
+  const f = await managementFixture({ editable: false, officialDefaults: false });
+  let browser;
+  try {
+    browser = await chromium.launch({ headless: true });
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    const logout = async () => {
+      if (!(await page.locator('#account-security-dialog').isVisible())) await page.locator('#account-security').click();
+      await page.locator('#manager-logout').click();
+    };
+    const loginPassword = async () => {
+      await page.locator('#login-username').fill(f.username);
+      await page.locator('#login-password').fill(f.password);
+      await page.locator('#login-submit').click();
+    };
+    await page.goto(f.base);
+    await page.waitForURL('**/login.html');
+    await loginPassword();
+    await page.waitForURL(f.base + '/');
+    await page.locator('#account-security').click();
+    await page.waitForFunction(() => document.getElementById('security-submit').textContent === '开始绑定验证器');
+    await page.locator('#security-password').fill('wrong-password');
+    await page.locator('#security-submit').click();
+    await page.locator('#security-error').waitFor();
+    await page.locator('#security-password').fill(f.password);
+    await page.locator('#security-submit').click();
+    await page.locator('#security-setup').waitFor();
+    await page.locator('#security-qr').waitFor();
+    await page.waitForFunction(() => document.getElementById('security-qr').naturalWidth > 0);
+    assert.ok((await page.locator('#security-qr').getAttribute('src')).startsWith('data:image/svg+xml;'));
+    const secret = await page.locator('#security-secret').textContent();
+    assert.match(secret, /^[A-Z2-7]{32}$/);
+    assert.equal(f.manager.settings.admin.totp, undefined);
+    await page.locator('#security-code').fill(totpCode(secret, Math.floor(Date.now() / 30000) - 1));
+    await page.locator('#security-submit').click();
+    await page.locator('#security-recovery').waitFor();
+    const codes = (await page.locator('#security-recovery-codes').textContent()).split('\n');
+    assert.equal(codes.length, 10);
+    assert.equal(await page.locator('#security-secret').textContent(), '');
+    assert.equal(await page.locator('#security-qr').getAttribute('src'), null);
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#account-security-dialog').isVisible(), true);
+    await page.locator('#security-saved').click();
+    assert.equal(await page.locator('#security-recovery-codes').textContent(), '');
+    console.log('PASS 未安装游戏也可绑定验证器，确认动态码后启用并显示一次性恢复码');
+
+    await logout();
+    await page.waitForURL('**/login.html');
+    await loginPassword();
+    await page.locator('#login-totp-step').waitFor();
+    assert.equal((await context.cookies()).some(cookie => cookie.name === 'palbox_session'), false);
+    assert.equal((await context.request.get(f.base + '/api/workspace')).status(), 401);
+    await page.locator('#login-code').fill(totpCode(secret, Math.floor(Date.now() / 30000)));
+    await page.locator('#login-submit').click();
+    await page.waitForURL(f.base + '/');
+    console.log('PASS 密码通过后仍无法访问面板，完成 TOTP 验证才建立会话');
+
+    await logout();
+    await page.waitForURL('**/login.html');
+    await loginPassword();
+    await page.locator('#login-totp-step').waitFor();
+    await page.locator('#login-use-recovery').click();
+    await page.locator('#login-code').fill(codes[0]);
+    await page.locator('#login-submit').click();
+    await page.waitForURL(f.base + '/');
+    await page.locator('#account-security').click();
+    await page.waitForFunction(() => document.getElementById('security-status').textContent.includes('剩余 9 个恢复码'));
+    await page.locator('#security-password').fill(f.password);
+    await page.locator('#security-code').fill(codes[1]);
+    await page.locator('#security-regenerate').click();
+    await page.locator('#security-recovery').waitFor();
+    const renewed = (await page.locator('#security-recovery-codes').textContent()).split('\n');
+    assert.equal(renewed.length, 10);
+    assert.notDeepEqual(renewed, codes);
+    await page.locator('#security-saved').click();
+    await page.locator('#account-security').click();
+    await page.waitForFunction(() => document.getElementById('security-submit').textContent === '关闭二次验证');
+    await page.locator('#security-password').fill(f.password);
+    await page.locator('#security-code').fill(renewed[0]);
+    await page.locator('#security-submit').click();
+    await page.waitForFunction(() => document.getElementById('security-status').textContent.includes('二次验证未启用'));
+    assert.equal(f.manager.settings.admin.totp, undefined);
+    await page.locator('#security-close').click();
+    await logout();
+    await page.waitForURL('**/login.html');
+    await loginPassword();
+    await page.waitForURL(f.base + '/');
+    assert.deepEqual(errors, []);
+    console.log('PASS 恢复码登录、重新生成恢复码、验证后关闭，以及原密码登录兼容');
+  } finally {
+    await browser?.close();
+    await f.close();
+  }
+})().catch(error => { console.error(error); process.exitCode = 1; });

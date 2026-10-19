@@ -10,6 +10,7 @@ import { readBanList } from './banned-players.js';
 import { ManagementStore } from './store.js';
 import { atomicWrite, readJson, jsonWrite, failure } from './files.js';
 import { normalizeUsername, passwordRecord, validUsername } from './auth.js';
+import { validTotpRecord } from './totp.js';
 import { EditorSession } from '../../shared/domain/editor-session.js';
 import { createCatalog } from '../../shared/domain/catalog.js';
 import { parse, decodeString } from '../../shared/domain/config.js';
@@ -149,6 +150,7 @@ export class Manager {
     if (!admin || typeof admin !== 'object' || Array.isArray(admin)
       || admin.username !== normalizeUsername(admin.username) || !validUsername(admin.username)
       || !/^[a-f0-9]{128}$(?![\s\S])/.test(admin.hash || '') || !/^[a-f0-9]+$(?![\s\S])/.test(admin.salt || '')) throw new Error(this.settingsError());
+    if (Object.hasOwn(admin, 'totp') && !validTotpRecord(admin.totp)) throw new Error(this.settingsError());
     if (!Number.isInteger(settings.backupRetention) || settings.backupRetention < 1 || settings.backupRetention > 100) throw new Error(this.settingsError());
     if (Object.hasOwn(settings, 'autoStart') && typeof settings.autoStart !== 'boolean') throw new Error(this.settingsError());
     if (Object.hasOwn(settings, 'shutdownWait') && (!Number.isInteger(settings.shutdownWait) || settings.shutdownWait < 0 || settings.shutdownWait > 300)) {
@@ -660,6 +662,18 @@ export class Manager {
       gameArgs: [...this.gameArgs],
       installArgs: this.installArgs.map(arg => arg === '{server}' ? this.runtime.server : arg)
     };
+  }
+  updateAdmin(change) {
+    const operation = this.settingsUpdates.then(async () => {
+      if (this.setupRequired) throw failure('请先完成管理员初始化。', 409);
+      const admin = change(structuredClone(this.settings.admin));
+      const next = { ...this.settings, admin };
+      this.validateSettings(next);
+      await jsonWrite(this.settingsFile, next);
+      this.settings = next;
+    });
+    this.settingsUpdates = operation.catch(() => {});
+    return operation;
   }
   updateSettings(value) {
     const update = this.settingsUpdates.then(() => this.applySettings(value));

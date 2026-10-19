@@ -84,3 +84,13 @@ flowchart TD
 原有编辑器只处理预设和草稿；游戏配置的写入必须经过管理任务。`frontend/src/ui/management-panel.js` 通过注入的 API 客户端展示状态、任务、日志、备份和玩家操作。服务端数据位于 `/data`，具体结构见 [Docker 文档](docker.md)。
 
 `banned-players.js` 优先解析部分新版本的 `Pal/Saved/SaveGames/Config/banlist.json`；该路径不存在时自动回退旧版 `Pal/Saved/SaveGames/banlist.txt`（两种路径都可能因服务端版本不同而不存在，属正常情况），兼容 `steam_<ID>,<PlayerUID>` 迁移格式，检查发布目录边界与文件大小，合并重复 ID 并报告无法识别的记录；`GET /api/banned-players` 需要登录，停服时也可读取。名单以游戏文件为准，不依赖有限的面板任务历史推断封禁状态；新版游戏停服时才写回名单，因此近期成功的面板封禁/解封任务会与文件快照合并，保证运行中刚封禁的玩家立即可见并可解封；任务记录同时用于补充昵称、理由与时间。解封沿用串行任务和官方 REST API，只有真实调用成功才标记任务完成。界面区分在线与封禁列表、空状态和读取失败，解封须确认；服务卡片保留常用操作，维护参数、更新和强制停止折叠展示。
+
+## TOTP 二次验证
+
+`backend/management/totp.js` 使用 Node.js crypto 实现 RFC 4226/6238 的 SHA-1、6 位验证码和 30 秒步长；校验接受前后各一个时间步，最近已使用的步号持久化，拒绝重放。恢复码使用独立随机数，服务器只保存 SHA-256 摘要，每个仅能使用一次。密钥及消费状态位于 `settings.json` 的 `admin.totp`；账号写入与普通设置共用串行队列和原子替换，避免并发登录重复消费或设置更新覆盖验证码状态。已有配置缺少此字段时保持密码登录，字段损坏时拒绝启动。
+
+密码校验成功且启用 TOTP 时，`/api/login` 只返回 5 分钟有效、绑定客户端地址和账号验证设置的一次性挑战；`/api/login/totp` 验证成功后才发放完整会话。挑战最多允许 5 次失败，二次验证与密码使用同一套 IP 冷却计数，成功验证密码不会清除第二因素失败次数。启用、关闭或重新生成恢复码均要求已登录、来源和 CSRF 校验；绑定先再次验证密码，再确认一次动态码，其他安全更改要求密码与第二因素。更改后保留当前已经验证的会话，使其他设备会话和未完成挑战失效。
+
+`frontend/src/ui/account-security.js` 提供侧栏「账号」弹窗，支持二维码扫码或手动密钥绑定、一次性恢复码展示和复制、恢复码更新及关闭，退出登录也位于账号弹窗底部；`frontend/src/login.js` 管理密码、动态码与恢复码的分步登录。绑定二维码、密钥和恢复码在弹窗关闭后从 DOM 清除；秘密不交给第三方服务。TOTP 算法与配置格式以 RFC 测试向量和实际 HTTP、浏览器流程验证。
+
+二维码由 `frontend/src/ui/totp-qr.js` 按验证器的 `otpauth://totp/` URI 格式编码，使用固定版本的 [qrcode-generator 2.0.4](https://github.com/kazuhikoarase/qrcode-generator/tree/js2.0.4) 在浏览器本地生成 SVG 图片，保留原始 MIT 许可证于 `frontend/src/ui/vendor`，不依赖 CDN 或第三方二维码服务。
