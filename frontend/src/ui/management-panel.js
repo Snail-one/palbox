@@ -28,6 +28,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
         <button class="button primary" data-action="install" hidden>安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop" hidden>停止</button><button class="button secondary" data-action="restart" hidden>重启</button>
         <button class="button secondary" data-action="force-stop" title="仅在正常停止无效时使用，可能丢失最近一次未保存的进度。">强制停止</button><button class="button secondary" data-action="update" title="更新前会自动备份，运行中的游戏服务将短暂停服。">更新服务端</button><button class="button secondary" id="show-running-config" disabled>运行参数</button><button class="button secondary" id="edit-game-args" disabled>启动参数</button><button class="button secondary" id="edit-install-args" disabled>安装参数</button><button class="button secondary" id="edit-shutdown-wait" title="设置关服倒计时和游戏内提示文字" disabled>关服设置</button>
     </div>
+    <button type="button" id="refresh-status" class="button secondary" title="读取当前页面所需的最新状态">刷新状态</button>
     <button type="button" id="show-task-history" class="button secondary" aria-haspopup="dialog" aria-controls="task-history">任务记录</button>`;
   $('game-actions').append(section);
   const metrics = document.createElement('section');
@@ -46,15 +47,23 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   logs.id = 'game-logs';
   logs.className = 'management-panel';
   logs.setAttribute('aria-label', '运行日志');
-  logs.innerHTML = `<div class="management-heading log-heading"><h2>运行日志</h2><div class="log-controls"><div class="segmented log-type-buttons" id="manager-log-channel" role="group" aria-label="日志类型"><button type="button" class="selected" data-log-channel="all" aria-pressed="true">全部日志</button><button type="button" data-log-channel="game" aria-pressed="false">游戏日志</button><button type="button" data-log-channel="steamcmd" aria-pressed="false">安装与更新</button><button type="button" data-log-channel="palbox" aria-pressed="false">面板日志</button></div><label class="log-toggle" title="显示面板每 5 秒状态轮询产生的 REST 访问记录"><input type="checkbox" role="switch" class="sr-only" id="show-polling-logs"><span class="toggle" aria-hidden="true"></span><span>显示状态轮询</span></label></div></div><p id="manager-log-status" class="management-note" role="status">正在连接实时日志…</p><pre id="manager-logs" tabindex="0">正在读取日志…</pre>`;
+  logs.innerHTML = `<div class="management-heading log-heading"><h2>运行日志</h2><div class="log-controls"><div class="segmented log-type-buttons" id="manager-log-channel" role="group" aria-label="日志类型"><button type="button" class="selected" data-log-channel="all" aria-pressed="true">全部日志</button><button type="button" data-log-channel="game" aria-pressed="false">游戏日志</button><button type="button" data-log-channel="steamcmd" aria-pressed="false">安装与更新</button><button type="button" data-log-channel="palbox" aria-pressed="false">面板日志</button></div><label class="log-toggle" title="显示面板读取状态及运行参数产生的 REST 成功访问记录"><input type="checkbox" role="switch" class="sr-only" id="show-polling-logs"><span class="toggle" aria-hidden="true"></span><span>显示接口访问</span></label></div></div><p id="manager-log-status" class="management-note" role="status">正在连接实时日志…</p><pre id="manager-logs" tabindex="0">正在读取日志…</pre>`;
   $('game-overview').append(logs);
+  const logHistoryActions = document.createElement('div');
+  logHistoryActions.className = 'log-history-actions';
+  logHistoryActions.innerHTML = '<button id="manager-log-older" type="button" class="button secondary" disabled>加载更早日志</button><button id="manager-log-latest" type="button" class="button secondary">返回最新</button>';
+  logs.querySelector('.log-controls').append(logHistoryActions);
+  const logHistoryNote = document.createElement('p');
+  logHistoryNote.id = 'manager-log-history-note'; logHistoryNote.className = 'management-note'; logHistoryNote.hidden = true;
+  logHistoryNote.setAttribute('role', 'status');
+  logs.insertBefore(logHistoryNote, $('manager-logs'));
   const history = document.createElement('dialog');
   history.id = 'task-history';
   history.className = 'task-history-dialog';
   history.setAttribute('aria-labelledby', 'task-history-title');
   history.innerHTML = '<div class="management-heading"><h2 id="task-history-title">任务记录</h2><button type="button" id="close-task-history" class="icon-button" aria-label="关闭任务记录"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div id="task-history-list">暂无任务记录。</div>';
   document.body.append(history);
-  $('show-task-history').addEventListener('click', () => history.showModal());
+  $('show-task-history').addEventListener('click', () => { history.showModal(); void refresh({ scope: 'local' }); });
   $('close-task-history').addEventListener('click', () => history.close());
   const playerPanel = document.createElement('section');
   playerPanel.className = 'management-panel';
@@ -92,11 +101,15 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   const actionButtons = [...section.querySelectorAll('[data-action]'), ...nativeSaves.querySelectorAll('[data-action]'), ...saves.querySelectorAll('[data-action]'), ...configurationApply.querySelectorAll('[data-action]')];
   actionButtons.forEach(button => { button.disabled = true; });
   const names = { install: '安装服务端', start: '启动', stop: '停止', 'force-stop': '强制停止', restart: '重启', update: '更新服务端', apply: '应用配置', backup: '创建备份', 'delete-backup': '删除备份', restore: '恢复备份', 'restore-native': '恢复官方备份', 'import-save': '导入存档', 'save-world': '保存世界', announce: '发送广播', kick: '移出玩家', ban: '封禁玩家', unban: '解封玩家' };
-  let polling = false;
+  let refreshing = false;
+  let pendingRefresh = null;
+  let closeStatus = null;
+  let statusGeneration = 0;
   let stopped = false;
   let lastTask;
   let activeTaskId;
   let lastStatus;
+  const retiredStatusInstances = new Set();
   let settingsRequest = null;
   let settingsCache = null;
   let checkingUpdate = false;
@@ -110,6 +123,8 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   let lastLogText = '';
   let logGeneration = 0;
   let closeLogs = null;
+  let logHistory = null;
+  let loadingOlderLogs = false;
   let activeLogChannel = null;
   let pageActive = true;
   let lastErrorMessage = '';
@@ -331,8 +346,10 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     if (panel.textContent === content) return;
     const bottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 30;
     const scrollTop = panel.scrollTop;
+    const scrollHeight = panel.scrollHeight;
     panel.textContent = content;
-    if (bottom) panel.scrollTop = panel.scrollHeight;
+    if (loadingOlderLogs) panel.scrollTop = scrollTop + panel.scrollHeight - scrollHeight;
+    else if (bottom) panel.scrollTop = panel.scrollHeight;
     else panel.scrollTop = scrollTop;
   }
   function stopLogs() {
@@ -349,18 +366,40 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     const generation = logGeneration;
     activeLogChannel = logChannel;
     $('manager-log-status').textContent = '正在连接实时日志…';
-    closeLogs = api.watchLogs(logChannel, {
+    logHistory = api.watchLogHistory(logChannel, {
       onOpen() {
         if (generation === logGeneration) $('manager-log-status').textContent = '日志实时更新，断线后自动重连；向上滚动可查看历史。';
       },
       onLog(text) { if (generation === logGeneration) renderLogs(text); },
+      onState(state) {
+        if (generation !== logGeneration) return;
+        $('manager-log-older').disabled = state.loading || !state.hasMore;
+        $('manager-log-older').textContent = state.loading ? '正在加载…' : state.hasMore ? '加载更早日志' : '已加载全部保留日志';
+        const note = $('manager-log-history-note');
+        note.hidden = !state.paused && !state.gap;
+        note.textContent = state.paused ? '实时更新已暂停，可继续查看更早记录，或返回最新。' : '部分历史日志已被轮换或清理。';
+      },
       onError(caught) {
         if (generation !== logGeneration) return;
         $('manager-log-status').textContent = caught.message;
         if (caught.status === 401) { stopped = true; stopLogs(); }
       }
     });
+    const currentHistory = logHistory;
+    closeLogs = () => currentHistory.close();
   }
+  $('manager-log-older').addEventListener('click', async () => {
+    loadingOlderLogs = true;
+    try { await logHistory?.loadOlder(); } finally { loadingOlderLogs = false; }
+  });
+  $('manager-log-latest').addEventListener('click', () => {
+    $('manager-logs').scrollTop = $('manager-logs').scrollHeight;
+    logHistory?.latest();
+  });
+  $('manager-logs').addEventListener('scroll', () => {
+    const panel = $('manager-logs');
+    if (!loadingOlderLogs && panel.scrollTop < 30 && panel.scrollHeight > panel.clientHeight && !$('manager-log-older').disabled) $('manager-log-older').click();
+  });
   function renderHistory(tasks) {
     const list = $('task-history-list');
     list.replaceChildren();
@@ -453,66 +492,122 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       if (!bannedCache) { $('banned-player-count').textContent = '—'; $('manager-banned-list').textContent = '封禁名单暂不可用'; }
     } finally { loadingBans = false; }
   }
-  async function refresh() {
-    syncLogs();
-    if (!stopped && !document.hidden && !$('game-page').hidden && !$('game-players-view').hidden) void loadBans();
-    if (polling || stopped || document.hidden) return;
-    polling = true;
+  function currentScope() {
+    if (!$('game-page').hidden) {
+      if (!$('game-overview').hidden) return 'overview';
+      if (!$('game-players-view').hidden) return 'players';
+    }
+    return 'local';
+  }
+  function renderStatus(snapshot) {
+    if (retiredStatusInstances.has(snapshot.stateInstance)) return false;
+    const sameInstance = snapshot.stateInstance === lastStatus?.stateInstance;
+    if (sameInstance && snapshot.stateRevision < (lastStatus?.stateRevision ?? -1)) return false;
+    if (!sameInstance && lastStatus) retiredStatusInstances.add(lastStatus.stateInstance);
+    const sameGame = sameInstance && snapshot.running && lastStatus?.running && snapshot.startedAt === lastStatus.startedAt;
+    const value = { info: null, metrics: null, players: [], ...(sameGame ? lastStatus : {}), ...snapshot };
+    onWorkspaceChanged?.(value.revision); lastStatus = value; lastErrorMessage = '';
+    const game = $('game-state');
+    const serviceState = gameServiceState(value);
+    game.textContent = serviceState.label;
+    game.dataset.state = serviceState.state;
+    game.title = serviceState.description;
+    game.setAttribute('aria-label', `${serviceState.label}。${serviceState.description}`);
+    const config = $('game-config-state');
+    config.textContent = value.hasConfiguration === false ? '暂无配置' : value.configuration === 'pending' ? '待生效' : value.running && value.ready ? '已生效' : '已写入';
+    config.dataset.state = value.configuration === 'pending' ? 'pending' : value.running && value.ready ? 'saved' : 'written';
+    config.title = value.hasConfiguration === false ? '请先安装服务端或手动新建配置。' : value.configuration === 'pending' ? '当前面板配置尚未应用到游戏，点击应用配置后生效。'
+      : value.running && value.ready ? '游戏服务已使用当前配置运行。'
+      : value.running ? '配置已写入，正在等待游戏管理接口就绪。'
+      : '配置已写入游戏文件，启动服务器后生效。';
+    config.setAttribute('aria-label', `游戏配置：${config.textContent}。${config.title}`);
+    $('game-version').textContent = value.version || value.info?.version || (value.installed ? '启动后获取' : '未安装');
+    $('game-build').textContent = value.installedBuild || '—';
+    $('game-build-meta').hidden = !value.installedBuild;
+    $('game-players').textContent = value.metrics ? `${value.metrics.currentplayernum} / ${value.metrics.maxplayernum}` : '—';
+    $('game-fps').textContent = value.metrics?.serverfps ?? '—';
+    $('game-uptime').textContent = uptimeLabel(value.metrics?.uptime);
+    $('game-port').textContent = value.port;
+    for (const button of actionButtons) {
+      const name = button.dataset.action;
+      if (name === 'install') button.hidden = value.installed;
+      if (name === 'start') button.hidden = !value.installed || value.running;
+      if (name === 'stop' || name === 'restart') button.hidden = !value.running;
+      button.disabled = Boolean(value.task) || (name === 'install' && value.installed) || (['start', 'update', 'restart', 'import-save'].includes(name) && !value.installed) || (name === 'start' && value.running) || (['stop', 'force-stop', 'restart', 'save-world'].includes(name) && !value.running);
+      if (name === 'backup') {
+        const noSave = !value.hasWorldSave && !value.running;
+        button.disabled ||= noSave;
+        button.title = noSave ? '尚无可备份的世界存档，请先启动游戏并生成存档。' : '';
+      }
+      if (name === 'apply') { button.textContent = value.running ? '应用并重启' : '应用配置'; button.disabled ||= value.hasConfiguration === false; }
+    }
+    $('show-running-config').disabled = !value.running;
+    $('check-update').disabled = checkingUpdate || !value.installed || Boolean(value.task);
+    $('complete-backup-note').textContent = !value.hasWorldSave && !value.running
+      ? '尚无可备份的世界存档，请先启动游戏并生成存档。已有备份仍可下载或恢复。'
+      : '包含世界、玩家存档和游戏配置。手动创建完整备份时会先存档并停服，完成后按原状态启动；恢复任何备份前都会先备份当前数据。';
+    const playerActionDisabled = Boolean(value.task) || !value.running || !value.ready;
+    $('ban-player').disabled = playerActionDisabled;
+    $('unban-player').disabled = playerActionDisabled;
+    if (bannedCache) renderBans(bannedCache);
+    renderHistory(value.tasks);
+    const task = value.task || value.tasks[0];
+    if (task) {
+      trackTask(task);
+      if (['failed', 'interrupted'].includes(task.state) && task.id !== lastTask) error(task.message);
+      if (task.state !== 'running') lastTask = task.id;
+    }
+    players(value.players);
+    return true;
+  }
+  function stopStatus() {
+    statusGeneration++;
+    closeStatus?.(); closeStatus = null;
+  }
+  function showConnectionError(caught) {
+    const expired = caught.status === 401;
+    const game = $('game-state');
+    game.textContent = expired ? '需登录' : '连接失败';
+    game.dataset.state = 'error';
+    game.title = caught.message;
+    game.setAttribute('aria-label', `${game.textContent}。${caught.message}`);
+    actionButtons.forEach(button => { button.disabled = true; });
+    if (expired) {
+      stopped = true; stopStatus(); stopLogs();
+      $('refresh-status').disabled = true;
+    }
+  }
+  function syncStatus() {
+    if (stopped || !pageActive || document.hidden) { stopStatus(); return; }
+    if (closeStatus) return;
+    const generation = ++statusGeneration;
+    closeStatus = api.watchStatus({
+      onStatus(value) {
+        if (generation !== statusGeneration) return;
+        const task = value.tasks?.[0];
+        const completed = task && task.state !== 'running' && (task.id === activeTaskId || (lastStatus && task.id !== lastStatus.tasks?.[0]?.id));
+        if (renderStatus(value) && completed) void refresh();
+      },
+      onError(caught) {
+        if (generation !== statusGeneration) return;
+        showConnectionError(caught);
+        if (caught.status === 401) error(caught.message);
+      }
+    });
+  }
+  async function refresh(options = {}) {
+    syncLogs(); syncStatus();
+    if (stopped || !pageActive || document.hidden) return;
+    const scope = options.scope || currentScope();
+    if (refreshing) { pendingRefresh = { scope }; return; }
+    refreshing = true;
+    $('refresh-status').disabled = true;
     let statusReceived = false;
     try {
-      const value = await api.request('status'); onWorkspaceChanged?.(value.revision); lastStatus = value; lastErrorMessage = '';
+      if (scope === 'players') void loadBans();
+      const value = await api.request(`status?scope=${scope}`);
+      renderStatus(value);
       statusReceived = true;
-      const game = $('game-state');
-      const serviceState = gameServiceState(value);
-      game.textContent = serviceState.label;
-      game.dataset.state = serviceState.state;
-      game.title = serviceState.description;
-      game.setAttribute('aria-label', `${serviceState.label}。${serviceState.description}`);
-      const config = $('game-config-state');
-      config.textContent = value.hasConfiguration === false ? '暂无配置' : value.configuration === 'pending' ? '待生效' : value.running && value.ready ? '已生效' : '已写入';
-      config.dataset.state = value.configuration === 'pending' ? 'pending' : value.running && value.ready ? 'saved' : 'written';
-      config.title = value.hasConfiguration === false ? '请先安装服务端或手动新建配置。' : value.configuration === 'pending' ? '当前面板配置尚未应用到游戏，点击应用配置后生效。'
-        : value.running && value.ready ? '游戏服务已使用当前配置运行。'
-        : value.running ? '配置已写入，正在等待游戏管理接口就绪。'
-        : '配置已写入游戏文件，启动服务器后生效。';
-      config.setAttribute('aria-label', `游戏配置：${config.textContent}。${config.title}`);
-      $('game-version').textContent = value.version || value.info?.version || (value.installed ? '启动后获取' : '未安装');
-      $('game-build').textContent = value.installedBuild || '—';
-      $('game-build-meta').hidden = !value.installedBuild;
-      $('game-players').textContent = value.metrics ? `${value.metrics.currentplayernum} / ${value.metrics.maxplayernum}` : '—';
-      $('game-fps').textContent = value.metrics?.serverfps ?? '—';
-      $('game-uptime').textContent = uptimeLabel(value.metrics?.uptime);
-      $('game-port').textContent = value.port;
-      for (const button of actionButtons) {
-        const name = button.dataset.action;
-        if (name === 'install') button.hidden = value.installed;
-        if (name === 'start') button.hidden = !value.installed || value.running;
-        if (name === 'stop' || name === 'restart') button.hidden = !value.running;
-        button.disabled = Boolean(value.task) || (name === 'install' && value.installed) || (['start', 'update', 'restart', 'import-save'].includes(name) && !value.installed) || (name === 'start' && value.running) || (['stop', 'force-stop', 'restart', 'save-world'].includes(name) && !value.running);
-        if (name === 'backup') {
-          const noSave = !value.hasWorldSave && !value.running;
-          button.disabled ||= noSave;
-          button.title = noSave ? '尚无可备份的世界存档，请先启动游戏并生成存档。' : '';
-        }
-        if (name === 'apply') { button.textContent = value.running ? '应用并重启' : '应用配置'; button.disabled ||= value.hasConfiguration === false; }
-      }
-      $('show-running-config').disabled = !value.running;
-      $('check-update').disabled = checkingUpdate || !value.installed || Boolean(value.task);
-      $('complete-backup-note').textContent = !value.hasWorldSave && !value.running
-        ? '尚无可备份的世界存档，请先启动游戏并生成存档。已有备份仍可下载或恢复。'
-        : '包含世界、玩家存档和游戏配置。手动创建完整备份时会先存档并停服，完成后按原状态启动；恢复任何备份前都会先备份当前数据。';
-      const playerActionDisabled = Boolean(value.task) || !value.running || !value.ready;
-      $('ban-player').disabled = playerActionDisabled;
-      $('unban-player').disabled = playerActionDisabled;
-      if (bannedCache) renderBans(bannedCache);
-      renderHistory(value.tasks);
-      const task = value.task || value.tasks[0];
-      if (task) {
-        trackTask(task);
-        if (['failed', 'interrupted'].includes(task.state) && task.id !== lastTask) error(task.message);
-        if (task.state !== 'running') lastTask = task.id;
-      }
-      players(value.players);
       const savesVisible = !$('saves-page').hidden;
       const archivesVisible = savesVisible && !$('saves-archives').hidden;
       const nativeVisible = savesVisible && !$('saves-native').hidden;
@@ -522,15 +617,12 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     } catch (caught) {
       error(caught.message);
       actionButtons.forEach(button => { button.disabled = true; });
-      if (!statusReceived || caught.status === 401) {
-        const game = $('game-state');
-        game.textContent = caught.status === 401 ? '需登录' : '连接失败';
-        game.dataset.state = 'error';
-        game.title = caught.message;
-        game.setAttribute('aria-label', `${game.textContent}。${caught.message}`);
-      }
-      if (caught.status === 401) { stopped = true; stopLogs(); }
-    } finally { polling = false; }
+      if (!statusReceived || caught.status === 401) showConnectionError(caught);
+    } finally {
+      refreshing = false;
+      $('refresh-status').disabled = stopped;
+      if (pendingRefresh) { const next = pendingRefresh; pendingRefresh = null; void refresh(next); }
+    }
   }
   for (const button of $('manager-log-channel').querySelectorAll('button')) button.addEventListener('click', () => {
     if (logChannel === button.dataset.logChannel) return;
@@ -618,11 +710,11 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     if (userid === null) return;
     action('unban', { userid }, false);
   });
-  let timer = setInterval(refresh, 5000);
-  document.addEventListener('visibilitychange', refresh);
-  window.addEventListener('hashchange', refresh);
-  window.addEventListener('pagehide', () => { pageActive = false; stopLogs(); clearInterval(timer); });
-  window.addEventListener('pageshow', event => { if (event.persisted) { pageActive = true; timer = setInterval(refresh, 5000); refresh(); } });
+  $('refresh-status').addEventListener('click', () => { void refresh(); });
+  document.addEventListener('visibilitychange', () => { void refresh(); });
+  window.addEventListener('hashchange', () => { void refresh(); });
+  window.addEventListener('pagehide', () => { pageActive = false; stopLogs(); stopStatus(); });
+  window.addEventListener('pageshow', event => { if (event.persisted) { pageActive = true; void refresh(); } });
   refresh();
   return { refresh };
 }

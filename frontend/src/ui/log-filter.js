@@ -1,10 +1,9 @@
-const ROUTINE_STATUS = /REST accessed endpoint \/v1\/api\/(?:info|metrics|players) OK/;
+const ROUTINE_STATUS = /REST accessed endpoint \/v1\/api\/(?:info|metrics|players|settings) OK(?:\s|$)/;
 const PREFIX = /^(?:\[[^\]]*\]\s*)+/;
 
 /**
- * Hide the panel's own status polling from the log view. The game logs every
- * REST access, so without this filter routine info/metrics/players calls flood
- * the window every few seconds. Errors and user actions are kept.
+ * Hide successful status/settings reads, including old polling records.
+ * The game logs every REST access; errors and user actions are kept.
  */
 export function filterPollingLogs(text) {
   const lines = text.split('\n');
@@ -12,7 +11,7 @@ export function filterPollingLogs(text) {
   let afterPollingLine = false;
   for (const line of lines) {
     if (ROUTINE_STATUS.test(line)) { afterPollingLine = true; continue; }
-    if (afterPollingLine && line.replace(PREFIX, '').trim() === '') continue;
+    if (line.replace(PREFIX, '').trim() === '' && (afterPollingLine || line.trim())) continue;
     afterPollingLine = false;
     kept.push(line);
   }

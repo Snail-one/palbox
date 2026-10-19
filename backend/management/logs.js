@@ -180,8 +180,11 @@ export async function readLogTail(file, limit = 65536, maxArchives = DEFAULT_LOG
   return readableLog(await readUtf8Tail(file, limit, maxArchives));
 }
 
-export async function streamLogs({ request, response, runtime, auth, channel }) {
-  const initial = await runtime.logs(channel); // Validate before sending SSE headers.
+export async function streamLogs({ request, response, runtime, auth, channel, pages = false, after }) {
+  let cursor = after;
+  const read = () => pages ? runtime.logPage(channel, cursor ? { after: cursor } : {}) : runtime.logs(channel);
+  const initial = await read(); // Validate before sending SSE headers.
+  if (!auth.session(request)) throw Object.assign(new Error('请先登录管理面板。'), { status: 401 });
   if (response.destroyed) return;
   response.writeHead(200, {
     ...API_SECURITY_HEADERS,
@@ -207,10 +210,13 @@ export async function streamLogs({ request, response, runtime, auth, channel }) 
     clearInterval(heartbeat);
   }
   response.once('close', close);
-  function publish(text) {
-    if (closed || response.writableNeedDrain || text === previous) return;
-    response.write(`event: log\ndata: ${JSON.stringify({ text })}\n\n`);
-    previous = text;
+  function publish(value) {
+    const data = JSON.stringify(pages ? value : { text: value });
+    if (closed || response.writableNeedDrain || data === previous) return false;
+    if (pages && value.after) cursor = value.after;
+    response.write(`${pages && cursor ? `id: ${cursor}\n` : ''}event: log\ndata: ${data}\n\n`);
+    previous = data;
+    return true;
   }
   async function refresh() {
     if (closed) return;
@@ -218,11 +224,15 @@ export async function streamLogs({ request, response, runtime, auth, channel }) 
       response.end('event: unauthorized\ndata: {}\n\n'); close(); return;
     }
     if (reading) { dirty = true; return; }
+    if (response.writableNeedDrain) return;
     reading = true;
     try {
       do {
         dirty = false;
-        publish(await runtime.logs(channel));
+        const value = await read();
+        if (!auth.session(request)) { response.end('event: unauthorized\ndata: {}\n\n'); close(); return; }
+        const published = publish(value);
+        if (pages && published && value.hasNewer && !response.writableNeedDrain) dirty = true;
       } while (dirty && !closed);
     } catch {
       response.end(); close(); // EventSource reconnects and retries a fresh snapshot.
@@ -233,11 +243,12 @@ export async function streamLogs({ request, response, runtime, auth, channel }) 
   try {
     watcher = watch(path.join(runtime.directory, 'logs'), (_event, filename) => {
       const target = channel === 'all' ? 'combined.jsonl' : `${channel}.log`;
-      if (!filename || String(filename) === target) void refresh();
+      if (!filename || String(filename) === target || String(filename).startsWith(target + '.')) void refresh();
     });
     watcher.on('error', () => { watcher.close(); });
   } catch { /* The periodic check also handles a temporarily missing directory. */ }
   timer = setInterval(refresh, 1000);
+  response.on('drain', refresh);
   heartbeat = setInterval(() => {
     if (!closed && !response.writableNeedDrain) response.write(': heartbeat\n\n');
   }, 15000);

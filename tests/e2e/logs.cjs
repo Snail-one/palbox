@@ -16,7 +16,7 @@ const assert = require('node:assert/strict');
       const Original = window.EventSource;
       window.logSources = [];
       window.EventSource = class extends Original {
-        constructor(...args) { super(...args); window.logSources.push(this); }
+        constructor(...args) { super(...args); if (String(args[0]).includes('/api/logs/stream')) window.logSources.push(this); }
       };
     });
     await context.request.post(f.base + '/api/login', { data: { username: f.username, password: f.password } });
@@ -101,6 +101,48 @@ const assert = require('node:assert/strict');
     assert.deepEqual(errors, []);
     console.log('PASS 自动跟随底部、保留历史滚动位置、离开页面关闭连接并在返回时恢复');
     console.log('PASS 登录日志浅色列表、实时结果标记、用户名安全显示和手机布局');
+
+    f.runtime.log('login', Array.from({ length: 3000 }, (_, index) => `登录成功（192.0.2.1，批量历史 ${index}）\n`).join(''));
+    await page.waitForFunction(() => document.getElementById('login-log-content').textContent.includes('批量历史 2999'));
+    assert.match(await loginRecords.textContent(), /<img src=x onerror=alert\(1\)>/);
+    await page.locator('#login-log-latest').click();
+    await page.waitForFunction(() => !document.getElementById('login-log-older').disabled);
+    assert.doesNotMatch(await loginRecords.textContent(), /批量历史 0）/);
+    for (let count = 0; count < 12 && !(await loginRecords.textContent()).includes('批量历史 0'); count++) {
+      await page.locator('#login-log-older').click();
+      await page.waitForFunction(() => document.getElementById('login-log-older').textContent !== '正在加载…');
+    }
+    assert.match(await loginRecords.textContent(), /批量历史 0/);
+    assert.equal(await loginRecords.locator('tr').filter({ hasText: '批量历史 2999' }).count(), 1);
+
+    await page.locator('#mobile-menu').click();
+    await page.locator('#nav-game').click();
+    await page.locator('[data-log-channel="game"]').click();
+    f.runtime.log('game', '新增前已显示标记\n');
+    await waitLog('新增前已显示标记');
+    f.runtime.log('game', Array.from({ length: 2500 }, (_, index) => `大批实时日志 ${index} 中文🙂\n`).join(''));
+    await page.waitForFunction(() => document.getElementById('manager-logs').textContent.includes('大批实时日志 2499'));
+    assert.match(await panel.textContent(), /新增前已显示标记/);
+    f.runtime.log('game', '[LOG] REST accessed endpoint /v1/api/settings OK\n\n玩家 connected the server.\n[LOG] REST accessed endpoint /v1/api/settings FAILED\n');
+    await waitLog('玩家 connected the server.');
+    assert.doesNotMatch(await panel.textContent(), /\/v1\/api\/settings OK/);
+    assert.match(await panel.textContent(), /\/v1\/api\/settings FAILED/);
+    await page.locator('.log-toggle').click();
+    await waitLog('/v1/api/settings OK');
+    await page.locator('.log-toggle').click();
+    await page.waitForFunction(() => !document.getElementById('manager-logs').textContent.includes('/v1/api/settings OK'));
+    await page.locator('#manager-log-latest').click();
+    await page.waitForFunction(() => !document.getElementById('manager-log-older').disabled);
+    assert.doesNotMatch(await panel.textContent(), /新增前已显示标记/);
+    for (let count = 0; count < 12 && !(await panel.textContent()).includes('新增前已显示标记'); count++) {
+      await page.locator('#manager-log-older').click();
+      await page.waitForFunction(() => document.getElementById('manager-log-older').textContent !== '正在加载…');
+    }
+    assert.match(await panel.textContent(), /新增前已显示标记/);
+    assert.doesNotMatch(await panel.textContent(), /\ufffd/);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    assert.deepEqual(errors, []);
+    console.log('PASS 超过 64 KiB 仍保留已显示记录，运行及登录日志可加载完整历史，settings 过滤随开关切换');
   } finally {
     for (const resolve of pendingStatus) resolve(baseline);
     await browser?.close();

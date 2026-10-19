@@ -1,20 +1,34 @@
+import { createLogHistory } from './log-history.js';
+
 export function createManagementClient({ fetch, csrf = '' }) {
   let token = csrf;
   const logConnections = new Set();
   const securityUpdates = new Set();
-  return {
-    watchLogs(channel, { onLog, onOpen, onError }) {
+  const client = {
+    watchLogHistory(channel, options) {
+      return createLogHistory({ channel, ...options, request: path => client.request(path), watch: callbacks => client.watchLogs(channel, callbacks) });
+    },
+    watchStatus({ onStatus, onOpen, onError }) {
+      return client.watchLogs(null, { onStatus, onOpen, onError });
+    },
+    watchLogs(channel, { onLog, onPage, onStatus, getCursor, onOpen, onError }) {
       let source;
       let closed = false;
       function connect() {
         if (closed) return;
         source?.close();
-        const current = source = new EventSource(`/api/logs/stream?channel=${encodeURIComponent(channel)}`);
+        let url = onStatus ? '/api/status/stream' : `/api/logs/stream?channel=${encodeURIComponent(channel)}`;
+        if (onPage) {
+          url += '&format=pages';
+          const cursor = getCursor?.();
+          if (cursor) url += '&after=' + encodeURIComponent(cursor);
+        }
+        const current = source = new EventSource(url);
         current.onopen = () => { if (source === current && !closed) onOpen?.(); };
-        current.addEventListener('log', event => {
+        current.addEventListener(onStatus ? 'status' : 'log', event => {
           if (source !== current || closed) return;
-          try { onLog(JSON.parse(event.data).text); }
-          catch { onError?.(new Error('日志响应无效，请重新连接。')); }
+          try { const value = JSON.parse(event.data); if (onStatus) onStatus(value); else if (onPage) onPage(value); else onLog(value.text); }
+          catch { onError?.(new Error('实时响应无效，请重新连接。')); }
         });
         current.addEventListener('unauthorized', async () => {
           // A rotation can invalidate this stream before its HTTP response
@@ -22,10 +36,10 @@ export function createManagementClient({ fetch, csrf = '' }) {
           await Promise.allSettled([...securityUpdates]);
           if (source !== current || closed) return;
           current.close();
-          onError?.(Object.assign(new Error('登录已失效，请重新登录以查看日志。'), { status: 401 }));
+          onError?.(Object.assign(new Error('登录已失效，请重新登录。'), { status: 401 }));
         });
         current.onerror = () => {
-          if (source === current && !closed) onError?.(new Error(current.readyState === EventSource.CLOSED ? '日志连接已关闭，请刷新页面或重新登录。' : '日志连接中断，正在重新连接…'));
+          if (source === current && !closed) onError?.(new Error(current.readyState === EventSource.CLOSED ? '实时连接已关闭，请刷新页面或重新登录。' : '实时连接中断，正在重新连接…'));
         };
       }
       logConnections.add(connect);
@@ -86,6 +100,7 @@ export function createManagementClient({ fetch, csrf = '' }) {
       });
     }
   };
+  return client;
 }
 
 // Keep editing synchronous while serializing server writes and tracking acknowledgement.

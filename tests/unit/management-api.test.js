@@ -7,7 +7,7 @@ function eventSources(t) {
   const sources = [];
   globalThis.EventSource = class {
     static CLOSED = 2;
-    constructor() { this.listeners = {}; sources.push(this); }
+    constructor(url) { this.url = url; this.listeners = {}; sources.push(this); }
     addEventListener(type, handler) { this.listeners[type] = handler; }
     close() { this.readyState = 2; }
     emit(type, data = {}) { return this.listeners[type]?.({ data: JSON.stringify(data) }); }
@@ -38,6 +38,25 @@ test('安全设置轮换会话时日志自动重连，延迟到达的旧连接�
   resolveResponse({ ok: true, json: async () => ({ csrf: 'newer' }) });
   await next;
   assert.equal(sources.length, 2, '关闭订阅后不会重新打开日志连接');
+});
+
+test('状态推送使用独立事件且会话轮换后重连，旧快照不进入新订阅', async t => {
+  const sources = eventSources(t);
+  const values = [], errors = [];
+  const api = createManagementClient({ fetch: async () => ({ ok: true, json: async () => ({ csrf: 'rotated' }) }) });
+  const close = api.watchStatus({ onStatus: value => values.push(value), onError: error => errors.push(error) });
+  assert.equal(sources[0].url, '/api/status/stream');
+  sources[0].emit('status', { stateRevision: 1 });
+  const updating = api.request('security/password', { method: 'POST' });
+  const expired = sources[0].emit('unauthorized');
+  await updating;
+  await expired;
+  sources[0].emit('status', { stateRevision: 2 });
+  sources[1].emit('status', { stateRevision: 3 });
+  assert.deepEqual(values, [{ stateRevision: 1 }, { stateRevision: 3 }]);
+  assert.deepEqual(errors, []);
+  close();
+  assert.equal(sources[1].readyState, 2);
 });
 
 test('安全设置失败或真实会话过期时，日志仍报告未授权', async t => {

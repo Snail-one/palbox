@@ -4,6 +4,7 @@ import { constants } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { EventEmitter } from 'node:events';
 import { Runtime, DEFAULT_SHUTDOWN_MESSAGE } from './runtime.js';
 import { NativeBackups } from './native-backups.js';
 import { SaveImports } from './save-imports.js';
@@ -87,8 +88,12 @@ function normalizeInstallArgs(value, server) {
   return args;
 }
 
-export class Manager {
+export class Manager extends EventEmitter {
   constructor({ directory, runtime, webPort = 8080, importLimits = {}, ...options }) {
+    super();
+    this.setMaxListeners(0);
+    this.stateInstance = randomUUID();
+    this.stateRevision = 0;
     this.directory = path.resolve(directory);
     this.settings = null;
     this.setupRequired = true;
@@ -99,6 +104,7 @@ export class Manager {
     this.store = new ManagementStore(this.directory, options.port || runtime?.port || 8211);
     this.webPort = webPort;
     this.runtime = runtime || new Runtime(this.directory, options);
+    this.runtime.on?.('state', () => this.changed());
     this.native = new NativeBackups(this.runtime.saved, this.directory);
     this.imports = new SaveImports({ directory: this.directory, runtime: this.runtime, native: this.native, limits: importLimits });
     this.tasks = [];
@@ -218,6 +224,7 @@ export class Manager {
       this.runtime.log('palbox', `自动启动失败：${error.message}\n`);
     }
   }
+  changed() { this.stateRevision++; this.emit('state'); }
   saveTasks() { return jsonWrite(this.tasksFile, this.tasks.slice(0, 40)); }
   async submit(action, payload = {}, { authorize = () => {} } = {}) {
     authorize();
@@ -236,6 +243,7 @@ export class Manager {
     this.busy = task;
     this.tasks.unshift(task); this.tasks = this.tasks.slice(0, 40);
     try { await this.saveTasks(); } catch (error) { this.busy = null; throw error; }
+    this.changed();
     this.operation = (async () => {
       try {
         await this.execute(action, payload, task);
@@ -247,6 +255,7 @@ export class Manager {
         task.finishedAt = new Date().toISOString();
         try { await this.saveTasks(); } catch (error) { this.runtime.log('palbox', `任务记录保存失败：${error.message}\n`); }
         if (this.busy === task) this.busy = null;
+        this.changed();
       }
     })();
     return { ...task };
@@ -261,7 +270,10 @@ export class Manager {
     }
   }
   servicePhase(phase, message) {
-    if (this.busy) { this.busy.phase = phase; this.busy.message = message; }
+    if (this.busy && (this.busy.phase !== phase || this.busy.message !== message)) {
+      this.busy.phase = phase; this.busy.message = message;
+      this.changed();
+    }
   }
   async startGame() {
     this.servicePhase('starting', '正在启动游戏服务，等待管理接口就绪。');
@@ -578,7 +590,9 @@ export class Manager {
       startedAt: this.runtime.startedAt
     };
   }
-  async status() {
+  async status({ scope = 'overview' } = {}) {
+    if (!['overview', 'players', 'local'].includes(scope)) throw failure('状态读取范围无效。', 400);
+    const stateRevision = this.stateRevision;
     await this.store.syncDefaultProfile();
     const installed = await this.runtime.installed();
     const installedBuild = installed ? await this.installedBuild() : null;
@@ -589,19 +603,24 @@ export class Manager {
     const desired = active ? output(active.source) : null;
     let configuration = disk && output(disk) === desired ? 'applied' : 'pending';
     if (this.runtime.game && (!this.runtime.runningSource || output(this.runtime.runningSource) !== desired)) configuration = 'pending';
-    const status = { installed, installedBuild, version: this.versionCache?.version || null, hasWorldSave: await this.hasWorldSave(), running: Boolean(this.runtime.game), ready: this.runtime.ready, configuration, hasConfiguration: Boolean(active), startedAt: this.runtime.startedAt, lastExit: this.runtime.lastExit, task: this.busy, tasks: this.tasks, revision: this.store.revision, port: this.runtime.port, metrics: null, info: null, players: [] };
-    if (this.runtime.game) {
-      const results = await Promise.allSettled([this.runtime.rest('info'), this.runtime.rest('metrics'), this.runtime.rest('players')]);
-      if (results[0].status === 'fulfilled') {
-        status.info = results[0].value; status.ready = this.runtime.ready = true;
-        if (typeof status.info?.version === 'string' && status.info.version.trim()) {
-          status.version = status.info.version.trim();
-          this.versionCache = { build: installedBuild, version: status.version };
+    const game = this.runtime.game;
+    const status = { stateInstance: this.stateInstance, stateRevision, installed, installedBuild, version: this.versionCache?.version || null, hasWorldSave: await this.hasWorldSave(), running: Boolean(game), ready: this.runtime.ready, configuration, hasConfiguration: Boolean(active), startedAt: this.runtime.startedAt, lastExit: this.runtime.lastExit, task: this.busy, tasks: this.tasks, revision: this.store.revision, port: this.runtime.port };
+    const endpoints = scope === 'overview' ? ['info', 'metrics', 'players'] : scope === 'players' ? ['players'] : [];
+    for (const endpoint of endpoints) status[endpoint] = endpoint === 'players' ? [] : null;
+    if (game && endpoints.length) {
+      const results = await Promise.allSettled(endpoints.map(endpoint => this.runtime.rest(endpoint)));
+      if (this.runtime.game !== game || this.stateRevision !== stateRevision) return this.status({ scope: 'local' });
+      endpoints.forEach((endpoint, index) => {
+        const result = results[index];
+        if (endpoint === 'info') {
+          status.ready = this.runtime.ready = result.status === 'fulfilled';
+          if (result.status === 'fulfilled' && typeof result.value?.version === 'string' && result.value.version.trim()) {
+            status.version = result.value.version.trim();
+            this.versionCache = { build: installedBuild, version: status.version };
+          }
         }
-      }
-      else status.ready = this.runtime.ready = false;
-      if (results[1].status === 'fulfilled') status.metrics = results[1].value;
-      if (results[2].status === 'fulfilled') status.players = results[2].value.players || [];
+        if (result.status === 'fulfilled') status[endpoint] = endpoint === 'players' ? result.value.players || [] : result.value;
+      });
     }
     return status;
   }

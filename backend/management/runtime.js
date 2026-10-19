@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { mkdir, readFile, access } from 'node:fs/promises';
 import { constants, existsSync } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
@@ -8,6 +9,7 @@ import { decodeString, parse } from '../../shared/domain/config.js';
 import { failure } from './files.js';
 import { appendCombinedLog, initializeCombinedLog, initializeLoginLog, readCombinedLog, readLogTail, timestampLogChunk, withoutLoginLogs } from './logs.js';
 import { appendLog, cleanupLogs, LOG_FILES, logPolicy } from './log-retention.js';
+import { readLogPage } from './log-pages.js';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 // SteamCMD block-buffers stdout when it is a pipe. A pseudo-terminal keeps its
@@ -16,8 +18,9 @@ const shellQuote = value => `'${String(value).replaceAll("'", "'\\''")}'`;
 const ptyAvailable = process.platform === 'linux' && existsSync('/usr/bin/script');
 export const DEFAULT_SHUTDOWN_MESSAGE = 'Palbox 正在维护服务器';
 
-export class Runtime {
+export class Runtime extends EventEmitter {
   constructor(directory, { steamcmd = '/opt/steamcmd/steamcmd.sh', port = 8211, readyTimeout = 180000, stopTimeout = 60000, shutdownWait = 5, shutdownMessage = DEFAULT_SHUTDOWN_MESSAGE, args = [], installArgs = null, logs = {} } = {}) {
+    super();
     this.directory = directory;
     this.server = path.join(directory, 'server');
     this.saved = path.join(this.server, 'Pal/Saved');
@@ -165,6 +168,7 @@ export class Runtime {
     if (values.get('RESTAPIEnabled') !== 'True' || !decodeString(values.get('AdminPassword') || '""')) throw failure('启动管理模式需要启用 REST API 并设置管理员密码，请先应用配置。', 409);
     const child = spawn('/bin/bash', [path.join(this.server, 'PalServer.sh'), `-port=${this.port}`, ...this.args], { cwd: this.server, shell: false, detached: true, env: this.childEnvironment(), stdio: ['ignore', 'pipe', 'pipe'] });
     this.game = child; this.ready = false; this.runningSource = source; this.runningArgs = [...this.args]; this.startedAt = new Date().toISOString();
+    this.emit('state');
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', data => this.log('game', data));
@@ -174,11 +178,12 @@ export class Runtime {
       this.lastExit = { code, signal, at: new Date().toISOString() };
       if (this.game === child) { this.game = null; this.ready = false; this.runningSource = null; this.runningArgs = []; }
       this.log('palbox', `游戏进程退出：${signal || code}\n`);
+      this.emit('state');
     });
     const until = Date.now() + this.readyTimeout;
     while (Date.now() < until && !this.closing) {
       if (this.game !== child) throw failure('游戏进程启动失败，请查看游戏日志。', 500);
-      try { await this.rest('info'); this.ready = true; return; } catch { await delay(1000); }
+      try { await this.rest('info'); this.ready = true; this.emit('state'); return; } catch { await delay(1000); }
     }
     throw failure('游戏已启动，但 REST API 未就绪，请检查日志、密码和端口。', 504);
   }
@@ -226,6 +231,9 @@ export class Runtime {
     if (!['palbox', 'game', 'steamcmd', 'login'].includes(channel)) throw failure('日志类型不存在。', 404);
     const text = await readLogTail(path.join(this.directory, 'logs', channel + '.log'), 65536, this.logPolicy.maxArchives);
     return channel === 'palbox' ? withoutLoginLogs(text) : text;
+  }
+  logPage(channel, options) {
+    return readLogPage(this.directory, channel, this.logPolicy.maxArchives, options);
   }
   async close() {
     this.closing = true;

@@ -3,8 +3,52 @@ import assert from 'node:assert/strict';
 import { appendFile, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { managementFixture } from '../helpers/management-fixture.js';
+import { formatLogBlocks } from '../../shared/domain/logs.js';
 
 const withoutTimestamps = text => text.replace(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} UTC\] /gm, '');
+
+test('历史接口要求登录，分页有界，增量 SSE 用事件位置恢复且退出后失效', { timeout: 10000 }, async t => {
+  const f = await managementFixture(); t.after(() => f.close());
+  assert.equal((await f.request('/api/logs/history?channel=game')).status, 401);
+  const { cookie } = await f.login();
+  f.runtime.log('game', Array.from({ length: 5000 }, (_, index) => `历史 ${index} 中文🙂\n`).join(''));
+  const page = await (await f.request('/api/logs/history?channel=game')).json();
+  assert.ok(page.hasMore);
+  assert.equal(page.blocks.length, 4);
+  assert.match(formatLogBlocks(page.blocks, 'game'), /历史 4999/);
+  const older = await (await f.request('/api/logs/history?channel=game&before=' + encodeURIComponent(page.before))).json();
+  assert.ok(older.blocks.length <= 4);
+  assert.notEqual(older.before, page.before);
+  assert.equal((await f.request('/api/logs/history?channel=login&before=' + encodeURIComponent(page.before))).status, 400);
+  assert.equal((await f.request('/api/logs/history?channel=game&before=invalid')).status, 400);
+  f.runtime.log('game', '重连期间新增记录🙂\n');
+  const controller = new AbortController(); t.after(() => controller.abort());
+  const response = await fetch(f.base + '/api/logs/stream?channel=game&format=pages', {
+    headers: { Cookie: cookie, 'Last-Event-ID': page.after }, signal: controller.signal
+  });
+  assert.equal(response.status, 200);
+  const reader = response.body.getReader(), decoder = new TextDecoder();
+  let buffer = '';
+  async function nextEvent(name) {
+    for (;;) {
+      let end;
+      while ((end = buffer.indexOf('\n\n')) >= 0) {
+        const frame = buffer.slice(0, end); buffer = buffer.slice(end + 2);
+        if (!frame.split('\n').includes('event: ' + name)) continue;
+        return JSON.parse(frame.split('\n').find(line => line.startsWith('data: ')).slice(6));
+      }
+      const part = await reader.read(); assert.equal(part.done, false);
+      buffer += decoder.decode(part.value, { stream: true });
+    }
+  }
+  const incremental = await nextEvent('log');
+  assert.ok(incremental.blocks.length <= 2);
+  assert.match(formatLogBlocks(incremental.blocks, 'game'), /重连期间新增记录🙂/);
+  assert.notEqual(incremental.after, page.after);
+  assert.equal((await f.request('/api/logout', { method: 'POST' })).status, 200);
+  await nextEvent('unauthorized');
+  assert.equal((await reader.read()).done, true);
+});
 
 test('登录日志独立提供认证后的快照与实时推送，不混入运行日志或泄露密码', { timeout: 10000 }, async t => {
   const f = await managementFixture();

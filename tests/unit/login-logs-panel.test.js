@@ -9,6 +9,7 @@ function node() {
     get textContent() { return this.text + this.children.map(child => child.textContent).join(''); },
     set textContent(value) { this.text = value; this.children = []; },
     append(...children) { this.children.push(...children); },
+    addEventListener() {},
     replaceChildren(...children) { this.text = ''; this.children = children; }
   };
 }
@@ -17,6 +18,7 @@ function setup({ active = true } = {}) {
   const elements = new Map([
     ['login-logs-page', { hidden: !active }],
     ['login-log-status', { textContent: '' }],
+    ['login-log-older', node()], ['login-log-latest', node()], ['login-log-history-note', node()],
     ['login-log-content', Object.assign(node(), { scrollTop: 0, scrollHeight: 100, clientHeight: 100 })]
   ]);
   const listeners = new Map();
@@ -26,10 +28,10 @@ function setup({ active = true } = {}) {
   const document = { ...target('document'), hidden: false, createElement: node, getElementById: id => elements.get(id) };
   const streams = [];
   const api = {
-    watchLogs(channel, callbacks) {
+    watchLogHistory(channel, callbacks) {
       const stream = { channel, ...callbacks, closed: false };
       streams.push(stream);
-      return () => { stream.closed = true; };
+      return { close() { stream.closed = true; } };
     }
   };
   const $ = id => elements.get(id);

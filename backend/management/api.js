@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { Authentication } from './auth.js';
 import { failure } from './files.js';
 import { streamLogs } from './logs.js';
+import { streamStatus } from './status-stream.js';
 import { API_SECURITY_HEADERS } from '../security-headers.js';
 import { isLoopbackOrPrivate } from '../../shared/domain/network.js';
 
@@ -118,7 +119,13 @@ export function createManagementApi(manager, options = {}) {
         if (request.method === 'GET') { await manager.store.syncDefaultProfile(); json(200, manager.store.snapshot()); return; }
         if (request.method === 'PUT') { const input = await body(request); json(200, await manager.store.update(input.workspace, input.revision, checks)); return; }
       }
-      if (pathname === '/api/status' && request.method === 'GET') { json(200, await manager.status()); return; }
+      if (pathname === '/api/status/stream' && request.method === 'GET') {
+        await streamStatus({ request, response, manager, auth }); return;
+      }
+      if (pathname === '/api/status' && request.method === 'GET') {
+        const scope = new URL(request.url, 'http://localhost').searchParams.get('scope') || 'overview';
+        json(200, await manager.status({ scope })); return;
+      }
       if (pathname === '/api/running' && request.method === 'GET') { json(200, await manager.runningConfiguration()); return; }
       if (pathname === '/api/banned-players' && request.method === 'GET') { json(200, await manager.bannedPlayers()); return; }
       if (pathname === '/api/update-check' && request.method === 'GET') { json(200, await manager.updateInfo()); return; }
@@ -127,8 +134,18 @@ export function createManagementApi(manager, options = {}) {
         json(202, await manager.submit(input.action, input, checks)); return;
       }
       if (pathname === '/api/logs/stream' && request.method === 'GET') {
-        const channel = new URL(request.url, 'http://localhost').searchParams.get('channel') || 'palbox';
-        await streamLogs({ request, response, runtime: manager.runtime, auth, channel }); return;
+        const query = new URL(request.url, 'http://localhost').searchParams;
+        const channel = query.get('channel') || 'palbox';
+        await streamLogs({ request, response, runtime: manager.runtime, auth, channel, pages: query.get('format') === 'pages', after: request.headers['last-event-id'] || query.get('after') || undefined }); return;
+      }
+      if (pathname === '/api/logs/history' && request.method === 'GET') {
+        const query = new URL(request.url, 'http://localhost').searchParams;
+        const page = await manager.runtime.logPage(query.get('channel') || 'palbox', {
+          ...(query.has('before') ? { before: query.get('before') } : {}),
+          ...(query.has('after') ? { after: query.get('after') } : {})
+        });
+        auth.require(request);
+        json(200, page); return;
       }
       if (pathname === '/api/logs' && request.method === 'GET') {
         const channel = new URL(request.url, 'http://localhost').searchParams.get('channel') || 'palbox';
