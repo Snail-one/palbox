@@ -246,7 +246,7 @@ export class Authentication {
       const counter = verifyTotp(pending.secret, code);
       if (counter === null) this.failedFactor(request, attempts, '动态验证码不正确或已过期。', '绑定二次验证失败');
       return { ...admin, totp: { secret: pending.secret, lastCounter: counter, recoveryHashes: codes.map(recoveryHash) } };
-    });
+    }, { authorize: () => this.require(request, true) });
     const rotated = this.rotateSession(request, response);
     this.log(`二次验证已启用（${this.clientAddress(request)}）\n`);
     return { ...this.securityStatus(), recoveryCodes: codes, ...rotated };
@@ -265,7 +265,7 @@ export class Authentication {
       if (disable) delete next.totp;
       else next.totp = { ...verified, recoveryHashes: codes.map(recoveryHash) };
       return next;
-    });
+    }, { authorize: () => this.require(request, true) });
     const rotated = this.rotateSession(request, response);
     this.log(`二次验证${disable ? '已关闭' : '恢复码已重新生成'}（${this.clientAddress(request)}）\n`);
     return { ...this.securityStatus(), ...(codes ? { recoveryCodes: codes } : {}), ...rotated };

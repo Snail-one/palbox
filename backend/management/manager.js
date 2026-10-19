@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { readFile, mkdir, readdir, stat, rename, rm, rmdir, lstat, unlink } from 'node:fs/promises';
+import { readFile, mkdir, mkdtemp, open, readdir, stat, rename, rm, rmdir, lstat, unlink } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -11,6 +12,7 @@ import { ManagementStore } from './store.js';
 import { atomicWrite, readJson, jsonWrite, failure } from './files.js';
 import { normalizeUsername, passwordRecord, validUsername } from './auth.js';
 import { validTotpRecord } from './totp.js';
+import { backupDirectory, BACKUP_CATEGORIES as categories } from './backup-paths.js';
 import { EditorSession } from '../../shared/domain/editor-session.js';
 import { createCatalog } from '../../shared/domain/catalog.js';
 import { parse, decodeString } from '../../shared/domain/config.js';
@@ -19,7 +21,6 @@ const exec = promisify(execFile);
 const shellQuote = value => "'" + String(value).replaceAll("'", "'\\''") + "'";
 const catalog = createCatalog();
 const output = source => new EditorSession(source, { formatOutput: catalog.formatOutput }).toIni();
-const categories = ['manual', 'scheduled', 'before-update'];
 const backupId = /^[a-z0-9-]+\.tar\.gz$(?![\s\S])/;
 const MISSING = Symbol('missing');
 const MAX_GAME_ARGS = 32;
@@ -107,7 +108,8 @@ export class Manager {
     this.versionCache = null;
   }
   async initialize() {
-    for (const sub of ['palbox', 'server', 'logs', ...categories.map(c => `backups/${c}`)]) await mkdir(path.join(this.directory, sub), { recursive: true, mode: 0o700 });
+    for (const sub of ['palbox', 'server', 'logs']) await mkdir(path.join(this.directory, sub), { recursive: true, mode: 0o700 });
+    for (const category of categories) await backupDirectory(this.directory, category, { create: true });
     let settings;
     try { settings = await readJson(this.settingsFile, MISSING); }
     catch (error) { throw new Error(`settings.json 无法读取或解析。请先备份数据目录，再删除 ${this.settingsFile} 后重新启动，并在网页中重新初始化管理员。`, { cause: error }); }
@@ -217,7 +219,8 @@ export class Manager {
     }
   }
   saveTasks() { return jsonWrite(this.tasksFile, this.tasks.slice(0, 40)); }
-  async submit(action, payload = {}) {
+  async submit(action, payload = {}, { authorize = () => {} } = {}) {
+    authorize();
     const allowed = ['install', 'update', 'start', 'stop', 'force-stop', 'restart', 'apply', 'backup', 'delete-backup', 'restore', 'restore-native', 'import-save', 'save-world', 'announce', 'kick', 'ban', 'unban'];
     if (!allowed.includes(action)) throw failure('管理操作不存在。', 404);
     if (action === 'backup' && payload.category && payload.category !== 'manual') throw failure('定时备份已交由游戏官方机制，面板仅支持手动完整备份。');
@@ -228,6 +231,7 @@ export class Manager {
       if (this.closing) throw failure('管理服务正在关闭。', 503);
       if (this.busy) throw failure('已有任务正在执行，请稍后再试。', 409);
     }
+    authorize();
     const task = { id: randomUUID(), action, state: 'running', message: '任务已开始', createdAt: new Date().toISOString() };
     this.busy = task;
     this.tasks.unshift(task); this.tasks = this.tasks.slice(0, 40);
@@ -445,19 +449,22 @@ export class Manager {
     return false;
   }
   async backup(category, protectedId = null) {
+    const directory = await backupDirectory(this.directory, category);
     this.servicePhase('backing', '正在创建存档和配置的完整备份。');
     // Stop the process before archiving so world/player files belong to one save.
     if (this.runtime.game) throw failure('创建备份前需要停止游戏服。', 409);
     if (!(await this.hasBackupFiles())) return null;
     const id = `${category}/${Date.now()}-${randomUUID()}.tar.gz`;
     const file = path.join(this.directory, 'backups', id);
-    const temporary = file + '.partial';
+    const stage = await mkdtemp(path.join(directory, '.creating-'));
+    const temporary = path.join(stage, 'archive.tar.gz');
     try {
       await this.runtime.run('tar', ['-czf', temporary, '-C', this.runtime.server, '--', 'Pal/Saved'], 'palbox');
+      await backupDirectory(this.directory, category);
       await rename(temporary, file);
-    } catch (error) { await rm(temporary, { force: true }); throw error; }
+    } finally { await rm(stage, { recursive: true, force: true }); }
     const list = (await this.backups()).filter(b => b.category === category);
-    for (const old of list.slice(this.backupRetention)) if (old.id !== protectedId) await rm(this.backupFile(old.id));
+    for (const old of list.slice(this.backupRetention)) if (old.id !== protectedId) await this.deleteBackup(old.id);
     return id;
   }
   backupFile(id) {
@@ -466,13 +473,23 @@ export class Manager {
     if (!categories.includes(category) || !backupId.test(name || '') || extra !== undefined) throw failure('备份路径无效。', 400);
     return path.join(this.directory, 'backups', category, name);
   }
-  async deleteBackup(id) {
+  async checkedBackupFile(id) {
     const file = this.backupFile(id);
+    await backupDirectory(this.directory, id.split('/')[0]);
+    if (!(await lstat(file)).isFile()) throw failure('备份文件无效。', 400);
+    return file;
+  }
+  async openBackup(id) {
+    const file = await this.checkedBackupFile(id);
+    const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     try {
-      for (const directory of [path.join(this.directory, 'backups'), path.dirname(file)]) {
-        if (!(await lstat(directory)).isDirectory()) throw failure('备份目录无效，不允许删除。');
-      }
-      if (!(await lstat(file)).isFile()) throw failure('只允许删除完整备份归档文件。');
+      if (!(await handle.stat()).isFile()) throw failure('备份文件无效。', 400);
+      return handle;
+    } catch (error) { await handle.close(); throw error; }
+  }
+  async deleteBackup(id) {
+    try {
+      const file = await this.checkedBackupFile(id);
       await unlink(file);
     } catch (error) {
       if (error.code === 'ENOENT') throw failure('备份不存在或已被删除，请刷新列表。', 404);
@@ -481,7 +498,7 @@ export class Manager {
   }
   async backups() {
     const entries = [];
-    for (const category of categories) for (const name of await readdir(path.join(this.directory, 'backups', category))) {
+    for (const category of categories) for (const name of await readdir(await backupDirectory(this.directory, category))) {
       if (!backupId.test(name)) continue;
       const file = path.join(this.directory, 'backups', category, name);
       const info = await lstat(file);
@@ -490,8 +507,7 @@ export class Manager {
     return entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
   async restore(id) {
-    const file = this.backupFile(id);
-    if (!(await lstat(file)).isFile()) throw failure('备份文件无效。');
+    const file = await this.checkedBackupFile(id);
     const captureLimit = 32 * 1024 * 1024;
     const listing = await this.runtime.run('tar', ['-tzf', file], 'palbox', { captureLimit });
     if (listing.length >= captureLimit) throw failure('备份目录清单过长，无法安全校验。');
@@ -501,6 +517,7 @@ export class Manager {
     const running = Boolean(this.runtime.game);
     if (running) await this.stopGame({ requireSave: true });
     await this.backup('manual', id);
+    await this.checkedBackupFile(id);
     this.servicePhase('restoring', '正在恢复完整备份中的存档和配置。');
     const stage = path.join(this.runtime.server, `.restore-${randomUUID()}`);
     const previous = path.join(this.runtime.server, `.saved-${randomUUID()}`);
@@ -663,24 +680,28 @@ export class Manager {
       installArgs: this.installArgs.map(arg => arg === '{server}' ? this.runtime.server : arg)
     };
   }
-  updateAdmin(change) {
+  updateAdmin(change, { authorize = () => {} } = {}) {
     const operation = this.settingsUpdates.then(async () => {
+      authorize();
       if (this.setupRequired) throw failure('请先完成管理员初始化。', 409);
       const admin = change(structuredClone(this.settings.admin));
       const next = { ...this.settings, admin };
       this.validateSettings(next);
-      await jsonWrite(this.settingsFile, next);
+      await jsonWrite(this.settingsFile, next, { beforeCommit: authorize });
       this.settings = next;
     });
     this.settingsUpdates = operation.catch(() => {});
     return operation;
   }
-  updateSettings(value) {
-    const update = this.settingsUpdates.then(() => this.applySettings(value));
+  updateSettings(value, { authorize = () => {} } = {}) {
+    const update = this.settingsUpdates.then(() => {
+      authorize();
+      return this.applySettings(value, { authorize });
+    });
     this.settingsUpdates = update.catch(() => {});
     return update;
   }
-  async applySettings(value) {
+  async applySettings(value, { authorize = () => {} } = {}) {
     if (this.setupRequired) throw failure('请先完成管理员初始化。', 409);
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw failure('设置格式不正确。');
     if (Object.hasOwn(value, 'backupIntervalHours')) throw failure('面板定时备份已移除，请使用游戏官方自动备份。');
@@ -714,7 +735,7 @@ export class Manager {
       next.gameArgs = [...value.gameArgs];
     }
     if (hasInstallArgs) next.installArgs = normalizeInstallArgs(value.installArgs, this.runtime.server);
-    await jsonWrite(this.settingsFile, next);
+    await jsonWrite(this.settingsFile, next, { beforeCommit: authorize });
     this.settings = next;
     this.syncRuntimeArgs();
     this.syncRuntimeInstallArgs();

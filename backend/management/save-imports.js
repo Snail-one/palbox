@@ -1,7 +1,11 @@
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, readdir, lstat, rename, rm } from 'node:fs/promises';
-import { execFile } from 'node:child_process';
+import { createReadStream } from 'node:fs';
+import { createGunzip } from 'node:zlib';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { failure, jsonWrite, readJson } from './files.js';
 import { saveName } from './native-backups.js';
@@ -17,6 +21,9 @@ export const DEFAULT_IMPORT_LIMITS = Object.freeze({
   maxListingLine: 8192,
   maxListingBytes: 64 * 1024 * 1024,
   tarTimeoutMs: 120000,
+  uploadTimeoutMs: 120000,
+  maxStagedImports: 5,
+  maxStagedBytes: 8 * 1024 ** 3,
   ttlMs: 60 * 60 * 1000
 });
 
@@ -106,6 +113,7 @@ export class SaveImports {
     this.native = native;
     this.limits = { ...DEFAULT_IMPORT_LIMITS, ...limits };
     this.root = path.join(this.directory, 'palbox/imports');
+    this.receiving = new Set();
   }
 
   async initialize() {
@@ -119,6 +127,7 @@ export class SaveImports {
     catch (error) { if (error.code === 'ENOENT') return; throw error; }
     const now = Date.now();
     for (const entry of entries) {
+      if (this.receiving.has(entry.name)) continue;
       const file = path.join(this.root, entry.name);
       try {
         const info = await lstat(file);
@@ -155,23 +164,40 @@ export class SaveImports {
     await rm(directory, { recursive: true, force: true });
   }
 
-  async scan(archive) {
-    let stdout;
-    try {
-      ({ stdout } = await run('tar', ['-tvzf', archive, '--numeric-owner', '--quoting-style=escape'], {
-        maxBuffer: this.limits.maxListingBytes,
-        timeout: this.limits.tarTimeoutMs,
-        env: tarEnvironment()
-      }));
-    } catch (error) {
-      if (error.code === 'ENOBUFS') throw failure('压缩包目录过大，无法安全校验。', 413);
-      if (error.killed || error.signal) throw failure('压缩包校验超时，请检查文件。', 400);
-      throw failure('不是有效的 .tar.gz 存档。', 400);
-    }
+  async usage() {
+    let bytes = 0;
+    const walk = async directory => {
+      for (const entry of await readdir(directory, { withFileTypes: true })) {
+        const file = path.join(directory, entry.name);
+        const info = await lstat(file);
+        if (info.isDirectory()) await walk(file);
+        else if (info.isFile()) bytes += info.size;
+        else throw failure('导入暂存目录包含链接或特殊文件。', 400);
+      }
+    };
+    const entries = await readdir(this.root);
+    await walk(this.root);
+    return { bytes, count: entries.length };
+  }
+
+  async scan(archive, { signal, maxBytes = this.limits.maxUncompressedBytes } = {}) {
     const entries = [];
     let bytes = 0;
-    for (const line of stdout.split('\n')) {
-      if (!line) continue;
+    let expanded = 0;
+    let listingBytes = 0;
+    let pending = '';
+    // Include bounded space for tar headers, padding and extended metadata.
+    // Counting the gzip output also covers data that tar ignores after EOF.
+    const expandedLimit = maxBytes + this.limits.maxEntries * 1024 + this.limits.maxListingBytes;
+    const child = spawn('tar', ['-tvf', '-', '--ignore-zeros', '--numeric-owner', '--quoting-style=escape'], { env: tarEnvironment(), signal });
+    child.stderr.resume();
+    const completed = new Promise((resolve, reject) => {
+      child.on('error', reject);
+      child.on('close', code => code === 0 ? resolve() : reject(failure('不是有效的 .tar.gz 存档。', 400)));
+    });
+    const timer = setTimeout(() => child.kill('SIGKILL'), this.limits.tarTimeoutMs);
+    const parseLine = line => {
+      if (!line) return;
       if (line.length > this.limits.maxListingLine) throw failure('压缩包包含过长的路径。', 400);
       const match = listing.exec(line);
       if (!match) throw failure('压缩包目录格式无法识别。', 400);
@@ -179,10 +205,43 @@ export class SaveImports {
       const size = Number(match[2]);
       if (!Number.isSafeInteger(size) || size < 0) throw failure('压缩包包含无效文件大小。', 400);
       if (type === 'file') bytes += size;
-      if (bytes > this.limits.maxUncompressedBytes) throw failure('压缩包解压后超过大小限制。', 413);
+      if (bytes > maxBytes) throw failure('压缩包解压后超过大小或暂存总量限制。', 413);
       entries.push({ name: match[3], type, size });
       if (entries.length > this.limits.maxEntries) throw failure('压缩包条目数量超过限制。', 413);
-    }
+    };
+    const counter = new Transform({ transform: (chunk, encoding, callback) => {
+      expanded += chunk.length;
+      callback(expanded > expandedLimit ? failure('压缩包解压后超过大小限制。', 413) : null, chunk);
+    } });
+    // Attach rejection handlers immediately and wait for every stream/process
+    // before returning, so a failed upload cannot leave work running in the background.
+    let processingError;
+    const stop = error => { processingError ??= error; child.kill('SIGKILL'); counter.destroy(error); };
+    const input = pipeline(createReadStream(archive), createGunzip(), counter, child.stdin, { signal }).catch(stop);
+    const output = (async () => {
+      child.stdout.setEncoding('utf8');
+      for await (const chunk of child.stdout) {
+        listingBytes += Buffer.byteLength(chunk);
+        if (listingBytes > this.limits.maxListingBytes) throw failure('压缩包目录过大，无法安全校验。', 413);
+        pending += chunk;
+        let end;
+        while ((end = pending.indexOf('\n')) !== -1) {
+          parseLine(pending.slice(0, end));
+          pending = pending.slice(end + 1);
+        }
+        if (pending.length > this.limits.maxListingLine) throw failure('压缩包包含过长的路径。', 400);
+      }
+      parseLine(pending);
+    })().catch(stop);
+    try {
+      await Promise.all([input, output, completed]);
+      if (processingError) throw processingError;
+    } catch (error) {
+      stop(error);
+      await Promise.allSettled([input, output, completed]);
+      if (processingError.status) throw processingError;
+      throw failure('不是有效的 .tar.gz 存档。', 400);
+    } finally { clearTimeout(timer); }
     return { ...detectSnapshot(entries), entries, uncompressedBytes: bytes };
   }
 
@@ -203,15 +262,16 @@ export class SaveImports {
     return { bytes, count };
   }
 
-  async extract(archive, detected, directory) {
+  async extract(archive, detected, directory, { signal } = {}) {
     const extract = path.join(directory, 'extract');
     const snapshot = path.join(directory, 'snapshot');
     await mkdir(extract, { mode: 0o700 });
     try {
       try {
-        await run('tar', ['-xzf', archive, '--no-same-owner', '--no-same-permissions', '--no-overwrite-dir', '-C', extract], {
+        await run('tar', ['-xzf', archive, '--ignore-zeros', '--no-same-owner', '--no-same-permissions', '--no-overwrite-dir', '-C', extract], {
           maxBuffer: 1024 * 1024,
           timeout: this.limits.tarTimeoutMs,
+          signal,
           env: tarEnvironment()
         });
       } catch { throw failure('无法解压存档压缩包。', 400); }
@@ -235,34 +295,53 @@ export class SaveImports {
     } finally { await rm(extract, { recursive: true, force: true }); }
   }
 
-  async receive(request) {
+  async receive(request, { authorize = () => {} } = {}) {
+    authorize();
     const type = String(request.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
     if (!['application/gzip', 'application/x-gzip', 'application/octet-stream'].includes(type)) throw failure('请上传 .tar.gz 格式的官方存档。', 415);
     const declared = Number(request.headers['content-length']);
     if (Number.isFinite(declared) && declared > this.limits.maxCompressedBytes) throw failure('存档压缩包超过大小限制。', 413);
-    await this.cleanup();
+    if (this.receiving.size) throw failure('已有存档正在上传，请稍后再试。', 429);
     const id = randomUUID();
+    this.receiving.add(id);
     const directory = path.join(this.root, id);
     const archive = path.join(directory, 'upload.tar.gz');
-    await mkdir(directory, { mode: 0o700 });
     let handle;
+    let timer;
+    const controller = new AbortController();
+    const expire = () => {
+      controller.abort();
+      request.destroy();
+    };
     try {
+      timer = setTimeout(expire, this.limits.uploadTimeoutMs);
+      await this.cleanup();
+      const usage = await this.usage();
+      if (usage.count >= this.limits.maxStagedImports || usage.bytes >= this.limits.maxStagedBytes) throw failure('导入暂存数量或总量已达上限，请导入已有存档或等待过期清理。', 413);
+      authorize();
+      await mkdir(directory, { mode: 0o700 });
       handle = await open(archive, 'wx', 0o600);
       let bytes = 0;
       let magic = Buffer.alloc(0);
-      for await (const chunk of request) {
+      for await (const chunk of request.iterator({ destroyOnReturn: false })) {
+        authorize();
         bytes += chunk.length;
-        if (bytes > this.limits.maxCompressedBytes) throw failure('存档压缩包超过大小限制。', 413);
+        if (bytes > this.limits.maxCompressedBytes || usage.bytes + bytes > this.limits.maxStagedBytes) throw failure('存档压缩包超过大小或暂存总量限制。', 413);
         if (magic.length < 2) magic = Buffer.concat([magic, chunk]).subarray(0, 2);
         let offset = 0;
         while (offset < chunk.length) offset += (await handle.write(chunk, offset, chunk.length - offset, null)).bytesWritten;
       }
+      clearTimeout(timer);
+      // Bound validation and extraction as well as reading a slow request body.
+      timer = setTimeout(() => controller.abort(), 2 * this.limits.tarTimeoutMs);
+      authorize();
       if (magic.length < 2 || magic[0] !== 0x1f || magic[1] !== 0x8b) throw failure('上传文件不是 gzip 压缩包。', 400);
       await handle.sync();
       await handle.close();
       handle = null;
-      const detected = await this.scan(archive);
-      const extracted = await this.extract(archive, detected, directory);
+      const detected = await this.scan(archive, { signal: controller.signal, maxBytes: Math.min(this.limits.maxUncompressedBytes, this.limits.maxStagedBytes - usage.bytes - bytes) });
+      authorize();
+      const extracted = await this.extract(archive, detected, directory, { signal: controller.signal });
       const inspected = await this.native.inspect(extracted.snapshot, { requirePlayers: false });
       if (extracted.verified.count !== detected.copy.length) throw failure('压缩包文件数量不一致，请重新打包。', 400);
       const meta = {
@@ -275,13 +354,18 @@ export class SaveImports {
         entries: detected.entries.length,
         files: inspected.files.map(file => ({ name: file.name, bytes: file.bytes }))
       };
-      await jsonWrite(path.join(directory, 'meta.json'), meta);
+      const metaBytes = Buffer.byteLength(JSON.stringify(meta, null, 2) + '\n');
+      if (usage.bytes + bytes + inspected.bytes + metaBytes > this.limits.maxStagedBytes) throw failure('导入暂存总量超过限制。', 413);
+      authorize();
+      if (controller.signal.aborted) throw failure('存档处理超时，请重试。', 408);
+      await jsonWrite(path.join(directory, 'meta.json'), meta, { beforeCommit: authorize });
       await rm(archive, { force: true });
       return meta;
     } catch (error) {
       if (handle) await handle.close().catch(() => {});
       await rm(directory, { recursive: true, force: true });
+      if (controller.signal.aborted) throw failure('存档处理超时，请重试。', 408);
       throw error;
-    }
+    } finally { clearTimeout(timer); this.receiving.delete(id); }
   }
 }

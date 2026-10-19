@@ -167,8 +167,9 @@ export class ManagementStore {
       ? { source: managedTemplate(this.gamePort, '[/Script/Pal.PalGameWorldSettings]\nOptionSettings=()\n'), origin: '手动创建的配置' }
       : { source, origin: DERIVED_DEFAULT_ORIGIN };
   }
-  update(workspace, revision) {
+  update(workspace, revision, { authorize = () => {} } = {}) {
     const operation = this.writes.then(async () => {
+      authorize();
       if (revision !== this.revision) throw failure('配置已在其他页面修改，请刷新后再编辑。', 409);
       const limits = { maxProfiles: Math.max(MAX_PROFILES, this.workspace.profiles.length) };
       validateConfigurationWorkspace(workspace, limits);
@@ -195,7 +196,7 @@ export class ManagementStore {
       if (!candidate.activeId && locked) candidate.activeId = locked.id;
       validateConfigurationWorkspace(candidate, limits);
       const next = this.revision + 1;
-      await jsonWrite(this.file, { workspace: candidate, revision: next });
+      await jsonWrite(this.file, { workspace: candidate, revision: next }, { beforeCommit: authorize });
       this.workspace = candidate;
       this.revision = next;
       return this.snapshot();

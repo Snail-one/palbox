@@ -4,6 +4,7 @@ import { lstat, readdir, readFile, open, mkdir, mkdtemp, rename, rm } from 'node
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { failure } from './files.js';
+import { backupDirectory } from './backup-paths.js';
 
 const run = promisify(execFile);
 export const worldName = /^[A-Za-z0-9_-]{1,128}$(?![\s\S])/;
@@ -150,7 +151,7 @@ export class NativeBackups {
   }
 
   async export(id) {
-    const stage = await mkdtemp(path.join(this.directory, 'backups/.official-export-'));
+    const stage = await mkdtemp(path.join(await backupDirectory(this.directory), '.official-export-'));
     const cleanup = () => rm(stage, { recursive: true, force: true });
     try {
       const source = path.join(stage, 'save');
@@ -178,7 +179,7 @@ export class NativeBackups {
     }
     await beforeSwap?.();
     world = await this.safeDirectory(['SaveGames', '0', worldId]);
-    const stage = await mkdtemp(path.join(this.directory, 'backups/.official-restore-'));
+    const stage = await mkdtemp(path.join(await backupDirectory(this.directory), '.official-restore-'));
     const moved = [];
     let preserve = false;
     try {
@@ -215,7 +216,7 @@ export class NativeBackups {
   async restore(id, beforeReplace) {
     const backup = await this.get(id);
     if (backup.worldId !== await this.activeWorld()) throw failure('无法确认该备份属于当前世界，拒绝恢复。', 409);
-    const stage = await mkdtemp(path.join(this.directory, 'backups/.official-restore-'));
+    const stage = await mkdtemp(path.join(await backupDirectory(this.directory), '.official-restore-'));
     try {
       const source = path.join(stage, 'save');
       await this.copy(id, source);

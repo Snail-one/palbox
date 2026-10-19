@@ -42,7 +42,7 @@ export async function body(request, limit = 8 * 1024 * 1024, timeoutMs = DEFAULT
 export function createManagementApi(manager, options = {}) {
   const auth = new Authentication(() => manager.settings?.admin ?? null, {
     ...options,
-    updateAdmin: change => manager.updateAdmin(change),
+    updateAdmin: (change, checks) => manager.updateAdmin(change, checks),
     log: options.log ?? (text => manager.runtime.log('login', text))
   });
   return async function api(request, response, pathname) {
@@ -80,6 +80,9 @@ export function createManagementApi(manager, options = {}) {
         json(200, await auth.completeLogin(request, await body(request, 4096, AUTH_BODY_TIMEOUT_MS), response)); return;
       }
       auth.require(request, !['GET', 'HEAD'].includes(request.method));
+      // Revalidate after body reads and inside queued writes, using this request's
+      // original cookie and CSRF token so logout/rotation also revokes pending work.
+      const checks = { authorize: () => auth.require(request, true) };
       if (pathname === '/api/security/totp' && request.method === 'GET') {
         json(200, auth.securityStatus()); return;
       }
@@ -100,14 +103,16 @@ export function createManagementApi(manager, options = {}) {
         if (manager.closing) throw failure('管理服务正在关闭。', 503);
         if (manager.busy) throw failure('已有任务正在执行，请稍后再试。', 409);
         request.setTimeout(0);
-        const staged = await manager.imports.receive(request);
+        const staged = await manager.imports.receive(request, checks);
+        try { checks.authorize(); }
+        catch (error) { await manager.imports.remove(staged.id); throw error; }
         if (response.destroyed) { await manager.imports.remove(staged.id); return; }
         json(201, staged); return;
       }
       if (pathname === '/api/logout' && request.method === 'POST') { auth.logout(request, response); json(200, { ok: true }); return; }
       if (pathname === '/api/workspace') {
         if (request.method === 'GET') { await manager.store.syncDefaultProfile(); json(200, manager.store.snapshot()); return; }
-        if (request.method === 'PUT') { const input = await body(request); json(200, await manager.store.update(input.workspace, input.revision)); return; }
+        if (request.method === 'PUT') { const input = await body(request); json(200, await manager.store.update(input.workspace, input.revision, checks)); return; }
       }
       if (pathname === '/api/status' && request.method === 'GET') { json(200, await manager.status()); return; }
       if (pathname === '/api/running' && request.method === 'GET') { json(200, manager.runningConfiguration()); return; }
@@ -115,7 +120,7 @@ export function createManagementApi(manager, options = {}) {
       if (pathname === '/api/update-check' && request.method === 'GET') { json(200, await manager.updateInfo()); return; }
       if (pathname === '/api/tasks' && request.method === 'POST') {
         const input = await body(request, 8192);
-        json(202, await manager.submit(input.action, input)); return;
+        json(202, await manager.submit(input.action, input, checks)); return;
       }
       if (pathname === '/api/logs/stream' && request.method === 'GET') {
         const channel = new URL(request.url, 'http://localhost').searchParams.get('channel') || 'palbox';
@@ -145,20 +150,29 @@ export function createManagementApi(manager, options = {}) {
         return;
       }
       if (pathname === '/api/backup' && request.method === 'GET') {
-        const file = manager.backupFile(new URL(request.url, 'http://localhost').searchParams.get('id'));
-        const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+        const id = new URL(request.url, 'http://localhost').searchParams.get('id');
+        const handle = await manager.openBackup(id);
         const info = await handle.stat();
         if (!info.isFile()) { await handle.close(); throw failure('备份文件无效。', 404); }
-        response.writeHead(200, { ...API_SECURITY_HEADERS, 'Content-Type': 'application/gzip', 'Content-Disposition': `attachment; filename="${file.split('/').at(-1)}"`, 'Content-Length': info.size, 'Cache-Control': 'no-store' });
+        if (response.destroyed) { await handle.close(); return; }
+        response.writeHead(200, { ...API_SECURITY_HEADERS, 'Content-Type': 'application/gzip', 'Content-Disposition': `attachment; filename="${id.split('/').at(-1)}"`, 'Content-Length': info.size, 'Cache-Control': 'no-store' });
         const stream = handle.createReadStream();
         stream.on('error', () => response.destroy()); response.on('close', () => stream.destroy()); stream.pipe(response); return;
       }
       if (pathname === '/api/settings') {
         if (request.method === 'GET') { json(200, manager.publicSettings()); return; }
-        if (request.method === 'PUT') { json(200, await manager.updateSettings(await body(request, 65536))); return; }
+        if (request.method === 'PUT') { json(200, await manager.updateSettings(await body(request, 65536), checks)); return; }
       }
       json(404, { error: '管理接口不存在。' });
     } catch (error) {
+      if (request.complete === false && !response.headersSent && !response.destroyed) {
+        // Allow the proxy to receive an early rejection before closing an
+        // unfinished upload, while bounding how long its remaining body drains.
+        const timer = setTimeout(() => request.destroy(), 1000);
+        timer.unref();
+        request.once('end', () => clearTimeout(timer));
+        request.once('close', () => clearTimeout(timer));
+      }
       if (!response.headersSent && !response.destroyed) json(error.status || (error.code === 'ENOENT' ? 404 : 500), { error: error.status ? error.message : '操作失败，请检查服务器日志。' });
       else response.destroy();
       if (!error.status) manager.runtime.log('palbox', `${error.stack || error}\n`);
