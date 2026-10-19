@@ -95,17 +95,34 @@ test('备份期间存档消失不能显示成功，也不清理已有归档', as
   assert.equal(await readFile(existing, 'utf8'), 'existing-archive');
 });
 
-test('运行中停服后仍未生成存档则备份失败，并恢复原来的运行状态', async t => {
+test('运行中拒绝手动备份，不停止或重启游戏，也不创建任务与归档', async t => {
   const { manager, runtime } = await fixture(t);
-  let restarted = false;
-  runtime.game = {};
-  runtime.stop = async options => { assert.equal(options.requireSave, true); runtime.game = null; };
-  runtime.start = async () => { restarted = true; };
-  await manager.submit('backup');
-  await manager.operation;
-  assert.equal(manager.tasks[0].state, 'failed');
-  assert.match(manager.tasks[0].message, /尚无可备份的世界存档/);
-  assert.equal(restarted, true);
-  assert.deepEqual(await manager.backups(), []);
-  runtime.stop = async () => {};
+  const world = path.join(runtime.saved, 'SaveGames/0/WORLD1');
+  await mkdir(world, { recursive: true });
+  await writeFile(path.join(world, 'Level.sav'), 'world-data');
+  const game = {};
+  runtime.game = game;
+  runtime.ready = true;
+  runtime.stop = async () => { assert.fail('不应停止游戏'); };
+  runtime.start = async () => { assert.fail('不应启动游戏'); };
+  try {
+    await assert.rejects(manager.submit('backup'), { status: 409, message: /请先停止游戏服/ });
+    assert.equal(runtime.game, game);
+    assert.equal(runtime.ready, true);
+    assert.deepEqual(manager.tasks, []);
+    assert.equal(manager.busy, null);
+    assert.deepEqual(await manager.backups(), []);
+    assert.equal(await readFile(path.join(world, 'Level.sav'), 'utf8'), 'world-data');
+  } finally { runtime.game = null; runtime.stop = async () => {}; }
+});
+
+test('存档预检查期间游戏启动后拒绝手动备份', async t => {
+  const { manager, runtime } = await fixture(t);
+  manager.requireWorldSave = async () => { runtime.game = {}; };
+  try {
+    await assert.rejects(manager.submit('backup'), { status: 409, message: /请先停止游戏服/ });
+    assert.deepEqual(manager.tasks, []);
+    assert.equal(manager.busy, null);
+    assert.deepEqual(await manager.backups(), []);
+  } finally { runtime.game = null; }
 });

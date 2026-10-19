@@ -234,11 +234,13 @@ export class Manager extends EventEmitter {
     if (this.closing) throw failure('管理服务正在关闭。', 503);
     if (this.busy) throw failure('已有任务正在执行，请稍后再试。', 409);
     if (action === 'update' && this.runtime.game) throw failure('请先停止游戏服再更新服务端。', 409);
+    if (action === 'backup' && this.runtime.game) throw failure('请先停止游戏服再创建完整备份。', 409);
     if (action === 'reset-save') this.requireResetAllowed(payload);
-    if (action === 'backup' && !this.runtime.game) {
+    if (action === 'backup') {
       await this.requireWorldSave();
       if (this.closing) throw failure('管理服务正在关闭。', 503);
       if (this.busy) throw failure('已有任务正在执行，请稍后再试。', 409);
+      if (this.runtime.game) throw failure('请先停止游戏服再创建完整备份。', 409);
     }
     authorize();
     const task = { id: randomUUID(), action, state: 'running', message: '任务已开始', createdAt: new Date().toISOString() };
@@ -329,14 +331,9 @@ export class Manager extends EventEmitter {
         break;
       }
       case 'backup': {
-        const running = Boolean(this.runtime.game);
-        if (running) await this.stopGame({ requireSave: true });
-        try {
-          await this.requireWorldSave();
-          task.backup = await this.backup('manual');
-          if (!task.backup) throw failure('存档目录已不存在，未创建备份。', 409);
-        }
-        finally { if (running && !this.closing) await this.startGame(); }
+        await this.requireWorldSave();
+        task.backup = await this.backup('manual');
+        if (!task.backup) throw failure('存档目录已不存在，未创建备份。', 409);
         break;
       }
       case 'delete-backup': await this.deleteBackup(payload.id); break;
