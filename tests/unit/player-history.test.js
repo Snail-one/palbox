@@ -118,6 +118,7 @@ test('完整和分块游戏日志均可记录，无需 REST，关闭后不再订
 test('启动回读轮换游戏日志，补全最早时间与 IP，重复回读不会重复玩家', async t => {
   const { directory, history } = await fixture(t);
   await mkdir(path.join(directory, 'logs'));
+  await writeFile(path.join(directory, 'logs/game.log.2026-10-18'), '[2026-10-18 12:37:55] [LOG] 明天见~ 112.47.113.28 connected the server. (User id: steam_76561199796296840)\n');
   await writeFile(path.join(directory, 'logs/game.log.1'), '[2026-10-19 12:37:55] [LOG] 明天见~ 112.47.113.28 connected the server. (User id: steam_76561199796296840)\n');
   await writeFile(path.join(directory, 'logs/game.log'), '[2026-10-19 12:43:27] [LOG] 蛋挞皮 joined the server. (User id: steam_76561199796296840, Player id: 0F9B01E2000000000000000000000000)\n');
   const runtime = Object.assign(new EventEmitter(), { directory, log() {} });
@@ -125,7 +126,7 @@ test('启动回读轮换游戏日志，补全最早时间与 IP，重复回读�
     const recorder = new PlayerHistoryRecorder({ history, runtime }); await recorder.start(); await recorder.close();
     assert.equal(history.list().recorded, 1); assert.equal(history.list().players[0].ip, '112.47.113.28');
     assert.equal(history.list().players[0].loginStatus, 'succeeded');
-    assert.equal(history.list().players[0].firstSeenAt, '2026-10-19T12:37:55.000Z');
+    assert.equal(history.list().players[0].firstSeenAt, '2026-10-18T12:37:55.000Z');
   }
 });
 

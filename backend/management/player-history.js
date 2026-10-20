@@ -1,10 +1,11 @@
 import path from 'node:path';
 import { createReadStream } from 'node:fs';
-import { readdir, lstat } from 'node:fs/promises';
+import { lstat } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { isIP } from 'node:net';
 import { stripVTControlCharacters } from 'node:util';
 import { jsonWrite, readJson, failure } from './files.js';
+import { logFileNames } from './log-retention.js';
 
 const PAGE_SIZE = 10;
 const text = value => typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 200) : '';
@@ -170,10 +171,7 @@ export class PlayerHistoryRecorder {
   async *readEvents() {
     const directory = path.join(this.runtime.directory, 'logs');
     try {
-      const files = (await readdir(directory)).filter(file => /^game\.log(?:\.\d+)?$/.test(file));
-      files.sort((a, b) => Number(b.split('.')[2] || 0) - Number(a.split('.')[2] || 0));
-      for (const file of files) {
-        const name = path.join(directory, file);
+      for (const name of logFileNames(path.join(directory, 'game.log'), this.runtime.logPolicy?.maxArchives)) {
         try {
           if (!(await lstat(name)).isFile()) continue;
           const input = createReadStream(name, { encoding: 'utf8' });

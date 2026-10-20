@@ -4,7 +4,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { stripVTControlCharacters } from 'node:util';
 import path from 'node:path';
 import { API_SECURITY_HEADERS } from '../security-headers.js';
-import { appendLog, DEFAULT_LOG_POLICY } from './log-retention.js';
+import { appendLog, DEFAULT_LOG_POLICY, logFileNames } from './log-retention.js';
 
 const sources = { game: 'game', steamcmd: 'update', palbox: 'PalBox' };
 const combinedFile = directory => path.join(directory, 'logs/combined.jsonl');
@@ -147,10 +147,11 @@ async function readUtf8Tail(file, limit, maxArchives = DEFAULT_LOG_POLICY.maxArc
   const chunks = [];
   const seen = new Set();
   let remaining = limit;
-  for (let index = 0; index <= maxArchives && remaining > 0; index++) {
+  for (const name of logFileNames(file, maxArchives).reverse()) {
+    if (remaining <= 0) break;
     let handle;
     try {
-      handle = await open(index ? `${file}.${index}` : file, constants.O_RDONLY | constants.O_NOFOLLOW);
+      handle = await open(name, constants.O_RDONLY | constants.O_NOFOLLOW);
       const info = await handle.stat();
       if (!info.isFile()) continue;
       const { size, dev, ino } = info;

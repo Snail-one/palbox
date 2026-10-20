@@ -50,7 +50,7 @@ services:
       TZ: "UTC"
       PALBOX_SECURE_COOKIE: "false"
       PALBOX_TRUSTED_PROXIES: "172.30.83.2"
-      # 每个日志文件的 MiB 上限、历史份数、未更新文件的保留天数。
+      # 按 UTC 自然日归档：每文件 MiB 上限、每天的额外分卷数、含当天的保留天数。
       PALBOX_LOG_MAX_MB: "5"
       PALBOX_LOG_BACKUPS: "1"
       PALBOX_LOG_RETENTION_DAYS: "7"

@@ -1,11 +1,49 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendFile, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
+import { appendFile, readFile, readdir, rename, stat, utimes, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { managementFixture } from '../helpers/management-fixture.js';
 import { formatLogBlocks } from '../../shared/domain/logs.js';
 
 const withoutTimestamps = text => text.replace(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} UTC\] /gm, '');
+
+test('按天归档后历史 API 与实时 SSE 保持游标，聊天和 GM 广播都可继续读取', { timeout: 10000 }, async t => {
+  const f = await managementFixture(); t.after(() => f.close());
+  const { cookie } = await f.login();
+  f.runtime.log('game', '[CHAT] <Snail> 跨日前的聊天\n');
+  const previous = await (await f.request('/api/logs/history?channel=all')).json();
+  const old = new Date(Date.parse(new Date().toISOString().slice(0, 10)) - 1000);
+  for (const base of ['game.log', 'combined.jsonl']) await utimes(path.join(f.directory, 'logs', base), old, old);
+  const controller = new AbortController(); t.after(() => controller.abort());
+  const response = await fetch(f.base + '/api/logs/stream?channel=all&format=pages', {
+    headers: { Cookie: cookie, 'Last-Event-ID': previous.after }, signal: controller.signal
+  });
+  const reader = response.body.getReader(), decoder = new TextDecoder();
+  f.runtime.log('game', '[CHAT] <Snail> 跨日后的聊天\n');
+  f.runtime.log('palbox', '[GM] "跨日后的广播"\n');
+  let buffered = '', text = '';
+  while (!text.includes('跨日后的广播')) {
+    const part = await reader.read(); assert.equal(part.done, false);
+    buffered += decoder.decode(part.value, { stream: true });
+    let end;
+    while ((end = buffered.indexOf('\n\n')) >= 0) {
+      const frame = buffered.slice(0, end); buffered = buffered.slice(end + 2);
+      if (!frame.includes('event: log\n')) continue;
+      const page = JSON.parse(frame.split('\n').find(line => line.startsWith('data: ')).slice(6));
+      assert.equal(page.gap, false);
+      text += formatLogBlocks(page.blocks, 'all');
+    }
+  }
+  assert.match(text, /跨日后的聊天/);
+  const snapshot = await (await f.request('/api/logs/history?channel=all')).json();
+  const history = formatLogBlocks(snapshot.blocks, 'all');
+  assert.match(history, /跨日前的聊天/);
+  assert.match(history, /\[GM\] "跨日后的广播"/);
+  const day = old.toISOString().slice(0, 10);
+  const files = await readdir(path.join(f.directory, 'logs'));
+  assert.ok(files.includes(`game.log.${day}`));
+  assert.ok(files.includes(`combined.jsonl.${day}`));
+});
 
 test('历史接口要求登录，分页有界，增量 SSE 用事件位置恢复且退出后失效', { timeout: 10000 }, async t => {
   const f = await managementFixture(); t.after(() => f.close());

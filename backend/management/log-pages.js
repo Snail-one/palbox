@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { failure } from './files.js';
+import { logFileNames } from './log-retention.js';
 
 const BLOCK_BYTES = 16 * 1024;
 const PAGE_BLOCKS = 4;
@@ -51,10 +52,10 @@ export async function readLogPage(directory, channel, maxArchives, { before, aft
   try {
     const seen = new Set();
     // Open current first: renames during this scan cannot duplicate an inode.
-    for (let index = 0; index <= maxArchives; index++) {
+    for (const name of logFileNames(base, maxArchives).reverse()) {
       let handle;
       try {
-        handle = await open(index ? `${base}.${index}` : base, constants.O_RDONLY | constants.O_NOFOLLOW);
+        handle = await open(name, constants.O_RDONLY | constants.O_NOFOLLOW);
         const info = await handle.stat();
         const key = `${info.dev}:${info.ino}:${info.birthtimeMs}`;
         if (!info.isFile() || seen.has(key)) { await handle.close(); continue; }

@@ -5,6 +5,26 @@ import path from 'node:path';
 const DAY = 24 * 60 * 60 * 1000;
 export const LOG_FILES = Object.freeze(['game.log', 'steamcmd.log', 'palbox.log', 'login.log', 'combined.jsonl']);
 export const DEFAULT_LOG_POLICY = Object.freeze({ maxBytes: 5 * 1024 * 1024, maxArchives: 1, retentionMs: 7 * DAY, cleanupIntervalMs: 60 * 60 * 1000 });
+const utcDay = now => new Date(now).toISOString().slice(0, 10);
+const firstDay = (policy, now) => utcDay(Date.parse(utcDay(now)) - (Math.ceil(policy.retentionMs / DAY) - 1) * DAY);
+
+/** Recognize only managed names, including dated archives and legacy size parts. */
+export function logFileInfo(name) {
+  const match = name.match(/^(game\.log|steamcmd\.log|palbox\.log|login\.log|combined\.jsonl)(?:\.(\d{4}-\d{2}-\d{2}))?(?:\.([1-9]\d*))?$/);
+  if (!match || (match[2] && (!Number.isFinite(Date.parse(match[2])) || utcDay(Date.parse(match[2])) !== match[2]))) return null;
+  return { base: match[1], day: match[2] || null, part: Number(match[3] || 0) };
+}
+
+/** Oldest first; the active file is last. Readers still reject symlinks on open. */
+export function logFileNames(file, maxArchives = DEFAULT_LOG_POLICY.maxArchives) {
+  let entries;
+  try { entries = readdirSync(path.dirname(file)); }
+  catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+  return entries.map(name => ({ name, info: logFileInfo(name) }))
+    .filter(({ info }) => info?.base === path.basename(file) && info.part <= maxArchives)
+    .sort((a, b) => (a.info.day || '9999').localeCompare(b.info.day || '9999') || b.info.part - a.info.part)
+    .map(({ name }) => path.join(path.dirname(file), name));
+}
 
 export function logPolicy(options = {}) {
   const policy = { ...DEFAULT_LOG_POLICY, ...options };
@@ -51,6 +71,36 @@ function rotate(file, policy) {
   renameSync(file, file + '.1');
 }
 
+function archivePreviousDays(file, policy, now) {
+  const today = utcDay(now), oldest = firstDay(policy, now);
+  let changed = false;
+  // Preserve chronological order, including numeric archives from older builds.
+  for (let index = policy.maxArchives; index >= 0; index--) {
+    const source = index ? `${file}.${index}` : file;
+    const info = lstatSync(source, { throwIfNoEntry: false });
+    if (!info?.isFile() || utcDay(info.mtimeMs) >= today) continue;
+    const day = utcDay(info.mtimeMs);
+    if (info.size && day >= oldest) {
+      const target = `${file}.${day}`;
+      if (regularFile(target)) rotate(target, policy);
+      renameSync(source, target);
+    } else remove(source);
+    changed = true;
+  }
+  if (changed) {
+    // Empty active files are migration markers for login and combined history.
+    if (!regularFile(file)) {
+      writeFileSync(file, '', { flag: 'wx', mode: 0o600 });
+      utimesSync(file, now / 1000, now / 1000);
+    }
+    for (const entry of readdirSync(path.dirname(file), { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const info = logFileInfo(entry.name);
+      if (info?.base === path.basename(file) && info.day && info.day < oldest) remove(path.join(path.dirname(file), entry.name));
+    }
+  }
+}
+
 function tail(buffer, limit, jsonl) {
   let start = Math.max(0, buffer.length - limit);
   if (start && jsonl && buffer[start - 1] !== 10) {
@@ -84,16 +134,16 @@ function shrink(file, info, policy) {
   return recent.length;
 }
 
-export function appendLog(file, value, policy = DEFAULT_LOG_POLICY) {
+export function appendLog(file, value, policy = DEFAULT_LOG_POLICY, now = Date.now()) {
   const jsonl = file.endsWith('.jsonl');
   // A single burst can exceed the whole ring. Skip the part that would be
   // evicted immediately, bounding both disk writes and the number of rotations.
   const buffer = tail(Buffer.from(value), policy.maxBytes * (policy.maxArchives + 1), jsonl);
   if (!buffer.length) return;
+  if (LOG_FILES.includes(path.basename(file))) archivePreviousDays(file, policy, now);
   const info = regularFile(file);
   let size = info?.size ?? 0;
-  if (info && info.mtimeMs < Date.now() - policy.retentionMs) { replace(file, Buffer.alloc(0)); size = 0; }
-  else if (size > policy.maxBytes) size = shrink(file, info, policy);
+  if (size > policy.maxBytes) size = shrink(file, info, policy);
   let offset = 0;
   while (offset < buffer.length) {
     let end = Math.min(buffer.length, offset + policy.maxBytes - size);
@@ -109,6 +159,7 @@ export function appendLog(file, value, policy = DEFAULT_LOG_POLICY) {
       continue;
     }
     appendFileSync(file, buffer.subarray(offset, end), { mode: 0o600 });
+    utimesSync(file, now / 1000, now / 1000);
     size += end - offset;
     offset = end;
     if (offset < buffer.length) { rotate(file, policy); size = 0; }
@@ -117,23 +168,30 @@ export function appendLog(file, value, policy = DEFAULT_LOG_POLICY) {
 
 export function cleanupLogs(directory, policy = DEFAULT_LOG_POLICY, now = Date.now()) {
   const errors = [];
+  const oldest = firstDay(policy, now);
+  for (const base of LOG_FILES) {
+    // Skip symlinks without touching their targets, as with normal cleanup.
+    try {
+      const active = path.join(directory, base);
+      const info = lstatSync(active, { throwIfNoEntry: false });
+      if (info && !info.isFile()) continue;
+      archivePreviousDays(active, policy, now);
+    } catch (error) { errors.push(error); }
+  }
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (!entry.isFile()) continue;
-    if (/^(game\.log|steamcmd\.log|palbox\.log|login\.log|combined\.jsonl)\.[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.tmp$/.test(entry.name)) {
+    if (/^(game\.log|steamcmd\.log|palbox\.log|login\.log|combined\.jsonl)(?:\.\d{4}-\d{2}-\d{2})?(?:\.\d+)?\.[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.tmp$/.test(entry.name)) {
       try { remove(path.join(directory, entry.name)); } catch (error) { errors.push(error); }
       continue;
     }
-    const match = /^(game\.log|steamcmd\.log|palbox\.log|login\.log|combined\.jsonl)(?:\.([1-9]\d*))?$/.exec(entry.name);
-    if (!match) continue;
+    const record = logFileInfo(entry.name);
+    if (!record) continue;
     const file = path.join(directory, entry.name);
     try {
       const info = regularFile(file);
       if (!info) continue;
-      const archive = Number(match[2] || 0);
-      if (archive > policy.maxArchives || (archive && info.mtimeMs < now - policy.retentionMs)) remove(file);
-      else if (info.mtimeMs < now - policy.retentionMs && info.size) {
-        // Keep empty active files as migration markers, so clearing an old
-        // login/combined log cannot cause legacy history to be imported again.
+      if (record.part > policy.maxArchives || (record.day && record.day < oldest)) remove(file);
+      else if (!record.day && utcDay(info.mtimeMs) < oldest && info.size) {
         replace(file, Buffer.alloc(0));
       } else if (info.size > policy.maxBytes) shrink(file, info, policy);
     } catch (error) { errors.push(error); }

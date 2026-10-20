@@ -6,6 +6,8 @@ import path from 'node:path';
 import { appendLog, cleanupLogs, DEFAULT_LOG_POLICY, LOG_FILES, logPolicy, logPolicyFromEnv } from '../../backend/management/log-retention.js';
 import { appendCombinedLog, readCombinedLog, readLogTail } from '../../backend/management/logs.js';
 import { Runtime } from '../../backend/management/runtime.js';
+import { readLogPage } from '../../backend/management/log-pages.js';
+import { formatLogBlocks } from '../../shared/domain/logs.js';
 
 async function fixture(t, options = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'palbox-log-retention-'));
@@ -168,4 +170,69 @@ test('日志保留环境变量有默认值、允许关闭归档且拒绝错误�
   assert.equal(policy.maxArchives, 0);
   assert.equal(policy.retentionMs, 30 * 24 * 60 * 60 * 1000);
   for (const env of [{ PALBOX_LOG_MAX_MB: '0' }, { PALBOX_LOG_MAX_MB: '1.5' }, { PALBOX_LOG_BACKUPS: '11' }, { PALBOX_LOG_RETENTION_DAYS: '' }, { PALBOX_LOG_RETENTION_DAYS: '366' }]) assert.throws(() => logPolicyFromEnv(env), /PALBOX_LOG_/);
+});
+
+test('UTC 午夜归档前一天的所有容量分卷，分页游标跨日期继续且尾部按时间顺序读取', async t => {
+  const { directory, file, logs, policy } = await fixture(t);
+  const old = Date.parse('2026-10-20T23:59:59.000Z');
+  appendLog(file, 'a'.repeat(250) + '\n', policy, old);
+  appendLog(file, '午夜前\n', policy, old + 1);
+  const first = await readLogPage(directory, 'game', 1);
+  appendLog(file, '午夜后🙂\n', policy, old + 1000);
+  assert.deepEqual((await readdir(logs)).sort(), ['game.log', 'game.log.2026-10-20', 'game.log.2026-10-20.1']);
+  assert.equal(await readFile(file + '.2026-10-20.1', 'utf8') + await readFile(file + '.2026-10-20', 'utf8'), 'a'.repeat(250) + '\n午夜前\n');
+  assert.equal(await readLogTail(file), 'a'.repeat(250) + '\n午夜前\n午夜后🙂\n');
+  const next = await readLogPage(directory, 'game', 1, { after: first.after });
+  assert.equal(next.gap, false);
+  assert.equal(formatLogBlocks(next.blocks, 'game'), '午夜后🙂\n');
+});
+
+test('自然日保留包含当天，按 UTC 文件日期清理，最近修改不能延长过期日期文件寿命', async t => {
+  const { file, logs, policy } = await fixture(t, { retentionMs: 2 * 86400000 });
+  for (const day of ['2026-01-30', '2026-01-31', '2026-02-01']) appendLog(file, `${day}\n`, policy, Date.parse(`${day}T23:59:59Z`));
+  assert.deepEqual((await readdir(logs)).sort(), ['game.log', 'game.log.2026-01-31']);
+  await writeFile(file + '.2026-01-30', '复制过来的过期文件\n');
+  const old = new Date('2020-01-01T00:00:00Z');
+  await utimes(file + '.2026-01-31', old, old);
+  cleanupLogs(logs, policy, Date.parse('2026-02-01T23:59:59Z'));
+  assert.equal(await readFile(file + '.2026-01-31', 'utf8'), '2026-01-31\n');
+  await assert.rejects(stat(file + '.2026-01-30'), { code: 'ENOENT' });
+  cleanupLogs(logs, policy, Date.parse('2026-02-02T00:00:00Z'));
+  assert.deepEqual((await readdir(logs)).sort(), ['game.log', 'game.log.2026-02-01']);
+  assert.equal(await readFile(file, 'utf8'), '');
+});
+
+test('关闭当天容量历史仍按天保存，启动归档后统一日志和 GM 广播继续可读', async t => {
+  const { directory, logs, policy } = await fixture(t, { maxArchives: 0 });
+  const file = path.join(logs, 'combined.jsonl');
+  const write = (at, channel, text) => appendLog(file, JSON.stringify({ at, channel, text }) + '\n', policy, Date.parse(at));
+  write('2026-12-31T23:59:59Z', 'game', '[CHAT] <Snail> 新年前\n');
+  cleanupLogs(logs, policy, Date.parse('2027-01-01T00:00:00Z'));
+  write('2027-01-01T00:00:00Z', 'palbox', '[GM] "新年快乐"\n');
+  assert.deepEqual((await readdir(logs)).sort(), ['combined.jsonl', 'combined.jsonl.2026-12-31']);
+  const text = await readCombinedLog(directory, 65536, 0);
+  assert.match(text, /新年前/);
+  assert.match(text, /\[PalBox\] \[GM\] "新年快乐"/);
+  assert.ok(text.indexOf('新年前') < text.indexOf('新年快乐'));
+});
+
+test('日期归档目标是符号链接时拒绝写入，保留旧文件和链接目标', async t => {
+  const { directory, file, policy } = await fixture(t);
+  appendLog(file, '旧记录\n', policy, Date.parse('2026-10-20T23:59:59Z'));
+  const outside = path.join(directory, 'outside');
+  await writeFile(outside, '必须保留');
+  await symlink(outside, file + '.2026-10-20');
+  assert.throws(() => appendLog(file, '新记录\n', policy, Date.parse('2026-10-21T00:00:00Z')), { code: 'EINVAL' });
+  assert.equal(await readFile(file, 'utf8'), '旧记录\n');
+  assert.equal(await readFile(outside, 'utf8'), '必须保留');
+});
+
+test('每日容量分卷与保留天数共同限制文件数量，默认策略不会按天无限增长', async t => {
+  const { file, logs, policy } = await fixture(t, { retentionMs: 3 * 86400000 });
+  for (let day = 1; day <= 8; day++) {
+    appendLog(file, 'x'.repeat(600), policy, Date.parse(`2026-10-0${day}T12:00:00Z`));
+  }
+  assert.deepEqual((await readdir(logs)).sort(), [
+    'game.log', 'game.log.1', 'game.log.2026-10-06', 'game.log.2026-10-06.1', 'game.log.2026-10-07', 'game.log.2026-10-07.1'
+  ]);
 });
