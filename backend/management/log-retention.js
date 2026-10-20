@@ -4,9 +4,12 @@ import path from 'node:path';
 
 const DAY = 24 * 60 * 60 * 1000;
 export const LOG_FILES = Object.freeze(['game.log', 'steamcmd.log', 'palbox.log', 'login.log', 'combined.jsonl']);
-export const DEFAULT_LOG_POLICY = Object.freeze({ maxBytes: 5 * 1024 * 1024, maxArchives: 4, retentionMs: 7 * DAY, cleanupIntervalMs: 60 * 60 * 1000 });
+export const DEFAULT_LOG_POLICY = Object.freeze({ maxBytes: 5 * 1024 * 1024, maxArchives: 4, retentionMs: 7 * DAY, loginRetentionMs: 15 * DAY, cleanupIntervalMs: 60 * 60 * 1000 });
 const utcDay = now => new Date(now).toISOString().slice(0, 10);
-const firstDay = (policy, now) => utcDay(Date.parse(utcDay(now)) - (Math.ceil(policy.retentionMs / DAY) - 1) * DAY);
+const firstDay = (policy, now, base) => {
+  const retentionMs = base === 'login.log' ? policy.loginRetentionMs : policy.retentionMs;
+  return utcDay(Date.parse(utcDay(now)) - (Math.ceil(retentionMs / DAY) - 1) * DAY);
+};
 
 /** Recognize only managed names, including dated archives and legacy size parts. */
 export function logFileInfo(name) {
@@ -31,6 +34,7 @@ export function logPolicy(options = {}) {
   if (!Number.isSafeInteger(policy.maxBytes) || policy.maxBytes < 256 || policy.maxBytes > 100 * 1024 * 1024
     || !Number.isInteger(policy.maxArchives) || policy.maxArchives < 0 || policy.maxArchives > 10
     || !Number.isSafeInteger(policy.retentionMs) || policy.retentionMs < 1
+    || !Number.isSafeInteger(policy.loginRetentionMs) || policy.loginRetentionMs < 1
     || !Number.isSafeInteger(policy.cleanupIntervalMs) || policy.cleanupIntervalMs < 1) throw new Error('日志保留参数无效。');
   return Object.freeze(policy);
 }
@@ -45,7 +49,8 @@ export function logPolicyFromEnv(env) {
   return logPolicy({
     maxBytes: integer('PALBOX_LOG_MAX_MB', 5, 1, 100) * 1024 * 1024,
     maxArchives: integer('PALBOX_LOG_BACKUPS', DEFAULT_LOG_POLICY.maxArchives, 0, 10),
-    retentionMs: integer('PALBOX_LOG_RETENTION_DAYS', 7, 1, 365) * DAY
+    retentionMs: integer('PALBOX_LOG_RETENTION_DAYS', 7, 1, 365) * DAY,
+    loginRetentionMs: integer('PALBOX_LOGIN_LOG_RETENTION_DAYS', 15, 1, 365) * DAY
   });
 }
 
@@ -72,7 +77,7 @@ function rotate(file, policy) {
 }
 
 function archivePreviousDays(file, policy, now) {
-  const today = utcDay(now), oldest = firstDay(policy, now);
+  const today = utcDay(now), oldest = firstDay(policy, now, path.basename(file));
   let changed = false;
   // Preserve chronological order, including numeric archives from older builds.
   for (let index = policy.maxArchives; index >= 0; index--) {
@@ -168,7 +173,6 @@ export function appendLog(file, value, policy = DEFAULT_LOG_POLICY, now = Date.n
 
 export function cleanupLogs(directory, policy = DEFAULT_LOG_POLICY, now = Date.now()) {
   const errors = [];
-  const oldest = firstDay(policy, now);
   for (const base of LOG_FILES) {
     // Skip symlinks without touching their targets, as with normal cleanup.
     try {
@@ -190,6 +194,7 @@ export function cleanupLogs(directory, policy = DEFAULT_LOG_POLICY, now = Date.n
     try {
       const info = regularFile(file);
       if (!info) continue;
+      const oldest = firstDay(policy, now, record.base);
       if (record.part > policy.maxArchives || (record.day && record.day < oldest)) remove(file);
       else if (!record.day && utcDay(info.mtimeMs) < oldest && info.size) {
         replace(file, Buffer.alloc(0));

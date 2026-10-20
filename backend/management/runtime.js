@@ -76,7 +76,8 @@ export class Runtime extends EventEmitter {
       if (!this.logLines.has(channel)) this.logLines.set(channel, { prefix: true, at: null });
       const line = this.logLines.get(channel);
       const now = Date.now();
-      if (line.writtenAt && now - line.writtenAt > this.logPolicy.retentionMs) { line.prefix = true; line.at = null; }
+      const retentionMs = channel === 'login' ? this.logPolicy.loginRetentionMs : this.logPolicy.retentionMs;
+      if (line.writtenAt && now - line.writtenAt > retentionMs) { line.prefix = true; line.at = null; }
       const at = new Date().toISOString();
       if (!text) return;
       if (channel === 'game') this.emit('game-log', { text, at });

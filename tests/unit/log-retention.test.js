@@ -79,7 +79,7 @@ test('统一日志跨多个轮换文件保持记录完整与时间顺序', async
 
 test('启动清理过期日志、超额历史与遗留临时文件，空文件不会重复导入旧登录记录', async t => {
   const { directory, logs, policy } = await fixture(t);
-  const old = new Date(Date.now() - policy.retentionMs - 10000);
+  const old = new Date(Date.now() - Math.max(policy.retentionMs, policy.loginRetentionMs) - 10000);
   for (const name of ['login.log', 'combined.jsonl', 'game.log', 'game.log.1']) {
     const file = path.join(logs, name);
     await writeFile(file, name === 'game.log' ? '过期游戏日志\n' : '过期记录\n');
@@ -165,12 +165,16 @@ test('日志定时清理不重复启动，关闭 Runtime 后释放定时器', as
 test('日志保留环境变量有默认值、允许关闭归档且拒绝错误配置', () => {
   assert.deepEqual(logPolicyFromEnv({}), DEFAULT_LOG_POLICY);
   assert.equal(DEFAULT_LOG_POLICY.maxArchives + 1, 5);
+  assert.equal(DEFAULT_LOG_POLICY.loginRetentionMs, 15 * 86400000);
   assert.equal(LOG_FILES.length, 5);
-  const policy = logPolicyFromEnv({ PALBOX_LOG_MAX_MB: '2', PALBOX_LOG_BACKUPS: '0', PALBOX_LOG_RETENTION_DAYS: '30' });
+  const policy = logPolicyFromEnv({ PALBOX_LOG_MAX_MB: '2', PALBOX_LOG_BACKUPS: '0', PALBOX_LOG_RETENTION_DAYS: '30', PALBOX_LOGIN_LOG_RETENTION_DAYS: '20' });
   assert.equal(policy.maxBytes, 2 * 1024 * 1024);
   assert.equal(policy.maxArchives, 0);
   assert.equal(policy.retentionMs, 30 * 24 * 60 * 60 * 1000);
+  assert.equal(policy.loginRetentionMs, 20 * 86400000);
+  assert.equal(logPolicyFromEnv({ PALBOX_LOG_RETENTION_DAYS: '30' }).loginRetentionMs, 15 * 86400000);
   for (const env of [{ PALBOX_LOG_MAX_MB: '0' }, { PALBOX_LOG_MAX_MB: '1.5' }, { PALBOX_LOG_BACKUPS: '11' }, { PALBOX_LOG_RETENTION_DAYS: '' }, { PALBOX_LOG_RETENTION_DAYS: '366' }]) assert.throws(() => logPolicyFromEnv(env), /PALBOX_LOG_/);
+  for (const value of ['0', '366', '1.5', '']) assert.throws(() => logPolicyFromEnv({ PALBOX_LOGIN_LOG_RETENTION_DAYS: value }), /PALBOX_LOGIN_LOG_RETENTION_DAYS/);
 });
 
 test('UTC 午夜归档前一天的所有容量分卷，分页游标跨日期继续且尾部按时间顺序读取', async t => {
@@ -236,4 +240,27 @@ test('默认每天每类最多五个文件，跨日保留各日分卷并按天�
   const expected = ['', '.2026-10-06', '.2026-10-07'].flatMap(day => Array.from({ length: 5 }, (_, part) => `game.log${day}${part ? '.' + part : ''}`));
   assert.deepEqual((await readdir(logs)).sort(), expected.sort());
   for (const name of expected) assert.ok((await stat(path.join(logs, name))).size <= policy.maxBytes);
+});
+
+test('面板登录记录保留十五个 UTC 自然日，写入归档与定时清理均不影响其他日志七天策略', async t => {
+  const { logs, file, policy } = await fixture(t);
+  const login = path.join(logs, 'login.log');
+  const old = Date.parse('2026-10-06T23:59:59Z');
+  const now = Date.parse('2026-10-20T00:00:00Z');
+  for (const target of [file, login]) {
+    appendLog(target, '十五天窗口内的旧记录\n', policy, old);
+    appendLog(target, '今天的记录\n', policy, now);
+  }
+  await assert.rejects(stat(file + '.2026-10-06'), { code: 'ENOENT' });
+  assert.equal(await readFile(login + '.2026-10-06', 'utf8'), '十五天窗口内的旧记录\n');
+  await writeFile(login + '.2026-10-05', '过期登录记录');
+  await writeFile(file + '.2026-10-13', '过期游戏记录');
+  await writeFile(file + '.2026-10-14', '保留游戏记录');
+  cleanupLogs(logs, policy, now);
+  assert.match(await readLogTail(login), /十五天窗口内的旧记录/);
+  await assert.rejects(stat(login + '.2026-10-05'), { code: 'ENOENT' });
+  await assert.rejects(stat(file + '.2026-10-13'), { code: 'ENOENT' });
+  assert.equal(await readFile(file + '.2026-10-14', 'utf8'), '保留游戏记录');
+  cleanupLogs(logs, policy, Date.parse('2026-10-21T00:00:00Z'));
+  await assert.rejects(stat(login + '.2026-10-06'), { code: 'ENOENT' });
 });

@@ -54,6 +54,8 @@ services:
       PALBOX_LOG_MAX_MB: "5"
       PALBOX_LOG_BACKUPS: "4"
       PALBOX_LOG_RETENTION_DAYS: "7"
+      # 面板登录记录单独保留 15 个 UTC 自然日。
+      PALBOX_LOGIN_LOG_RETENTION_DAYS: "15"
     networks:
       management:
         ipv4_address: 172.30.83.3
