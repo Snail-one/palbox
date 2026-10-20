@@ -31,6 +31,6 @@ test('合并日志只接受游戏来源聊天与面板成功广播，安全还�
     `${at} [PalBox] [ANNOUNCE] 未编码广播`, ''
   ].join('\n')), [
     { at: '2026-10-20T14:56:42.496Z', player: 'Snail', message: '你好' },
-    { at: '2026-10-20T14:56:42.496Z', player: '管理员', message: '十分钟后重启\n请保存进度 <script>', type: 'broadcast' }
+    { at: '2026-10-20T14:56:42.496Z', player: 'GM', message: '十分钟后重启\n请保存进度 <script>', type: 'broadcast' }
   ]);
 });

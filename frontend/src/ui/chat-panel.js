@@ -10,7 +10,7 @@ export function parseGameChat(text) {
       if (!announcement) continue;
       try {
         const message = JSON.parse(announcement[1]);
-        if (typeof message === 'string') records.push({ at: prefix[1] ? prefix[1].replace(' ', 'T') + 'Z' : null, player: '管理员', message, type: 'broadcast' });
+        if (typeof message === 'string') records.push({ at: prefix[1] ? prefix[1].replace(' ', 'T') + 'Z' : null, player: 'GM', message, type: 'broadcast' });
       } catch { /* Ignore incomplete or invalid announcement records. */ }
       continue;
     }
@@ -50,11 +50,11 @@ export function createChatPanel({ dom, api, window }) {
     for (const record of records) {
       const row = el('article', 'chat-message');
       if (record.type === 'broadcast') row.classList.add('chat-message-broadcast');
-      const avatar = el('span', 'chat-avatar', record.type === 'broadcast' ? '管' : Array.from(record.player)[0]);
+      const avatar = el('span', 'chat-avatar', record.type === 'broadcast' ? 'GM' : Array.from(record.player)[0]);
       avatar.setAttribute('aria-hidden', 'true');
       const body = el('div', 'chat-message-body');
       const header = el('div', 'chat-message-heading');
-      const player = el('strong', 'chat-player', record.type === 'broadcast' ? '管理员 · 全服广播' : record.player);
+      const player = el('strong', 'chat-player', record.type === 'broadcast' ? 'GM · 全服广播' : record.player);
       const time = el('time', 'chat-time', timeFormat.dateTime(record.at));
       if (record.at) { time.dateTime = record.at; time.title = timeFormat.dateTime(record.at, { showZone: true }); }
       header.append(player, time);
