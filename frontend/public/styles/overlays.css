@@ -247,8 +247,7 @@ dialog>p,
   margin: 17px 0;
 }
 
-.dialog-name-label input,
-.dialog-name-label select {
+.dialog-name-label input {
   display: block;
   width: 100%;
   border: 1px solid #e4e4e4;
@@ -257,6 +256,10 @@ dialog>p,
   margin-top: 7px;
   font-size: 13px;
 }
+
+.dialog-choice-buttons { display: flex; width: 100%; margin-top: 7px; }
+.dialog-choice-buttons button { flex: 1; min-height: 42px; }
+.dialog-choice-buttons button.selected { color: var(--accent); background: var(--accent-soft); }
 
 .dialog-actions {
   display: flex;

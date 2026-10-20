@@ -43,9 +43,24 @@ const path = require('node:path');
     }
 
     await restore().click();
-    assert.equal(await page.getByLabel('恢复方式', { exact: true }).inputValue(), 'world');
+    const modes = page.getByRole('group', { name: '恢复方式', exact: true });
+    const worldMode = modes.getByRole('button', { name: '存档备份', exact: true });
+    const fullMode = modes.getByRole('button', { name: '完整备份', exact: true });
+    assert.equal(await worldMode.getAttribute('aria-pressed'), 'true');
+    assert.equal(await fullMode.getAttribute('aria-pressed'), 'false');
+    assert.equal(await modes.locator('select').count(), 0);
     assert.match(await page.locator('#dialog-choice-description').textContent(), /清空并替换当前世界/);
     assert.equal(await page.locator('#action-dialog').evaluate(dialog => dialog.scrollWidth <= dialog.clientWidth), true);
+    await fullMode.click();
+    assert.equal(await fullMode.getAttribute('aria-pressed'), 'true');
+    await worldMode.focus();
+    await worldMode.press('Enter');
+    assert.equal(await worldMode.getAttribute('aria-pressed'), 'true');
+    assert.equal(await fullMode.getAttribute('aria-pressed'), 'false');
+    assert.equal(await page.locator('#action-dialog').isVisible(), true);
+    assert.equal(f.manager.tasks.filter(task => task.action === 'restore').length, 0);
+    assert.equal(await fs.readFile(f.runtime.config, 'utf8'), currentConfig);
+    assert.equal(await page.getByRole('button', { name: '恢复备份', exact: true }).isVisible(), true);
     await page.locator('#dialog-cancel').click();
     assert.equal(f.manager.tasks.filter(task => task.action === 'restore').length, 0);
 
@@ -59,8 +74,12 @@ const path = require('node:path');
 
     await page.waitForFunction(() => !document.querySelector('[data-backup-category="manual"] .backup-row button').disabled);
     await restore().click();
-    await page.getByLabel('恢复方式', { exact: true }).selectOption('full');
+    await fullMode.click();
+    assert.equal(await fullMode.getAttribute('aria-pressed'), 'true');
+    assert.equal(await worldMode.getAttribute('aria-pressed'), 'false');
     assert.match(await page.locator('#dialog-choice-description').textContent(), /整体替换 Pal\/Saved/);
+    assert.equal(f.manager.tasks.filter(task => task.action === 'restore').length, 1);
+    assert.equal(await fs.readFile(f.runtime.config, 'utf8'), currentConfig);
     await confirmMode('full');
     assert.equal(await f.manager.targetWorld(), 'SAVED_WORLD');
     assert.equal(await fs.readFile(f.runtime.config, 'utf8'), originalConfig);
@@ -71,7 +90,7 @@ const path = require('node:path');
 
     await page.waitForFunction(() => !document.querySelector('[data-backup-category="manual"] .backup-row button').disabled);
     await restore().click();
-    assert.equal(await page.locator('#dialog-choice').inputValue(), 'world');
+    assert.equal(await worldMode.getAttribute('aria-pressed'), 'true');
     await page.locator('#dialog-cancel').click();
     await page.locator('[data-backup-category="manual"] .backup-row').getByRole('button', { name: '删除', exact: true }).click();
     assert.equal(await page.locator('#dialog-choice-label').isVisible(), false);
