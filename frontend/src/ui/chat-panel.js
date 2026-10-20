@@ -6,7 +6,7 @@ export function parseGameChat(text) {
   for (const line of text.split(/\r?\n/).slice(0, -1)) {
     const prefix = line.match(/^(?:\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,3})?) UTC\]\s+)?(?:\[(game|PalBox|update)\]\s+)?([\s\S]*)$/);
     if (prefix[2] === 'PalBox') {
-      const announcement = prefix[3].match(/^\[ANNOUNCE\] ([\s\S]*)$/);
+      const announcement = prefix[3].match(/^\[(?:GM|ANNOUNCE)\] ([\s\S]*)$/);
       if (!announcement) continue;
       try {
         const message = JSON.parse(announcement[1]);

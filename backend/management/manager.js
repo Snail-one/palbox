@@ -386,7 +386,7 @@ export class Manager extends EventEmitter {
         await this.requireRunning();
         if (typeof payload.message !== 'string' || !payload.message.trim() || payload.message.length > 500) throw failure('请输入 1 到 500 字的广播内容。');
         await this.runtime.rest('announce', { message: payload.message });
-        this.runtime.log('palbox', `[ANNOUNCE] ${JSON.stringify(payload.message)}\n`);
+        this.runtime.log('palbox', `[GM] ${JSON.stringify(payload.message)}\n`);
         break;
       case 'kick':
       case 'ban': {

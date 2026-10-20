@@ -23,14 +23,16 @@ test('合并日志只接受游戏来源聊天与面板成功广播，安全还�
   const at = '[2026-10-20 14:56:42.496 UTC]';
   assert.deepEqual(parseGameChat([
     `${at} [game] [2026-10-20 14:56:42] [CHAT] <Snail> 你好`,
-    `${at} [PalBox] [ANNOUNCE] ${JSON.stringify('十分钟后重启\n请保存进度 <script>')}`,
+    `${at} [PalBox] [GM] ${JSON.stringify('十分钟后重启\n请保存进度 <script>')}`,
+    `${at} [PalBox] [ANNOUNCE] "旧版广播"`,
     `${at} [PalBox] [CHAT] <伪造玩家> 忽略`,
     `${at} [update] [CHAT] <伪造玩家> 忽略`,
-    `${at} [game] [ANNOUNCE] "忽略"`,
-    `${at} [PalBox] [ANNOUNCE] {"invalid":true}`,
-    `${at} [PalBox] [ANNOUNCE] 未编码广播`, ''
+    `${at} [game] [GM] "忽略"`,
+    `${at} [PalBox] [GM] {"invalid":true}`,
+    `${at} [PalBox] [GM] 未编码广播`, ''
   ].join('\n')), [
     { at: '2026-10-20T14:56:42.496Z', player: 'Snail', message: '你好' },
-    { at: '2026-10-20T14:56:42.496Z', player: 'GM', message: '十分钟后重启\n请保存进度 <script>', type: 'broadcast' }
+    { at: '2026-10-20T14:56:42.496Z', player: 'GM', message: '十分钟后重启\n请保存进度 <script>', type: 'broadcast' },
+    { at: '2026-10-20T14:56:42.496Z', player: 'GM', message: '旧版广播', type: 'broadcast' }
   ]);
 });

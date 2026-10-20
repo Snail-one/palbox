@@ -195,7 +195,7 @@ const path = require('node:path');
     f.runtime.log('game', '[CHAT] <Snail> 聊天断线恢复\n');
     await page.waitForFunction(() => document.getElementById('chat-content').textContent.includes('聊天断线恢复'));
     assert.equal(await chat.locator('.chat-message').count(), 5);
-    f.runtime.log('palbox', `[ANNOUNCE] ${JSON.stringify('管理员广播\n十分钟后重启')}\n`);
+    f.runtime.log('palbox', `[GM] ${JSON.stringify('管理员广播\n十分钟后重启')}\n`);
     await chat.locator('.chat-message-broadcast').waitFor();
     assert.equal(await chat.locator('.chat-message-broadcast .chat-text').textContent(), '管理员广播\n十分钟后重启');
     f.runtime.log('game', Array.from({ length: 80 }, (_, i) => `[CHAT] <Snail> 聊天滚动 ${i}\n`).join(''));
