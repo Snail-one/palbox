@@ -4,7 +4,7 @@ import path from 'node:path';
 
 const DAY = 24 * 60 * 60 * 1000;
 export const LOG_FILES = Object.freeze(['game.log', 'steamcmd.log', 'palbox.log', 'login.log', 'combined.jsonl']);
-export const DEFAULT_LOG_POLICY = Object.freeze({ maxBytes: 5 * 1024 * 1024, maxArchives: 1, retentionMs: 7 * DAY, cleanupIntervalMs: 60 * 60 * 1000 });
+export const DEFAULT_LOG_POLICY = Object.freeze({ maxBytes: 5 * 1024 * 1024, maxArchives: 4, retentionMs: 7 * DAY, cleanupIntervalMs: 60 * 60 * 1000 });
 const utcDay = now => new Date(now).toISOString().slice(0, 10);
 const firstDay = (policy, now) => utcDay(Date.parse(utcDay(now)) - (Math.ceil(policy.retentionMs / DAY) - 1) * DAY);
 
@@ -44,7 +44,7 @@ export function logPolicyFromEnv(env) {
   }
   return logPolicy({
     maxBytes: integer('PALBOX_LOG_MAX_MB', 5, 1, 100) * 1024 * 1024,
-    maxArchives: integer('PALBOX_LOG_BACKUPS', 1, 0, 10),
+    maxArchives: integer('PALBOX_LOG_BACKUPS', DEFAULT_LOG_POLICY.maxArchives, 0, 10),
     retentionMs: integer('PALBOX_LOG_RETENTION_DAYS', 7, 1, 365) * DAY
   });
 }

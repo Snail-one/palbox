@@ -14,7 +14,7 @@ async function fixture(t, options = {}) {
   t.after(() => rm(directory, { recursive: true, force: true }));
   const logs = path.join(directory, 'logs');
   await mkdir(logs);
-  return { directory, logs, file: path.join(logs, 'game.log'), policy: logPolicy({ maxBytes: 256, ...options }) };
+  return { directory, logs, file: path.join(logs, 'game.log'), policy: logPolicy({ maxBytes: 256, maxArchives: 1, ...options }) };
 }
 
 test('日志在写入前轮换，恰好达到上限也不会在下一次写入时超限', async t => {
@@ -164,6 +164,7 @@ test('日志定时清理不重复启动，关闭 Runtime 后释放定时器', as
 
 test('日志保留环境变量有默认值、允许关闭归档且拒绝错误配置', () => {
   assert.deepEqual(logPolicyFromEnv({}), DEFAULT_LOG_POLICY);
+  assert.equal(DEFAULT_LOG_POLICY.maxArchives + 1, 5);
   assert.equal(LOG_FILES.length, 5);
   const policy = logPolicyFromEnv({ PALBOX_LOG_MAX_MB: '2', PALBOX_LOG_BACKUPS: '0', PALBOX_LOG_RETENTION_DAYS: '30' });
   assert.equal(policy.maxBytes, 2 * 1024 * 1024);
@@ -227,12 +228,12 @@ test('日期归档目标是符号链接时拒绝写入，保留旧文件和链�
   assert.equal(await readFile(outside, 'utf8'), '必须保留');
 });
 
-test('每日容量分卷与保留天数共同限制文件数量，默认策略不会按天无限增长', async t => {
-  const { file, logs, policy } = await fixture(t, { retentionMs: 3 * 86400000 });
+test('默认每天每类最多五个文件，跨日保留各日分卷并按天清理', async t => {
+  const { file, logs, policy } = await fixture(t, { maxArchives: DEFAULT_LOG_POLICY.maxArchives, retentionMs: 3 * 86400000 });
   for (let day = 1; day <= 8; day++) {
-    appendLog(file, 'x'.repeat(600), policy, Date.parse(`2026-10-0${day}T12:00:00Z`));
+    appendLog(file, 'x'.repeat(1800), policy, Date.parse(`2026-10-0${day}T12:00:00Z`));
   }
-  assert.deepEqual((await readdir(logs)).sort(), [
-    'game.log', 'game.log.1', 'game.log.2026-10-06', 'game.log.2026-10-06.1', 'game.log.2026-10-07', 'game.log.2026-10-07.1'
-  ]);
+  const expected = ['', '.2026-10-06', '.2026-10-07'].flatMap(day => Array.from({ length: 5 }, (_, part) => `game.log${day}${part ? '.' + part : ''}`));
+  assert.deepEqual((await readdir(logs)).sort(), expected.sort());
+  for (const name of expected) assert.ok((await stat(path.join(logs, name))).size <= policy.maxBytes);
 });
