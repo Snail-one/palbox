@@ -32,6 +32,47 @@ test('修改标记在保存、重新加载和切换配置后保留，改回初�
   assert.deepEqual(reloaded.changedKeys(), []);
 });
 
+test('单项恢复使用配置最初的值，保留其他修改、非法草稿、源码草稿和原始格式', () => {
+  const initial = '; keep\r\nOptionSettings=(ExpRate=7.000000,ServerName="原始名称",ServerPlayerMaxNum=32,Future=(A=1,B="值"))\r\n';
+  const editor = session(initial);
+  editor.update('ExpRate', '2.5');
+  editor.update('ServerName', '"保留修改"');
+  editor.update('ServerPlayerMaxNum', '16');
+  editor.update('ServerPlayerMaxNum', '1.5');
+  editor.setSourceDraft('未应用的源码');
+  assert.equal(editor.restoreField('ExpRate'), true);
+  assert.equal(editor.raw('ExpRate'), '7.000000');
+  assert.equal(editor.isModified('ExpRate'), false);
+  assert.equal(editor.raw('ServerName'), '"保留修改"');
+  assert.equal(editor.draft('ServerPlayerMaxNum'), '1.5');
+  assert.equal(editor.errorCount, 1);
+  assert.equal(editor.sourceDraft, '未应用的源码');
+  assert.equal(editor.source(), initial.replace('"原始名称"', '"保留修改"').replace('ServerPlayerMaxNum=32', 'ServerPlayerMaxNum=16'));
+  const saved = session(editor.source(), initial);
+  assert.equal(saved.isModified('ExpRate'), false);
+  assert.equal(saved.isModified('ServerName'), true);
+});
+
+test('单项恢复清除该字段错误，支持未知参数和原始非法值，缺少基准时不改变配置', () => {
+  const initial = 'OptionSettings=(ExpRate=NaN,Future=(A=1,B="中文"))';
+  const editor = session(initial);
+  editor.update('ExpRate', '2');
+  editor.update('ExpRate', 'broken');
+  editor.update('Future', '(A=2,B="新值")');
+  assert.equal(editor.restoreField('ExpRate'), true);
+  assert.equal(editor.raw('ExpRate'), 'NaN');
+  assert.equal(editor.error('ExpRate'), '');
+  assert.equal(editor.draft('ExpRate'), undefined);
+  assert.equal(editor.restoreField('Future'), true);
+  assert.equal(editor.source(), initial);
+  editor.applySource(initial.replace('))', '),NewValue=3)'));
+  const source = editor.source();
+  assert.equal(editor.canRestoreField('NewValue'), false);
+  assert.equal(editor.restoreField('NewValue'), false);
+  assert.equal(editor.restoreField('Missing'), false);
+  assert.equal(editor.source(), source);
+});
+
 test('源码修改和未识别参数共用初始基准，恢复输入清除全部标记', () => {
   const initial = 'OptionSettings=(ExpRate=1.000000,FutureFlag=True)';
   const editor = session('OptionSettings=(ExpRate=2.000000,FutureFlag=False)', initial);

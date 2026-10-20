@@ -5,5 +5,7 @@ export function updateModifiedBadge(dom, container, modified) {
   if (badge) return;
   const next = dom.el('span', 'modified-badge', '已修改');
   next.title = '与这套配置最初输入的参数值不同';
-  container.append(next);
+  const reset = container.querySelector('.field-reset');
+  if (reset) container.insertBefore(next, reset);
+  else container.append(next);
 }

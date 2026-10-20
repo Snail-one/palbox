@@ -4,13 +4,16 @@ import { createAdminPasswordControl } from './admin-password.js';
 import { encodeString } from '../../../../shared/domain/config.js';
 import { updateModifiedBadge } from './modified-badge.js';
 
-export function createParameterView({ dom, editor, catalog, view, onChanged }) {
+export function createParameterView({ dom, editor, catalog, view, ask, onChanged }) {
   const { $, el, icon, empty } = dom;
   const raw = key => editor.outputRaw(key);
   const isModified = key => editor.isModified(key);
   const isUnknown = entry => catalog.isUnknown(entry);
   const matches = entry => catalog.matches(entry, view.search);
-  const { updateValue, formatOnBlur } = createFieldFeedback({ dom, editor, onChanged });
+  const { updateValue, formatOnBlur, updateResetButton } = createFieldFeedback({ dom, editor, catalog, ask, onChanged, onRestored(key) {
+    renderTable();
+    $(`raw-field-${key}`)?.focus();
+  } });
   function renderTable() {
     empty($('parameter-rows'));
     const unknownCount = editor.entries.filter(isUnknown).length;
@@ -33,16 +36,19 @@ export function createParameterView({ dom, editor, catalog, view, onChanged }) {
         const heading = el('div', 'parameter-heading');
         heading.append(el('span', 'parameter-label', field.label), createParameterEvidence(dom, field, `raw-desc-${entry.key}`));
         updateModifiedBadge(dom, heading, isModified(entry.key));
+        updateResetButton(entry.key, heading);
         name.append(heading);
       } else {
         name.append(el('small', 'unknown-tag', '未识别参数 · 用途尚未核实'));
         updateModifiedBadge(dom, name, isModified(entry.key));
+        updateResetButton(entry.key, name);
       }
       const cell = el('td');
       const wrap = el('div', 'input-wrap');
       const secret = catalog.fields[entry.key]?.secret;
       const input = el('input', `raw-input${secret ? ' field-secret' : ''}`);
       input.type = secret ? 'password' : 'text'; input.autocomplete = 'off'; input.spellcheck = false;
+      input.id = `raw-field-${entry.key}`;
       input.value = editor.draft(entry.key) !== undefined ? editor.draft(entry.key) : raw(entry.key);
       input.setAttribute('aria-label', `${entry.key} 的原始值`);
       const errorNode = el('p', 'field-error', editor.error(entry.key));

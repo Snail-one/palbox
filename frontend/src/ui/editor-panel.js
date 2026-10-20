@@ -6,14 +6,14 @@ export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged
   const { $ } = dom;
   // Navigation/filter state is local to the UI; it never enters saved profiles.
   const view = { group: 'server', mode: 'form', advanced: 'table', search: '', unknownOnly: false, unverifiedOnly: false };
-  const form = createFormView({ dom, editor, catalog, view, onChanged, onCategory(group) {
+  const form = createFormView({ dom, editor, catalog, view, ask, onChanged, onCategory(group) {
     view.group = group;
     view.search = '';
     $('search').value = '';
     form.renderCategories();
     form.render();
   } });
-  const parameters = createParameterView({ dom, editor, catalog, view, onChanged });
+  const parameters = createParameterView({ dom, editor, catalog, view, ask, onChanged });
   const source = createSourceEditor({ dom, editor, ask, notify, onChanged });
 
   function render() {

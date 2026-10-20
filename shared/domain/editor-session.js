@@ -41,6 +41,20 @@ export class EditorSession {
   outputRaw(key) { return this.#formatOutput(key, this.raw(key)); }
   error(key) { return this.#errors.get(key) || ''; }
   draft(key) { return this.#drafts.get(key); }
+  canRestoreField(key) {
+    return this.entries.some(entry => entry.key === key) && this.#baseline.entries.some(entry => entry.key === key);
+  }
+  restoreField(key) {
+    if (!this.canRestoreField(key)) return false;
+    const raw = this.#baseline.entries.find(entry => entry.key === key).raw;
+    // An imported baseline may contain values the current catalog cannot validate.
+    // Restore its exact value, as with restoring the complete input configuration.
+    this.#errors.delete(key);
+    this.#drafts.delete(key);
+    if (raw === this.entries.find(entry => entry.key === key).raw) this.#changes.delete(key);
+    else this.#changes.set(key, raw);
+    return true;
+  }
   source() { return serialize(this.#doc, this.#changes); }
   toIni() {
     const output = new Map(this.entries.map(({ key }) => [key, this.outputRaw(key)]));

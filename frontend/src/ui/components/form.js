@@ -4,12 +4,16 @@ import { createParameterEvidence } from './parameter-evidence.js';
 import { createAdminPasswordControl } from './admin-password.js';
 import { updateModifiedBadge } from './modified-badge.js';
 
-export function createFormView({ dom, editor, catalog, view, onCategory, onChanged }) {
+export function createFormView({ dom, editor, catalog, view, ask, onCategory, onChanged }) {
   const { $, el, icon, empty, document } = dom;
   const raw = key => editor.raw(key);
   const isModified = key => editor.isModified(key);
   const matches = entry => catalog.matches(entry, view.search);
-  const { updateValue, rejectValue, formatOnBlur } = createFieldFeedback({ dom, editor, onChanged });
+  const { updateValue, rejectValue, formatOnBlur, updateResetButton } = createFieldFeedback({ dom, editor, catalog, ask, onChanged, onRestored(key) {
+    renderFields();
+    const control = $(`field-${key}`);
+    (control?.querySelector('input') || control)?.focus();
+  } });
   function renderCategories() {
     empty($('category-nav'));
     for (const group of catalog.groups) {
@@ -25,7 +29,6 @@ export function createFormView({ dom, editor, catalog, view, onCategory, onChang
   function fieldLabel(field) {
     const label = el('label', 'field-label', field.label);
     label.htmlFor = `field-${field.key}`;
-    updateModifiedBadge(dom, label, isModified(field.key));
     return label;
   }
   function renderFields() {
@@ -47,6 +50,8 @@ export function createFormView({ dom, editor, catalog, view, onCategory, onChang
       const descriptionId = `desc-${entry.key}`;
       const heading = el('div', 'parameter-heading');
       heading.append(label, createParameterEvidence(dom, f, descriptionId));
+      updateModifiedBadge(dom, heading, isModified(entry.key));
+      updateResetButton(entry.key, heading);
       const errorNode = el('p', 'field-error', editor.error(entry.key));
       errorNode.id = `error-${entry.key}`;
       errorNode.setAttribute('aria-live', 'polite');
