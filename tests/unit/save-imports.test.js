@@ -19,21 +19,22 @@ const snapshot = root => {
 
 test('识别根目录、SaveGames 和 Pal/Saved 三种布局', () => {
   assert.deepEqual(detectSnapshot(snapshot('')), {
-    root: '', layout: 'root', worldId: null, copy: ['Level.sav', 'LevelMeta.sav', 'Players/player.sav']
+    kind: 'world', root: '', layout: 'root', worldId: null, copy: ['Level.sav', 'LevelMeta.sav', 'Players/player.sav']
   });
   assert.deepEqual(detectSnapshot(snapshot('SaveGames/0/WORLD1')).root, 'SaveGames/0/WORLD1');
   assert.deepEqual(detectSnapshot(snapshot('SaveGames/0/WORLD1')).layout, 'savegames');
   assert.deepEqual(detectSnapshot(snapshot('SaveGames/0/WORLD1')).worldId, 'WORLD1');
   assert.deepEqual(detectSnapshot(snapshot('Pal/Saved/SaveGames/0/WORLD2')).layout, 'pal-saved');
   assert.deepEqual(detectSnapshot(snapshot('Pal/Saved/SaveGames/0/WORLD2')).worldId, 'WORLD2');
+  assert.equal(detectSnapshot(snapshot('WORLD3')).layout, 'world');
 });
 
 test('规范化 ./ 前缀并允许缺少 Players', () => {
   const result = detectSnapshot([file('./Level.sav'), file('./LevelMeta.sav')]);
-  assert.deepEqual(result, { root: '', layout: 'root', worldId: null, copy: ['Level.sav', 'LevelMeta.sav'] });
+  assert.deepEqual(result, { kind: 'world', root: '', layout: 'root', worldId: null, copy: ['Level.sav', 'LevelMeta.sav'] });
 });
 
-test('忽略世界目录中的 backup 历史与额外配置', () => {
+test('完整保留世界目录中的 backup 历史与额外文件', () => {
   const entries = [
     file('SaveGames/0/WORLD1/Level.sav'), file('SaveGames/0/WORLD1/LevelMeta.sav'),
     dir('SaveGames/0/WORLD1/Players'), file('SaveGames/0/WORLD1/Players/a.sav'),
@@ -45,20 +46,36 @@ test('忽略世界目录中的 backup 历史与额外配置', () => {
   ];
   const result = detectSnapshot(entries);
   assert.equal(result.root, 'SaveGames/0/WORLD1');
-  assert.deepEqual(result.copy, ['Level.sav', 'LevelMeta.sav', 'Players/a.sav', 'WorldOption.sav']);
+  assert.deepEqual(result.copy, ['Level.sav', 'LevelMeta.sav', 'Players/a.sav', 'backup/world/2026.01.01-00.00.00/Level.sav', 'backup/world/2026.01.01-00.00.00/LevelMeta.sav', 'WorldOption.sav', 'Extra.log']);
 });
 
-test('拒绝多个世界、缺少元数据与无效玩家文件', () => {
+test('完整备份按目录内容识别，支持多个世界并保留配置和日志', () => {
+  const entries = [file('Pal/Saved/Config/LinuxServer/PalWorldSettings.ini'),
+    file('Pal/Saved/Config/LinuxServer/GameUserSettings.ini'), file('Pal/Saved/Logs/game.log'),
+    ...snapshot('Pal/Saved/SaveGames/0/ONE'), ...snapshot('Pal/Saved/SaveGames/0/TWO')];
+  const result = detectSnapshot(entries);
+  assert.equal(result.kind, 'full');
+  assert.equal(result.root, 'Pal/Saved');
+  assert.equal(result.copy.length, entries.filter(entry => entry.type === 'file').length);
+  assert.throws(() => detectSnapshot([file('Pal/Saved/Config/LinuxServer/GameUserSettings.ini'), ...snapshot('Pal/Saved/SaveGames/0/ONE')]), /PalWorldSettings/);
+  for (const root of ['', 'Saved']) {
+    const prefix = root ? `${root}/` : '';
+    assert.equal(detectSnapshot([file(`${prefix}Config/LinuxServer/PalWorldSettings.ini`), ...snapshot(`${prefix}SaveGames/0/ONE`)]).kind, 'full');
+  }
+  assert.equal(detectSnapshot([...snapshot(''), file('Config/extra.txt')]).kind, 'world');
+});
+
+test('世界存档拒绝多个世界或缺少元数据，保留 Players 内的全部普通文件', () => {
   assert.throws(() => detectSnapshot([
     ...snapshot('SaveGames/0/ONE'), ...snapshot('SaveGames/0/TWO')
   ]), /多个世界存档/);
   assert.throws(() => detectSnapshot([file('Level.sav')]), /没有可导入/);
-  assert.throws(() => detectSnapshot([
+  assert.ok(detectSnapshot([
     file('Level.sav'), file('LevelMeta.sav'), dir('Players'), file('Players/readme.txt')
-  ]), /玩家文件无效/);
-  assert.throws(() => detectSnapshot([
+  ]).copy.includes('Players/readme.txt'));
+  assert.ok(detectSnapshot([
     file('Level.sav'), file('LevelMeta.sav'), dir('Players'), dir('Players/nested'), file('Players/nested/a.sav')
-  ]), /玩家文件无效/);
+  ]).copy.includes('Players/nested/a.sav'));
 });
 
 test('拒绝穿越、绝对路径、反斜杠、重复路径和文件作为父路径', () => {

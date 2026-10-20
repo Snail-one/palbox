@@ -8,6 +8,7 @@ import { EventEmitter } from 'node:events';
 import { Runtime, DEFAULT_SHUTDOWN_MESSAGE } from './runtime.js';
 import { NativeBackups } from './native-backups.js';
 import { SaveImports } from './save-imports.js';
+import { replaceDirectory } from './replace-directory.js';
 import { readBanList } from './banned-players.js';
 import { PlayerHistory, PlayerHistoryRecorder } from './player-history.js';
 import { ManagementStore } from './store.js';
@@ -430,17 +431,26 @@ export class Manager extends EventEmitter {
     let rollbackFailed = false;
     let failureError = null;
     try {
-      const target = await this.targetWorld();
+      const wholeSaved = imported.kind === 'full';
+      const worldId = wholeSaved ? null : await this.targetWorld();
       if (wasRunning) await this.stopGame({ requireSave: true });
-      if (target !== await this.targetWorld()) throw failure('当前世界已改变，请刷新后重试。', 409);
+      if (!wholeSaved && worldId !== await this.targetWorld()) throw failure('当前世界已改变，请刷新后重试。', 409);
       task.message = '正在创建导入前备份';
       task.backup = await this.backup('before-import');
-      const ensured = await this.native.ensureWorld(target);
-      if (ensured.created) created = ensured.directory;
-      this.servicePhase('restoring', '正在替换世界与玩家存档。');
-      await this.native.replaceWorld(target, imported.snapshot, { beforeSwap: async () => {
-        if (await this.targetWorld() !== target) throw failure('当前世界已改变，请刷新后重试。', 409);
-      } });
+      let target;
+      if (wholeSaved) {
+        target = this.runtime.saved;
+        try { await this.native.safeDirectory([]); }
+        catch (error) { if (error.code !== 'ENOENT') throw error; }
+        await mkdir(path.dirname(target), { recursive: true });
+      } else {
+        if (await this.targetWorld() !== worldId) throw failure('当前世界已改变，请刷新后重试。', 409);
+        const ensured = await this.native.ensureWorld(worldId);
+        target = ensured.directory;
+        if (ensured.created) created = target;
+      }
+      this.servicePhase('restoring', wholeSaved ? '正在整体替换 Pal/Saved 中的全部存档和配置。' : '正在清空并替换当前世界目录中的全部内容。');
+      await replaceDirectory(imported.snapshot, target);
       swapped = true;
     } catch (error) {
       failureError = error;

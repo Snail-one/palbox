@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { mkdir, open, readdir, lstat, rename, rm } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, lstat, rename, rm } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { createGunzip } from 'node:zlib';
 import { Transform } from 'node:stream';
@@ -8,7 +8,8 @@ import { pipeline } from 'node:stream/promises';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { failure, jsonWrite, readJson } from './files.js';
-import { saveName } from './native-backups.js';
+import { NativeBackups } from './native-backups.js';
+import { parse } from '../../shared/domain/config.js';
 
 const run = promisify(execFile);
 const importId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$(?![\s\S])/;
@@ -46,6 +47,7 @@ function validateEntries(entries) {
   const files = new Set();
   const normalized = [];
   for (const entry of entries) {
+    if (!['file', 'directory'].includes(entry?.type)) throw failure('压缩包包含链接或不支持的文件类型。');
     const name = cleanName(entry?.name, entry?.type);
     if (!name) continue;
     if (names.has(name)) throw failure('压缩包包含重复路径。');
@@ -63,6 +65,15 @@ function validateEntries(entries) {
 export function detectSnapshot(entries) {
   const normalized = validateEntries(entries);
   const files = new Map(normalized.filter(entry => entry.type === 'file').map(entry => [entry.name, entry]));
+  // A full Saved archive contains server configuration; world-only wrappers
+  // such as Pal/Saved/SaveGames/0/<ID> still import into the current world.
+  for (const root of ['Pal/Saved', 'Saved', '']) {
+    const prefix = root ? `${root}/` : '';
+    if (files.has(`${prefix}Level.sav`) && files.has(`${prefix}LevelMeta.sav`)) continue;
+    if (!normalized.some(entry => entry.name === `${prefix}Config` || entry.name.startsWith(`${prefix}Config/`))) continue;
+    if (!files.get(`${prefix}Config/LinuxServer/PalWorldSettings.ini`)?.size) throw failure('完整备份缺少有效的 PalWorldSettings.ini。');
+    return { kind: 'full', root, layout: 'full', worldId: null, copy: [...files.keys()].filter(name => name.startsWith(prefix)).map(name => name.slice(prefix.length)) };
+  }
   const candidates = [];
   for (const entry of files.values()) {
     if (entry.name !== 'Level.sav' && !entry.name.endsWith('/Level.sav')) continue;
@@ -70,7 +81,8 @@ export function detectSnapshot(entries) {
     if (!files.has(root ? `${root}/LevelMeta.sav` : 'LevelMeta.sav')) continue;
     const layout = root === '' ? 'root'
       : /^SaveGames\/0\/([A-Za-z0-9_-]{1,128})$/.test(root) ? 'savegames'
-      : /^Pal\/Saved\/SaveGames\/0\/([A-Za-z0-9_-]{1,128})$/.test(root) ? 'pal-saved' : null;
+      : /^Pal\/Saved\/SaveGames\/0\/([A-Za-z0-9_-]{1,128})$/.test(root) ? 'pal-saved'
+      : /^[A-Za-z0-9_-]{1,128}$/.test(root) ? 'world' : null;
     if (!layout) continue;
     const worldId = layout === 'root' ? null : root.split('/').at(-1);
     candidates.push({ root, layout, worldId });
@@ -82,21 +94,9 @@ export function detectSnapshot(entries) {
   const level = files.get(`${prefix}Level.sav`);
   const meta = files.get(`${prefix}LevelMeta.sav`);
   if (!level.size || !meta.size) throw failure('世界存档文件为空，无法导入。');
-  const copy = [];
-  for (const entry of files.values()) {
-    if (!entry.name.startsWith(prefix)) continue;
-    const relative = entry.name.slice(prefix.length);
-    if (relative.includes('/')) {
-      if (!relative.startsWith('Players/')) continue;
-      const player = relative.slice('Players/'.length);
-      if (player.includes('/') || !saveName.test(player) || !entry.size) throw failure('官方存档的玩家文件无效。');
-      copy.push(relative);
-      continue;
-    }
-    if (saveName.test(relative) && entry.size) copy.push(relative);
-  }
+  const copy = [...files.keys()].filter(name => name.startsWith(prefix)).map(name => name.slice(prefix.length));
   if (!copy.includes('Level.sav') || !copy.includes('LevelMeta.sav')) throw failure('世界存档不完整。');
-  return { root, layout, worldId, copy };
+  return { kind: 'world', root, layout, worldId, copy };
 }
 
 function tarEnvironment() {
@@ -154,9 +154,10 @@ export class SaveImports {
     try { info = await lstat(snapshot); }
     catch (error) { if (error.code === 'ENOENT') throw failure('导入存档不存在或已过期，请重新上传。', 404); throw error; }
     if (!info.isDirectory()) throw failure('导入存档无效，请重新上传。', 404);
-    const inspected = await this.native.inspect(snapshot, { requirePlayers: false });
-    if (inspected.files.length !== meta.files.length || inspected.bytes !== meta.uncompressedBytes) throw failure('导入存档已损坏，请重新上传。', 404);
-    return { ...meta, snapshot };
+    const inspected = await this.inspectSnapshot(snapshot, meta.kind || 'world');
+    if (JSON.stringify(inspected.files) !== JSON.stringify(meta.files) || inspected.bytes !== meta.uncompressedBytes
+      || (meta.directories && JSON.stringify(inspected.directories) !== JSON.stringify(meta.directories))) throw failure('导入存档已损坏，请重新上传。', 404);
+    return { ...meta, kind: meta.kind || 'world', snapshot };
   }
 
   async remove(id) {
@@ -253,18 +254,54 @@ export class SaveImports {
   async verify(directory) {
     let bytes = 0;
     let count = 0;
+    const files = [];
+    const directories = [];
     const walk = async current => {
-      for (const entry of await readdir(current, { withFileTypes: true })) {
+      for (const entry of (await readdir(current, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
         const file = path.join(current, entry.name);
         const info = await lstat(file);
-        if (info.isDirectory()) await walk(file);
-        else if (info.isFile()) { bytes += info.size; count++; }
+        const name = path.relative(directory, file).split(path.sep).join('/');
+        count++;
+        if (info.isDirectory()) { directories.push(name); await walk(file); }
+        else if (info.isFile()) { bytes += info.size; files.push({ name, bytes: info.size }); }
         else throw failure('导入存档包含链接或特殊文件。', 400);
         if (bytes > this.limits.maxUncompressedBytes || count > this.limits.maxEntries) throw failure('导入存档超过大小限制。', 413);
       }
     };
     await walk(directory);
-    return { bytes, count };
+    return { bytes, count, files, directories };
+  }
+
+  async inspectSnapshot(snapshot, kind) {
+    const verified = await this.verify(snapshot);
+    if (kind === 'full') {
+      const config = path.join(snapshot, 'Config/LinuxServer/PalWorldSettings.ini');
+      try {
+        const source = await readFile(config, 'utf8');
+        if (!source.trim()) throw failure('完整备份的 PalWorldSettings.ini 为空。');
+        parse(source);
+      } catch (error) {
+        if (error.code === 'ENOENT') throw failure('完整备份缺少 PalWorldSettings.ini。');
+        throw error;
+      }
+      const archived = new NativeBackups(snapshot, this.directory);
+      const worlds = await archived.worlds();
+      const worldId = await archived.configuredWorld();
+      if (worlds.length) {
+        if (!worlds.includes(worldId)) throw failure('完整备份的 GameUserSettings.ini 缺少有效的世界 ID。');
+        const level = await lstat(path.join(snapshot, 'SaveGames/0', worldId, 'Level.sav')).catch(error => {
+          if (error.code === 'ENOENT') throw failure('完整备份缺少配置指定的世界存档。');
+          throw error;
+        });
+        if (!level.isFile() || !level.size) throw failure('完整备份的世界存档为空或无效。');
+      }
+      return { ...verified, worldId };
+    }
+    if (kind !== 'world') throw failure('导入存档类型无效。');
+    for (const name of ['Level.sav', 'LevelMeta.sav']) {
+      if (!verified.files.some(file => file.name === name && file.bytes > 0)) throw failure('世界存档不完整，需要非空的 Level.sav 和 LevelMeta.sav。');
+    }
+    return verified;
   }
 
   async extract(archive, detected, directory, { signal } = {}) {
@@ -286,15 +323,7 @@ export class SaveImports {
         const info = await lstat(source).catch(error => { if (error.code === 'ENOENT') throw failure('压缩包中的世界目录不存在。', 400); throw error; });
         if (!info.isDirectory()) throw failure('压缩包中的世界目录无效。', 400);
       }
-      await mkdir(snapshot, { mode: 0o700 });
-      for (const name of detected.copy) {
-        const from = path.join(source, name);
-        const to = path.join(snapshot, name);
-        const info = await lstat(from).catch(error => { if (error.code === 'ENOENT') throw failure('压缩包中的世界存档不完整。', 400); throw error; });
-        if (!info.isFile() || !info.size) throw failure('压缩包中的世界存档无效。', 400);
-        await mkdir(path.dirname(to), { recursive: true, mode: 0o700 });
-        await rename(from, to);
-      }
+      await rename(source, snapshot);
       const verified = await this.verify(snapshot);
       return { snapshot, verified };
     } finally { await rm(extract, { recursive: true, force: true }); }
@@ -303,7 +332,7 @@ export class SaveImports {
   async receive(request, { authorize = () => {} } = {}) {
     authorize();
     const type = String(request.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
-    if (!['application/gzip', 'application/x-gzip', 'application/octet-stream'].includes(type)) throw failure('请上传 .tar.gz 格式的官方存档。', 415);
+    if (!['application/gzip', 'application/x-gzip', 'application/octet-stream'].includes(type)) throw failure('请上传 .tar.gz 格式的存档或完整备份。', 415);
     const declared = Number(request.headers['content-length']);
     if (Number.isFinite(declared) && declared > this.limits.maxCompressedBytes) throw failure('存档压缩包超过大小限制。', 413);
     if (this.receiving.size) throw failure('已有存档正在上传，请稍后再试。', 429);
@@ -347,17 +376,19 @@ export class SaveImports {
       const detected = await this.scan(archive, { signal: controller.signal, maxBytes: Math.min(this.limits.maxUncompressedBytes, this.limits.maxStagedBytes - usage.bytes - bytes) });
       authorize();
       const extracted = await this.extract(archive, detected, directory, { signal: controller.signal });
-      const inspected = await this.native.inspect(extracted.snapshot, { requirePlayers: false });
-      if (extracted.verified.count !== detected.copy.length) throw failure('压缩包文件数量不一致，请重新打包。', 400);
+      const inspected = await this.inspectSnapshot(extracted.snapshot, detected.kind);
+      if (extracted.verified.files.length !== detected.copy.length) throw failure('压缩包文件数量不一致，请重新打包。', 400);
       const meta = {
         id,
         createdAt: new Date().toISOString(),
+        kind: detected.kind,
         layout: detected.layout,
-        worldId: detected.worldId,
+        worldId: detected.kind === 'full' ? inspected.worldId : detected.worldId,
         compressedBytes: bytes,
         uncompressedBytes: inspected.bytes,
         entries: detected.entries.length,
-        files: inspected.files.map(file => ({ name: file.name, bytes: file.bytes }))
+        files: inspected.files,
+        directories: inspected.directories
       };
       const metaBytes = Buffer.byteLength(JSON.stringify(meta, null, 2) + '\n');
       if (usage.bytes + bytes + inspected.bytes + metaBytes > this.limits.maxStagedBytes) throw failure('导入暂存总量超过限制。', 413);

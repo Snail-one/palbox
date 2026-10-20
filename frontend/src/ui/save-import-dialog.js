@@ -31,7 +31,7 @@ export function createSaveImportDialog({ dom, api, onImport }) {
   }
   function select(candidate) {
     if (busy || !candidate) return;
-    if (!/\.(?:tar\.gz|tgz)$/i.test(candidate.name)) { showError('请选择 .tar.gz 或 .tgz 格式的官方存档。'); return; }
+    if (!/\.(?:tar\.gz|tgz)$/i.test(candidate.name)) { showError('请选择 .tar.gz 或 .tgz 格式的世界存档或完整备份。'); return; }
     if (candidate.size > 1024 ** 3) { showError('存档压缩包不能超过 1 GB。'); return; }
     file = candidate; stagedId = null;
     showError('');

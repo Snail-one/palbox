@@ -67,8 +67,8 @@ test('导入根目录官方快照并恢复运行中的世界', { skip: process.p
   assert.equal(await readFile(path.join(world, 'Level.sav'), 'utf8'), 'new-world');
   assert.equal(await readFile(path.join(world, 'Players/new.sav'), 'utf8'), 'new-player');
   await assert.rejects(access(path.join(world, 'Players/old.sav')), { code: 'ENOENT' });
-  assert.equal(await readFile(path.join(world, 'WorldOption.sav'), 'utf8'), 'keep-option');
-  assert.equal(await readFile(path.join(world, 'backup/world/2026.01.01-00.00.00/Level.sav'), 'utf8'), 'history');
+  await assert.rejects(access(path.join(world, 'WorldOption.sav')), { code: 'ENOENT' });
+  await assert.rejects(access(path.join(world, 'backup')), { code: 'ENOENT' });
   assert.deepEqual(await readFile(f.runtime.config), config);
   assert.equal(f.runtime.ready, true);
   assert.notEqual(f.runtime.game.pid, oldPid);
@@ -91,13 +91,19 @@ test('SaveGames 布局导入到游戏当前 ID，不创建归档中的世界 ID�
   const bytes = await archive(tmp, {
     'SaveGames/0/ARCHIVEID/Level.sav': 'imported',
     'SaveGames/0/ARCHIVEID/LevelMeta.sav': 'imported-meta',
-    'SaveGames/0/ARCHIVEID/Players/p.sav': 'player'
+    'SaveGames/0/ARCHIVEID/Players/p.sav': 'player',
+    'SaveGames/0/ARCHIVEID/backup/world/history/Level.sav': 'imported-history',
+    'SaveGames/0/ARCHIVEID/extra/data.txt': 'extra-content',
+    'SaveGames/0/ARCHIVEID/empty.txt': ''
   });
   const staged = await (await f.upload('/api/save-import', bytes)).json();
   assert.equal(staged.layout, 'savegames');
   assert.equal(staged.worldId, 'ARCHIVEID');
   await waitTask(f, 'import-save', { id: staged.id });
   assert.equal(await readFile(path.join(world, 'Level.sav'), 'utf8'), 'imported');
+  assert.equal(await readFile(path.join(world, 'backup/world/history/Level.sav'), 'utf8'), 'imported-history');
+  assert.equal(await readFile(path.join(world, 'extra/data.txt'), 'utf8'), 'extra-content');
+  assert.equal(await readFile(path.join(world, 'empty.txt'), 'utf8'), '');
   assert.deepEqual(await readdir(path.dirname(world)), ['WORLDID']);
   assert.equal(f.runtime.game, null);
 });
@@ -121,6 +127,94 @@ test('未知当前世界 ID 时拒绝导入；已有游戏配置 ID 时使用该
   await waitTask(f, 'import-save', { id: staged.id });
   assert.deepEqual(await readdir(path.join(saved(f), 'SaveGames/0')), ['GAMEID']);
   assert.equal(await readFile(path.join(saved(f), 'SaveGames/0/GAMEID/Level.sav'), 'utf8'), 'a');
+});
+
+test('完整备份整体替换 Saved，恢复多个世界和配置，保持原运行状态', async t => {
+  for (const running of [false, true]) await t.test(running ? '运行中导入后重新启动' : '停服导入后保持停止', async t => {
+    const f = await managementFixture(); t.after(() => f.close()); await f.login();
+    const tmp = await mkdtemp(path.join(tmpdir(), 'palbox-full-import-')); t.after(() => rm(tmp, { recursive: true, force: true }));
+    await waitTask(f, 'install');
+    const oldConfig = await readFile(f.runtime.config, 'utf8');
+    const oldWorld = path.join(saved(f), 'SaveGames/0/OLD');
+    await mkdir(oldWorld, { recursive: true });
+    await writeFile(path.join(oldWorld, 'Level.sav'), 'old-world');
+    await writeFile(path.join(saved(f), 'old-only.txt'), 'remove-me');
+    // Full imports do not depend on the current server having a world ID.
+    if (running) await waitTask(f, 'start');
+    const oldPid = f.runtime.game?.pid;
+    const importedConfig = oldConfig + '\n; imported-full-backup\n';
+    const bytes = await archive(tmp, {
+      'Pal/Saved/Config/LinuxServer/PalWorldSettings.ini': importedConfig,
+      'Pal/Saved/Config/LinuxServer/GameUserSettings.ini': 'DedicatedServerName=IMPORTED\n',
+      'Pal/Saved/SaveGames/0/IMPORTED/Level.sav': 'imported-world',
+      'Pal/Saved/SaveGames/0/IMPORTED/LevelMeta.sav': 'imported-meta',
+      'Pal/Saved/SaveGames/0/IMPORTED/Players/new.sav': 'imported-player',
+      'Pal/Saved/SaveGames/0/IMPORTED/backup/world/history/Level.sav': 'imported-history',
+      'Pal/Saved/SaveGames/0/SECOND/Level.sav': 'second-world',
+      'Pal/Saved/Logs/previous.log': 'archived-log',
+      'Pal/Saved/SaveGames/banlist.txt': 'steam_archived\n',
+      'Pal/Saved/extra/empty.txt': ''
+    });
+    const upload = await f.upload('/api/save-import', bytes);
+    assert.equal(upload.status, 201, await upload.clone().text());
+    const staged = await upload.json();
+    assert.equal(staged.kind, 'full');
+    assert.equal(staged.worldId, 'IMPORTED');
+    const task = await waitTask(f, 'import-save', { id: staged.id });
+    assert.deepEqual(await readdir(path.join(saved(f), 'SaveGames/0')), ['IMPORTED', 'SECOND']);
+    await assert.rejects(access(path.join(saved(f), 'old-only.txt')), { code: 'ENOENT' });
+    assert.equal(await readFile(f.runtime.config, 'utf8'), importedConfig);
+    assert.equal(await readFile(path.join(saved(f), 'SaveGames/0/IMPORTED/backup/world/history/Level.sav'), 'utf8'), 'imported-history');
+    assert.equal(await readFile(path.join(saved(f), 'Logs/previous.log'), 'utf8'), 'archived-log');
+    assert.equal(await readFile(path.join(saved(f), 'SaveGames/banlist.txt'), 'utf8'), 'steam_archived\n');
+    assert.equal(await readFile(path.join(saved(f), 'extra/empty.txt'), 'utf8'), '');
+    const before = await f.runtime.run('tar', ['-xOzf', f.manager.backupFile(task.backup), '--', 'Pal/Saved/SaveGames/0/OLD/Level.sav']);
+    assert.equal(before, 'old-world');
+    assert.equal(Boolean(f.runtime.game), running);
+    if (running) { assert.notEqual(f.runtime.game.pid, oldPid); assert.equal(f.runtime.ready, true); }
+    assert.deepEqual(await readdir(path.join(f.directory, 'palbox/imports')), []);
+  });
+});
+
+test('世界包不含 Players 时清除旧玩家，保留世界外的配置和其他世界', async t => {
+  const f = await managementFixture(); t.after(() => f.close()); await f.login();
+  const tmp = await mkdtemp(path.join(tmpdir(), 'palbox-world-import-')); t.after(() => rm(tmp, { recursive: true, force: true }));
+  await waitTask(f, 'install');
+  const world = path.join(saved(f), 'SaveGames/0/CURRENT');
+  await mkdir(path.join(world, 'Players'), { recursive: true });
+  await writeFile(path.join(world, 'Level.sav'), 'old');
+  await writeFile(path.join(world, 'Players/old.sav'), 'old-player');
+  await mkdir(path.join(saved(f), 'SaveGames/0/OTHER'), { recursive: true });
+  await writeFile(path.join(saved(f), 'SaveGames/0/OTHER/Level.sav'), 'other-world');
+  await writeFile(path.join(saved(f), 'Config/LinuxServer/GameUserSettings.ini'), 'DedicatedServerName=CURRENT\n');
+  const config = await readFile(f.runtime.config);
+  const bytes = await archive(tmp, { 'SOURCE/Level.sav': 'new', 'SOURCE/LevelMeta.sav': 'meta' });
+  const upload = await f.upload('/api/save-import', bytes);
+  assert.equal(upload.status, 201);
+  const staged = await upload.json();
+  assert.equal(staged.kind, 'world');
+  await waitTask(f, 'import-save', { id: staged.id });
+  assert.deepEqual(await readdir(world), ['Level.sav', 'LevelMeta.sav']);
+  assert.equal(await readFile(path.join(saved(f), 'SaveGames/0/OTHER/Level.sav'), 'utf8'), 'other-world');
+  assert.deepEqual(await readFile(f.runtime.config), config);
+  assert.equal(await f.manager.targetWorld(), 'CURRENT');
+});
+
+test('完整备份配置无效时上传失败，不停止游戏或替换现有内容', async t => {
+  const f = await managementFixture(); t.after(() => f.close()); await f.login();
+  const tmp = await mkdtemp(path.join(tmpdir(), 'palbox-invalid-full-')); t.after(() => rm(tmp, { recursive: true, force: true }));
+  await waitTask(f, 'install'); await waitTask(f, 'start');
+  const pid = f.runtime.game.pid;
+  const bytes = await archive(tmp, {
+    'Pal/Saved/Config/LinuxServer/PalWorldSettings.ini': await readFile(f.runtime.config, 'utf8'),
+    'Pal/Saved/Config/LinuxServer/GameUserSettings.ini': 'DedicatedServerName=MISSING\n',
+    'Pal/Saved/SaveGames/0/WORLD/Level.sav': 'world'
+  });
+  const response = await f.upload('/api/save-import', bytes);
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /世界 ID/);
+  assert.equal(f.runtime.game.pid, pid);
+  assert.deepEqual(await f.manager.backups(), []);
 });
 
 test('没有 GameUserSettings 世界 ID 时拒绝从目录推断导入目标', { skip: process.platform !== 'linux' }, async t => {
