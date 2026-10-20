@@ -192,3 +192,32 @@ test('恢复期间到达的新连接会排队保存，不被旧日志覆盖', as
   assert.equal(history.list().players[0].name, '实时昵称');
   assert.equal(history.list().players[0].ip, '198.51.100.8');
 });
+
+test('自动重建和手动恢复都写入独立文件，日志删除后重启仍保留全部玩家信息', async t => {
+  for (const mode of ['startup', 'restore']) {
+    const { directory, history } = await fixture(t);
+    const logs = path.join(directory, 'logs');
+    await mkdir(logs);
+    await writeFile(path.join(logs, 'game.log.2026-10-19'), '[2026-10-19 12:37:55] [LOG] Snail 112.47.113.28 connected the server. (User id: steam_76561199796296840)\n');
+    await writeFile(path.join(logs, 'game.log'), '[2026-10-20 12:37:55] [LOG] Snail 112.47.113.29 connected the server. (User id: steam_76561199796296840)\n[2026-10-20 12:43:27] [LOG] Snail joined the server. (User id: steam_76561199796296840)\n');
+    const runtime = Object.assign(new EventEmitter(), { directory, log() { assert.fail('记录玩家历史不应出错'); } });
+    const recorder = new PlayerHistoryRecorder({ history, runtime });
+    if (mode === 'startup') await recorder.start();
+    else {
+      await history.clear({ at: '2026-10-21T00:00:00.000Z' });
+      await history.restore(recorder.readEvents());
+    }
+    await recorder.close();
+    const expected = [{
+      userId: 'steam_76561199796296840', name: 'Snail', ip: '112.47.113.29',
+      firstSeenAt: '2026-10-19T12:37:55.000Z', lastSeenAt: '2026-10-20T12:37:55.000Z',
+      lastLoginAt: '2026-10-20T12:43:27.000Z', loginStatus: 'succeeded'
+    }];
+    assert.deepEqual(JSON.parse(await readFile(history.file, 'utf8')).players, expected, mode);
+    await rm(logs, { recursive: true });
+    const reloaded = new PlayerHistory(directory); await reloaded.initialize();
+    const restarted = new PlayerHistoryRecorder({ history: reloaded, runtime });
+    await restarted.start(); await restarted.close();
+    assert.deepEqual(reloaded.list().players, expected, mode);
+  }
+});
