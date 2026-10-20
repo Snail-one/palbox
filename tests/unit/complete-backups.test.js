@@ -115,7 +115,7 @@ test('仅含世界的旧备份需要有效的当前世界，存在时可恢复�
   const id = 'manual/legacy.tar.gz';
   await runtime.run('tar', ['-czf', manager.backupFile(id), '-C', legacy, '--', 'Pal/Saved/SaveGames/0/BACKUP_WORLD']);
   assert.equal((await manager.backups({ includeWorldId: true }))[0].worldId, 'BACKUP_WORLD');
-  await assert.rejects(manager.restore(id), /备份缺少有效的 GameUserSettings\.ini/);
+  await assert.rejects(manager.restore(id, { mode: 'full' }), /备份缺少有效的 GameUserSettings\.ini/);
   await assert.rejects(readdir(path.join(runtime.saved, 'SaveGames/0')), { code: 'ENOENT' });
   await manager.ensureConfig();
   const config = await readFile(runtime.config, 'utf8');
@@ -127,7 +127,7 @@ test('仅含世界的旧备份需要有效的当前世界，存在时可恢复�
   await writeFile(path.join(runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'), 'DedicatedServerName=../INVALID\n');
   await assert.rejects(manager.restore(id), /GameUserSettings\.ini/);
   await writeFile(path.join(runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'), 'DedicatedServerName=ACTIVE_WORLD\n');
-  await manager.restore(id);
+  await manager.restore(id, { mode: 'world' });
   assert.equal(await readFile(path.join(target, 'Level.sav'), 'utf8'), 'archived-world');
   assert.deepEqual(await readdir(path.dirname(target)), ['ACTIVE_WORLD']);
   assert.equal(await readFile(runtime.config, 'utf8'), config);
@@ -152,7 +152,7 @@ test('全新服务端或当前世界目录缺失时，整体还原 Saved 与世�
   await writeFile(path.join(source, 'Logs/Pal.log'), 'archived-log');
   const id = 'manual/complete.tar.gz';
   await runtime.run('tar', ['-czf', manager.backupFile(id), '-C', path.join(directory, 'source'), '--', 'Pal/Saved']);
-  await manager.restore(id);
+  await manager.restore(id, { mode: 'full' });
   assert.equal(await manager.native.configuredWorld(), 'ARCHIVED');
   assert.equal(await readFile(runtime.config, 'utf8'), config);
   assert.equal(await readFile(path.join(runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'), 'utf8'), selection);
@@ -162,7 +162,7 @@ test('全新服务端或当前世界目录缺失时，整体还原 Saved 与世�
   assert.equal((await manager.backups()).length, 1);
   await writeFile(path.join(runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'), 'DedicatedServerName=MISSING\n');
   await writeFile(path.join(runtime.saved, 'new-file'), 'remove-on-full-restore');
-  await manager.restore(id);
+  await manager.restore(id, { mode: 'full' });
   assert.equal(await manager.native.configuredWorld(), 'ARCHIVED');
   await assert.rejects(readFile(path.join(runtime.saved, 'new-file')), { code: 'ENOENT' });
   const protection = (await manager.backups()).find(backup => backup.category === 'before-restore');

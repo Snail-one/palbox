@@ -247,7 +247,8 @@ dialog>p,
   margin: 17px 0;
 }
 
-.dialog-name-label input {
+.dialog-name-label input,
+.dialog-name-label select {
   display: block;
   width: 100%;
   border: 1px solid #e4e4e4;

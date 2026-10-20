@@ -213,7 +213,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       const descriptions = {
         apply: '将当前配置写入游戏，不创建备份。游戏服正在运行时会先存档、停服，再应用并重启。',
         backup: '仅在游戏服停止时备份整个 Pal/Saved 目录，包含所有存档、配置、官方备份历史、日志和封禁名单，完成后保持停服。',
-        restore: '恢复前会先保存、停服，并将整个 Pal/Saved 备份到“恢复前备份”。当前世界 ID 和目录有效时，只替换当前世界内容，保留当前配置；无法确认或匹配当前世界时，整体还原 Pal/Saved，包括备份中的世界 ID、配置、日志和封禁名单。原先运行的游戏服会重新启动。',
+        restore: '选择恢复范围。恢复前会先保存、停服，并创建“恢复前备份”；完成后恢复原运行状态。',
         'restore-native': '将当前世界和玩家存档恢复到所选官方备份。会先存档、停服并创建世界备份，归入“恢复前备份”，保留当前配置及官方备份历史；原先运行的游戏服会重新启动。',
         'reset-save': '将先备份整个 Pal/Saved 目录，单独保存在“重置前备份”中，再清空 SaveGames/0 下的全部内容，包括世界、玩家存档和该目录中的官方备份历史。备份失败时中止重置；游戏配置和世界备份归档保留。必须先停止游戏服务器，完成后保持停服。',
         update: '仅在游戏服停止时使用 SteamCMD 更新服务端，不自动创建备份，更新完成后保持停服。',
@@ -222,9 +222,14 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
         restart: '保存世界并重启游戏服。', kick: '将选中的玩家移出游戏服。'
       };
       const confirmed = await ask({ title: `${names[name]}？`, description: descriptions[name], confirm: names[name], danger: ['restore', 'restore-native', 'reset-save', 'kick', 'force-stop'].includes(name), symbol: 'server',
+        ...(name === 'restore' ? { choices: [
+          { value: 'world', label: '存档备份', description: '清空并替换当前世界 ID 目录，恢复备份中的世界、玩家及备份历史等全部世界内容；保留服务器配置、其他世界和目录外的数据。需要当前世界 ID 有效。' },
+          { value: 'full', label: '完整备份', description: '整体替换 Pal/Saved，恢复备份中的配置、世界 ID、所有世界、玩家、备份历史、日志和封禁名单；旧目录中备份里没有的内容全部移除。' }
+        ] } : {}),
         ...(name === 'reset-save' ? { name: '', nameLabel: '输入 delete 确认删除', namePlaceholder: 'delete', nameMaxLength: 6, confirmation: 'delete' } : {}) });
       if (!confirmed) return;
       if (name === 'reset-save') payload = { ...payload, confirmation: confirmed };
+      if (name === 'restore') payload = { ...payload, mode: confirmed };
     }
     try {
       if (name === 'apply') payload = { ...payload, ...await getConfiguration() };

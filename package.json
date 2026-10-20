@@ -28,6 +28,7 @@
     "test:e2e:running": "node tests/e2e/running-config.cjs",
     "test:e2e:reset": "node tests/e2e/save-reset.cjs",
     "test:e2e:imports": "node tests/e2e/save-imports.cjs",
+    "test:e2e:restore": "node tests/e2e/restore-modes.cjs",
     "test:browser": "npm run test:e2e"
   },
   "devDependencies": {

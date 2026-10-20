@@ -289,7 +289,7 @@ test('尚未运行的新服务端可整体恢复 Saved 和世界 ID 配置，并
   assert.equal(backup.state, 'succeeded', backup.message);
   await rm(f.runtime.saved, { recursive: true });
   assert.equal(f.runtime.startedAt, null);
-  const restored = await f.task('restore', { id: backup.backup });
+  const restored = await f.task('restore', { id: backup.backup, mode: 'full' });
   assert.equal(restored.state, 'succeeded', restored.message);
   assert.equal(f.runtime.game, null);
   assert.equal(await f.manager.native.configuredWorld(), 'ARCHIVED');

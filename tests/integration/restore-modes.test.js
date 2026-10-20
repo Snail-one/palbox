@@ -1,0 +1,70 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { access, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { managementFixture } from '../helpers/management-fixture.js';
+import { nativeBackupFixture } from '../helpers/native-backup-fixture.js';
+
+test('世界备份按选择恢复当前世界或完整 Saved，均保留恢复前备份及原运行状态', async t => {
+  for (const running of [false, true]) await t.test(running ? '运行中恢复后重新启动' : '停服恢复后保持停止', async t => {
+    const f = await managementFixture(); t.after(() => f.close()); await f.login();
+    assert.equal((await f.task('install')).state, 'succeeded');
+    const originalConfig = await readFile(f.runtime.config, 'utf8');
+    await nativeBackupFixture(f.runtime.saved, { worldId: 'SAVED_WORLD' });
+    const id = await f.manager.backup('manual');
+    const current = await nativeBackupFixture(f.runtime.saved, { worldId: 'CURRENT_WORLD' });
+    await writeFile(path.join(current.world, 'Level.sav'), 'current-data');
+    await writeFile(path.join(current.world, 'old-only.sav'), 'remove-from-world');
+    await writeFile(path.join(f.runtime.saved, 'outside-world.txt'), 'keep-until-full');
+    const currentConfig = originalConfig + '\n; current-config\n';
+    await writeFile(f.runtime.config, currentConfig);
+    if (running) assert.equal((await f.task('start')).state, 'succeeded');
+    const pid = f.runtime.game?.pid;
+
+    const world = await f.task('restore', { id, mode: 'world' });
+    assert.equal(world.state, 'succeeded', world.message);
+    assert.equal(await f.manager.targetWorld(), 'CURRENT_WORLD');
+    assert.equal(await readFile(path.join(current.world, 'Level.sav'), 'utf8'), 'current-world');
+    await assert.rejects(access(path.join(current.world, 'old-only.sav')), { code: 'ENOENT' });
+    assert.equal(await readFile(path.join(current.world, 'backup/world', current.timestamp, 'Level.sav'), 'utf8'), 'official-world');
+    assert.equal(await readFile(f.runtime.config, 'utf8'), currentConfig);
+    assert.equal(await readFile(path.join(f.runtime.saved, 'outside-world.txt'), 'utf8'), 'keep-until-full');
+    assert.deepEqual(await readdir(path.join(f.runtime.saved, 'SaveGames/0')), ['CURRENT_WORLD', 'SAVED_WORLD']);
+    assert.equal(Boolean(f.runtime.game), running);
+    if (running) assert.notEqual(f.runtime.game.pid, pid);
+    const worldPid = f.runtime.game?.pid;
+
+    const full = await f.task('restore', { id, mode: 'full' });
+    assert.equal(full.state, 'succeeded', full.message);
+    assert.equal(await f.manager.targetWorld(), 'SAVED_WORLD');
+    assert.equal(await readFile(f.runtime.config, 'utf8'), originalConfig);
+    assert.deepEqual(await readdir(path.join(f.runtime.saved, 'SaveGames/0')), ['SAVED_WORLD']);
+    await assert.rejects(access(path.join(f.runtime.saved, 'outside-world.txt')), { code: 'ENOENT' });
+    assert.equal((await f.manager.backups()).filter(backup => backup.category === 'before-restore').length, 2);
+    assert.equal(Boolean(f.runtime.game), running);
+    if (running) assert.notEqual(f.runtime.game.pid, worldPid);
+  });
+});
+
+test('拒绝无效恢复方式；存档模式缺少当前世界 ID 时拒绝恢复，不自动扩大为完整恢复', async t => {
+  const f = await managementFixture(); t.after(() => f.close()); await f.login();
+  assert.equal((await f.task('install')).state, 'succeeded');
+  await nativeBackupFixture(f.runtime.saved, { worldId: 'SAVED_WORLD' });
+  const id = await f.manager.backup('manual');
+  assert.equal((await f.task('start')).state, 'succeeded');
+  const pid = f.runtime.game.pid;
+  const count = f.manager.tasks.length;
+  for (const mode of ['invalid', '', null, true, {}, []]) {
+    const response = await f.request('/api/tasks', { method: 'POST', body: { action: 'restore', id, mode } });
+    assert.equal(response.status, 400);
+  }
+  assert.equal(f.manager.tasks.length, count);
+  await rm(path.join(f.runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'));
+  for (const payload of [{ id, mode: 'world' }, { id }]) {
+    const task = await f.task('restore', payload);
+    assert.equal(task.state, 'failed');
+    assert.match(task.message, /GameUserSettings.ini/);
+    assert.equal(f.runtime.game.pid, pid);
+  }
+  assert.equal((await f.manager.backups()).filter(backup => backup.category === 'before-restore').length, 0);
+});

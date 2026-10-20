@@ -52,7 +52,7 @@ test('重置必须登录、通过 CSRF 且准确输入 delete，只清空 0 目�
   assert.equal((await f.manager.status({ scope: 'local' })).hasWorldSave, false);
   assert.equal((await reset(f)).status, 202); await f.manager.operation;
   assert.equal(f.manager.tasks[0].removedEntries, 0);
-  const restored = await f.task('restore', { id: resetBackup });
+  const restored = await f.task('restore', { id: resetBackup, mode: 'full' });
   assert.equal(restored.state, 'succeeded', restored.message);
   assert.equal(await readFile(path.join(root, 'WORLD1/Level.sav'), 'utf8'), 'WORLD1/Level.sav');
   assert.equal(f.runtime.game, null);
