@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { failure } from './files.js';
 import { backupDirectory } from './backup-paths.js';
+import { createBackupDownloadFilename } from './backup-downloads.js';
 
 const run = promisify(execFile);
 export const worldName = /^[A-Za-z0-9_-]{1,128}$(?![\s\S])/;
@@ -12,6 +13,7 @@ const snapshotName = /^\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}$(?![\s\S])/;
 export const saveName = /^[A-Za-z0-9_-]{1,128}\.sav$(?![\s\S])/;
 const signature = info => `${info.ino}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`;
 const changing = () => failure('官方备份正在写入或已被轮换，请刷新后重试。', 409);
+const snapshotDate = timestamp => new Date(`${timestamp.slice(0, 10).replaceAll('.', '-')}T${timestamp.slice(11).replaceAll('.', ':')}Z`);
 
 export function configuredWorldId(settings) {
   const configured = settings.match(/^\s*DedicatedServerName\s*=\s*"?([A-Za-z0-9_-]+)"?\s*$/m)?.[1];
@@ -125,8 +127,8 @@ export class NativeBackups {
         if (!entry.isDirectory() || !snapshotName.test(entry.name)) continue;
         try {
           const backup = await this.get(`${worldId}/${entry.name}`);
-          // Managed game processes run in UTC; keep the original name for IDs/downloads.
-          const date = new Date(`${entry.name.slice(0, 10).replaceAll('.', '-')}T${entry.name.slice(11).replaceAll('.', ':')}Z`);
+          // Managed game processes run in UTC; keep the original name for snapshot IDs.
+          const date = snapshotDate(entry.name);
           if (Number.isNaN(date.getTime())) continue;
           backups.push({ id: backup.id, worldId, timestamp: entry.name, createdAt: date.toISOString(), bytes: backup.bytes, canRestore: worldId === activeWorld });
         } catch (error) {
@@ -171,7 +173,8 @@ export class NativeBackups {
     return before;
   }
 
-  async export(id) {
+  async export(id, { timeZone = 'UTC' } = {}) {
+    const downloadFilename = createBackupDownloadFilename(timeZone);
     const stage = await mkdtemp(path.join(await backupDirectory(this.directory), '.official-export-'));
     const cleanup = () => rm(stage, { recursive: true, force: true });
     try {
@@ -179,7 +182,7 @@ export class NativeBackups {
       const backup = await this.copy(id, source);
       const file = path.join(stage, 'backup.tar.gz');
       await run('tar', ['-czf', file, '-C', source, '--', ...await readdir(source)]);
-      return { file, filename: `official-${backup.worldId}-${backup.timestamp}.tar.gz`, cleanup };
+      return { file, filename: downloadFilename(snapshotDate(backup.timestamp), 'pal', backup.worldId), cleanup };
     } catch (error) { await cleanup(); throw error; }
   }
 

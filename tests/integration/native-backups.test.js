@@ -24,7 +24,7 @@ test('官方备份在线查看和下载不停止游戏，下载包包含世界�
   assert.equal(result.backups[0].timestamp, backup.timestamp);
   const download = await f.request('/api/native-backup?id=' + encodeURIComponent(backup.id));
   assert.equal(download.status, 200);
-  assert.match(download.headers.get('content-disposition'), /official-/);
+  assert.equal(download.headers.get('content-disposition'), `attachment; filename="${backup.timestamp}-pal-${backup.worldId}.tar.gz"`);
   const file = path.join(f.directory, 'download.tar.gz');
   await writeFile(file, Buffer.from(await download.arrayBuffer()));
   const listing = await f.runtime.run('tar', ['-tzf', file]);
@@ -40,6 +40,28 @@ test('官方备份在线查看和下载不停止游戏，下载包包含世界�
   await rm(backup.snapshot, { recursive: true });
   assert.equal((await f.request('/api/native-backup?id=' + encodeURIComponent(backup.id))).status, 404);
   assert.equal(f.runtime.game.pid, pid);
+});
+
+test('官方备份下载文件名使用请求时区，处理跨日、夏令时与无效时区', async t => {
+  const f = await managementFixture(); t.after(() => f.close()); await f.login();
+  const cases = [
+    ['Asia/Shanghai', '2026.10.18-23.01.02', '2026.10.19-07.01.02'],
+    ['America/Los_Angeles', '2026.01.18-06.00.00', '2026.01.17-22.00.00'],
+    ['America/Los_Angeles', '2026.07.18-06.00.00', '2026.07.17-23.00.00'],
+    ['Asia/Kathmandu', '2026.07.18-00.00.00', '2026.07.18-05.45.00'],
+    ['Asia/Shanghai', '2026.10.18-16.00.00', '2026.10.19-00.00.00']
+  ];
+  for (const [timeZone, timestamp, localTimestamp] of cases) {
+    const backup = await nativeBackupFixture(f.runtime.saved, { timestamp });
+    const query = new URLSearchParams({ id: backup.id, timeZone });
+    const response = await f.request('/api/native-backup?' + query);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-disposition'), `attachment; filename="${localTimestamp}-pal-${backup.worldId}.tar.gz"`);
+    assert.ok((await response.arrayBuffer()).byteLength > 0);
+  }
+  const invalid = await f.request('/api/native-backup?' + new URLSearchParams({ id: 'WORLD/2026.10.18-23.01.02', timeZone: 'invalid-zone' }));
+  assert.equal(invalid.status, 400);
+  assert.match((await invalid.json()).error, /时区无效/);
 });
 
 test('官方备份恢复先备份停服，替换世界与玩家，保留配置和官方历史', async t => {

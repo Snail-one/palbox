@@ -6,6 +6,8 @@ import { streamLogs } from './logs.js';
 import { streamStatus } from './status-stream.js';
 import { API_SECURITY_HEADERS } from '../security-headers.js';
 import { isLoopbackOrPrivate } from '../../shared/domain/network.js';
+import { createBackupDownloadFilename } from './backup-downloads.js';
+import { readBackupWorld } from './backup-metadata.js';
 
 const AUTH_BODY_TIMEOUT_MS = 10 * 1000;
 const DEFAULT_BODY_TIMEOUT_MS = 120 * 1000;
@@ -168,7 +170,8 @@ export function createManagementApi(manager, options = {}) {
       if (pathname === '/api/backups' && request.method === 'GET') { json(200, await manager.backups({ includeWorldId: true })); return; }
       if (pathname === '/api/native-backups' && request.method === 'GET') { json(200, await manager.nativeBackups()); return; }
       if (pathname === '/api/native-backup' && request.method === 'GET') {
-        const archive = await manager.native.export(new URL(request.url, 'http://localhost').searchParams.get('id'));
+        const query = new URL(request.url, 'http://localhost').searchParams;
+        const archive = await manager.native.export(query.get('id'), { timeZone: query.get('timeZone') ?? 'UTC' });
         let handle;
         try {
           if (response.destroyed) { await archive.cleanup(); return; }
@@ -185,14 +188,21 @@ export function createManagementApi(manager, options = {}) {
         return;
       }
       if (pathname === '/api/backup' && request.method === 'GET') {
-        const id = new URL(request.url, 'http://localhost').searchParams.get('id');
+        const query = new URL(request.url, 'http://localhost').searchParams;
+        const downloadFilename = createBackupDownloadFilename(query.get('timeZone') ?? 'UTC');
+        const id = query.get('id');
         const handle = await manager.openBackup(id);
-        const info = await handle.stat();
-        if (!info.isFile()) { await handle.close(); throw failure('备份文件无效。', 404); }
-        if (response.destroyed) { await handle.close(); return; }
-        response.writeHead(200, { ...API_SECURITY_HEADERS, 'Content-Type': 'application/gzip', 'Content-Disposition': `attachment; filename="${id.split('/').at(-1)}"`, 'Content-Length': info.size, 'Cache-Control': 'no-store' });
-        const stream = handle.createReadStream();
-        stream.on('error', () => response.destroy()); response.on('close', () => stream.destroy()); stream.pipe(response); return;
+        try {
+          const info = await handle.stat();
+          if (!info.isFile()) throw failure('备份文件无效。', 404);
+          const worldId = await readBackupWorld(manager.backupFile(id), info);
+          const filename = downloadFilename(info.mtime, 'Full World', worldId);
+          if (response.destroyed) { await handle.close(); return; }
+          response.writeHead(200, { ...API_SECURITY_HEADERS, 'Content-Type': 'application/gzip', 'Content-Disposition': `attachment; filename="${filename}"`, 'Content-Length': info.size, 'Cache-Control': 'no-store' });
+          const stream = handle.createReadStream();
+          stream.on('error', () => response.destroy()); response.on('close', () => stream.destroy()); stream.pipe(response);
+        } catch (error) { await handle.close(); throw error; }
+        return;
       }
       if (pathname === '/api/settings') {
         if (request.method === 'GET') { json(200, manager.publicSettings()); return; }

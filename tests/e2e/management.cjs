@@ -513,7 +513,7 @@ const path = require('node:path');
     const nativeDownloadPromise = page.waitForEvent('download');
     await page.locator('#native-backups a').first().click();
     const nativeDownload = await nativeDownloadPromise;
-    assert.match(nativeDownload.suggestedFilename(), /^official-/);
+    assert.equal(nativeDownload.suggestedFilename(), `2026.10.17-05.00.00-pal-${official.worldId}.tar.gz`);
     assert.equal(await nativeDownload.failure(), null);
     assert.equal(f.runtime.game.pid, livePid);
     await page.locator('#native-backups button').first().click();

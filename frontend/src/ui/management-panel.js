@@ -444,7 +444,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       world.append('世界 ID：', worldId);
       label.append(date, meta, world);
       label.title = `${backup.bytes} 字节`;
-      const download = document.createElement('a'); download.className = 'button secondary'; download.textContent = '下载'; download.href = `/api/backup?id=${encodeURIComponent(backup.id)}`; download.setAttribute('download', '');
+      const download = document.createElement('a'); download.className = 'button secondary'; download.textContent = '下载'; download.href = `/api/backup?${new URLSearchParams({ id: backup.id, timeZone: timeFormat.timeZone })}`; download.setAttribute('download', '');
       const restore = document.createElement('button'); restore.className = 'button secondary'; restore.textContent = '恢复'; restore.disabled = Boolean(lastStatus?.task); restore.addEventListener('click', () => action('restore', { id: backup.id }));
       const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'button secondary danger-hover'; remove.textContent = '删除'; remove.disabled = Boolean(lastStatus?.task);
       remove.addEventListener('click', async () => {
@@ -506,7 +506,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       const worldLabel = document.createElement('dt'); worldLabel.textContent = '所属世界';
       const worldValue = document.createElement('dd'); worldValue.className = 'native-backup-world-id'; worldValue.textContent = backup.worldId;
       world.append(worldLabel, worldValue); details.append(size, world);
-      const download = document.createElement('a'); download.className = 'button secondary'; download.textContent = '下载'; download.href = `/api/native-backup?id=${encodeURIComponent(backup.id)}`; download.setAttribute('download', '');
+      const download = document.createElement('a'); download.className = 'button secondary'; download.textContent = '下载'; download.href = `/api/native-backup?${new URLSearchParams({ id: backup.id, timeZone: timeFormat.timeZone })}`; download.setAttribute('download', '');
       const restore = document.createElement('button'); restore.className = 'button secondary'; restore.textContent = '恢复'; restore.disabled = Boolean(lastStatus?.task) || !backup.canRestore;
       if (!backup.canRestore) restore.title = '只能恢复已确认的当前世界备份';
       restore.addEventListener('click', () => action('restore-native', { id: backup.id }));
