@@ -155,6 +155,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   let stopped = false;
   let lastTask;
   let activeTaskId;
+  let pendingAnnouncement = null;
   let lastStatus;
   const retiredStatusInstances = new Set();
   let settingsRequest = null;
@@ -684,8 +685,6 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     const container = $('manager-players-list'); container.replaceChildren();
     $('online-player-count').textContent = String(list.length);
     $('online-player-note').textContent = !lastStatus?.running ? '启动游戏服务后，可查看在线玩家并发送广播。' : !lastStatus?.ready ? '正在连接游戏管理接口，请稍候…' : '查看在线玩家，可移出玩家或封禁账号；点击顶部刷新状态更新列表。';
-    $('announce-message').disabled = unavailable;
-    $('manager-announce').querySelector('button').disabled = unavailable;
     if (!list.length) playerEmpty(container,
       !lastStatus?.running ? '游戏服务未运行' : !lastStatus?.ready ? '正在连接玩家列表' : '暂无在线玩家',
       !lastStatus?.running ? '启动游戏服务后，可在这里查看在线玩家。' : !lastStatus?.ready ? '管理接口就绪后，可查看玩家状态。' : '玩家加入服务器后，可点击顶部刷新状态更新列表。');
@@ -708,6 +707,28 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       actions.append(kick, ban);
       container.append(row);
     }
+  }
+  function renderAnnouncement() {
+    const input = $('announce-message');
+    const form = $('manager-announce');
+    const button = form.querySelector('button');
+    const sending = Boolean(pendingAnnouncement);
+    input.disabled = sending || Boolean(lastStatus?.task) || !lastStatus?.running || !lastStatus?.ready;
+    button.disabled = input.disabled || !input.value.trim();
+    button.textContent = sending ? '发送中…' : '发送广播';
+    form.setAttribute('aria-busy', String(sending));
+  }
+  function finishAnnouncement(task) {
+    if (!pendingAnnouncement?.id || task?.id !== pendingAnnouncement.id || task.state === 'running') return;
+    if (task.state === 'succeeded') {
+      const input = $('announce-message');
+      if (input.value === pendingAnnouncement.value) input.value = '';
+      notify('广播已发送');
+    } else {
+      error(task.message || '广播发送失败，请重试。');
+    }
+    pendingAnnouncement = null;
+    renderAnnouncement();
   }
   function renderBans(value) {
     const disabled = !lastStatus?.running || !lastStatus?.ready || Boolean(lastStatus?.task);
@@ -863,6 +884,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     if (bannedCache) renderBans(bannedCache);
     if (playerHistoryCache) renderPlayerHistory(playerHistoryCache);
     renderHistory(value.tasks);
+    finishAnnouncement(value.tasks.find(task => task.id === pendingAnnouncement?.id));
     const task = value.task || value.tasks[0];
     if (task) {
       trackTask(task);
@@ -870,6 +892,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       if (task.state !== 'running') lastTask = task.id;
     }
     players(value.players);
+    renderAnnouncement();
     return true;
   }
   function stopStatus() {
@@ -1004,7 +1027,26 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       error(caught.message);
     } finally { control.disabled = false; }
   });
-  $('manager-announce').addEventListener('submit', event => { event.preventDefault(); action('announce', { message: $('announce-message').value }, false); });
+  $('announce-message').addEventListener('input', renderAnnouncement);
+  $('manager-announce').addEventListener('submit', async event => {
+    event.preventDefault();
+    if ($('manager-announce').querySelector('button').disabled) return;
+    const value = $('announce-message').value;
+    pendingAnnouncement = { id: null, value };
+    renderAnnouncement();
+    try {
+      error('');
+      const task = await api.request('tasks', { method: 'POST', body: { action: 'announce', message: value.trim() } });
+      pendingAnnouncement.id = task.id;
+      trackTask(task);
+      finishAnnouncement(lastStatus?.tasks.find(item => item.id === task.id) || task);
+      await refresh();
+    } catch (caught) {
+      pendingAnnouncement = null;
+      error(caught.message);
+    } finally { renderAnnouncement(); }
+  });
+  renderAnnouncement();
   function searchPlayerHistory() {
     clearTimeout(playerHistorySearchTimer);
     playerHistoryQuery = $('player-history-query').value.trim(); playerHistoryPage = 1;

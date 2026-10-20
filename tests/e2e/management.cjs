@@ -296,9 +296,72 @@ const path = require('node:path');
     await page.screenshot({ path: path.join(output, 'desktop-player-history.png'), fullPage: true });
     await page.locator('#players-tab-online').click();
     await page.screenshot({ path: path.join(output, 'desktop-online-players.png'), fullPage: false });
-    await page.locator('#announce-message').fill('服务器测试广播');
-    await page.locator('#manager-announce button').click();
+    const broadcastInput = page.locator('#announce-message');
+    const broadcastButton = page.locator('#manager-announce button');
+    assert.equal(await broadcastButton.isDisabled(), true);
+    await broadcastInput.fill('   ');
+    assert.equal(await broadcastButton.isDisabled(), true);
+    const broadcastRest = f.runtime.rest.bind(f.runtime);
+    let releaseBroadcast;
+    let broadcasts = 0;
+    f.runtime.rest = async (endpoint, body) => {
+      if (endpoint === 'announce') {
+        broadcasts++;
+        assert.equal(body.message, '服务器测试广播');
+        await new Promise(resolve => { releaseBroadcast = resolve; });
+      }
+      return broadcastRest(endpoint, body);
+    };
+    await broadcastInput.fill('  服务器测试广播  ');
+    const broadcastCreated = page.waitForResponse(response => response.url().endsWith('/api/tasks') && response.request().method() === 'POST');
+    await broadcastButton.click();
+    assert.equal((await (await broadcastCreated).json()).state, 'running');
+    assert.equal(await broadcastInput.isDisabled(), true);
+    assert.equal(await broadcastButton.textContent(), '发送中…');
+    assert.equal(await broadcastButton.isDisabled(), true);
+    assert.equal(await broadcastInput.inputValue(), '  服务器测试广播  ');
+    await page.evaluate(() => {
+      const form = document.getElementById('manager-announce');
+      form.requestSubmit(); form.requestSubmit();
+    });
+    const refreshed = page.waitForResponse(response => response.url().includes('/api/status?scope=players'));
+    await page.locator('#refresh-status').click();
+    await refreshed;
+    assert.equal(await broadcastButton.textContent(), '发送中…');
+    releaseBroadcast();
     await waitTask('发送广播');
+    await page.waitForFunction(() => document.getElementById('announce-message').value === '' && !document.getElementById('announce-message').disabled);
+    assert.equal(broadcasts, 1);
+    assert.equal(await broadcastButton.isDisabled(), true);
+    assert.equal(await broadcastButton.textContent(), '发送广播');
+    assert.equal(await page.locator('#toast').textContent(), '广播已发送');
+
+    f.runtime.rest = (endpoint, body) => endpoint === 'announce' ? Promise.reject(new Error('测试广播任务失败')) : broadcastRest(endpoint, body);
+    await broadcastInput.fill('失败后保留的广播');
+    await broadcastInput.press('Enter');
+    await page.waitForFunction(() => document.getElementById('toast').textContent === '测试广播任务失败' && !document.querySelector('#manager-announce button').disabled);
+    assert.equal(await broadcastInput.inputValue(), '失败后保留的广播');
+    assert.equal(await broadcastButton.textContent(), '发送广播');
+    f.runtime.rest = broadcastRest;
+
+    await page.route('**/api/tasks', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试广播请求失败' }) }), { times: 1 });
+    await broadcastButton.click();
+    await page.waitForFunction(() => document.getElementById('toast').textContent === '测试广播请求失败' && !document.querySelector('#manager-announce button').disabled);
+    assert.equal(await broadcastInput.inputValue(), '失败后保留的广播');
+
+    // A fast task can finish over SSE before the create-task response arrives.
+    await page.route('**/api/tasks', async route => {
+      const response = await route.fetch();
+      await f.manager.operation;
+      await page.waitForFunction(() => document.querySelector('#task-history-list .backup-row')?.textContent.includes(' · 发送广播 · 已完成 · '));
+      assert.equal(await broadcastInput.inputValue(), '失败后保留的广播');
+      assert.equal(await broadcastButton.textContent(), '发送中…');
+      await route.fulfill({ response });
+    }, { times: 1 });
+    await broadcastButton.click();
+    await page.waitForFunction(() => document.getElementById('announce-message').value === '' && !document.getElementById('announce-message').disabled);
+    assert.equal(await page.locator('#toast').textContent(), '广播已发送');
+    console.log('PASS 广播空白校验、发送中防重复、任务成功后清空、失败保留及快速任务重试');
     await page.locator('#manager-players-list').getByRole('button', { name: '移出', exact: true }).click();
     await page.locator('#dialog-name').fill('测试理由');
     await page.locator('#dialog-confirm').click();
