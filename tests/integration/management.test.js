@@ -343,6 +343,7 @@ test('SteamCMD、进程、配置应用、备份恢复与故障状态真实联动
   assert.equal(running.source, undefined);
   assert.equal(running.matchesCurrent, undefined);
   assert.equal((await f.task('announce', { message: 'test broadcast' })).state, 'succeeded');
+  assert.match(await f.runtime.logs('palbox'), /\[ANNOUNCE\] "test broadcast"/);
   assert.equal((await f.task('kick', { userid: 'steam_test' })).state, 'succeeded');
   assert.equal((await f.task('save-world')).state, 'succeeded');
   const unsafeDirectory = path.join(f.directory, 'unsafe/Pal/Saved');

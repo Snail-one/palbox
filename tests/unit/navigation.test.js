@@ -36,7 +36,7 @@ function setup(hash = '#game') {
   };
   const links = [];
   for (const [page, views] of [
-    ['game', [['overview', 'game-overview'], ['players', 'game-players-view']]],
+    ['game', [['overview', 'game-overview'], ['players', 'game-players-view'], ['chat', 'game-chat-view']]],
     ['saves', [['native', 'saves-native'], ['archives', 'saves-archives']]],
     ['configuration', [['editor', 'configuration-editor'], ['profiles', 'configuration-profiles']]]
   ]) {
@@ -68,6 +68,20 @@ function setup(hash = '#game') {
     key(event) { $('document').listeners.get('keydown')(event); }
   };
 }
+
+test('公告聊天支持直接访问，切换页面时隐藏并更新导航', () => {
+  const app = setup('#game/chat');
+  assert.equal(app.$('game-chat-view').hidden, false);
+  assert.equal(app.$('game-overview').hidden, true);
+  assert.equal(app.$('game-players-view').hidden, true);
+  assert.equal(app.document.title, 'PalBox · 游戏管理 · 公告聊天');
+  const chatLink = app.$('game-navigation').links.find(link => link.dataset.view === 'chat');
+  assert.equal(chatLink.getAttribute('aria-current'), 'page');
+  app.go('#game/players');
+  assert.equal(app.$('game-chat-view').hidden, true);
+  assert.equal(app.$('game-players-view').hidden, false);
+  assert.equal(chatLink.getAttribute('aria-current'), null);
+});
 
 test('官方与世界备份可独立进入，切换时仅显示对应页面并更新导航', () => {
   const app = setup('#saves');

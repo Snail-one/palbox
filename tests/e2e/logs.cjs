@@ -1,6 +1,8 @@
 'use strict';
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
 
 (async () => {
   const { managementFixture } = await import('../helpers/management-fixture.js');
@@ -157,6 +159,75 @@ const assert = require('node:assert/strict');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     assert.deepEqual(errors, []);
     console.log('PASS 超过 64 KiB 仍保留已显示记录，历史加载正常，全部接口记录保留且无多余空白行');
+
+    // Recent chat must still be found when REST traffic fills multiple pages.
+    const chatLine = '[2026-10-20 14:56:42] [CHAT] <Snail> 再干嘛\n';
+    f.runtime.log('game', chatLine + chatLine + '[CHAT] <玩家 A> <img src=x onerror=alert(1)> 中文🙂\n');
+    f.runtime.log('game', Array.from({ length: 2200 }, () => '[LOG] REST accessed endpoint /v1/api/players OK\n').join(''));
+    await page.locator('#mobile-menu').click();
+    await page.locator('#nav-game-chat').click();
+    const chat = page.locator('#chat-content');
+    await chat.locator('.chat-message').first().waitFor();
+    await page.waitForFunction(() => document.querySelectorAll('#chat-content .chat-message').length === 3);
+    assert.equal(await page.title(), 'PalBox · 游戏管理 · 公告聊天');
+    assert.equal(await page.locator('#game-chat-view #manager-announce').isVisible(), true);
+    assert.equal(await page.locator('#announce-message').evaluate(el => el.tagName), 'TEXTAREA');
+    await page.locator('#announce-message').fill('服务未启动时先编辑公告');
+    assert.equal(await page.locator('#manager-announce button').isDisabled(), true);
+    await page.locator('#announce-message').press('Shift+Enter');
+    await page.locator('#announce-message').press('a');
+    assert.equal(await page.locator('#announce-message').inputValue(), '服务未启动时先编辑公告\na');
+    assert.equal(await page.locator('#game-players-view #manager-announce').count(), 0);
+    assert.match(await page.locator('#chat-status').textContent(), /Asia\/Shanghai/);
+    assert.doesNotMatch(await chat.textContent(), /REST accessed|\[CHAT\]|\[game\]/);
+    assert.match(await chat.locator('.chat-text').last().textContent(), /<img src=x onerror=alert\(1\)> 中文🙂/);
+    assert.equal(await chat.locator('img').count(), 0);
+    const at = await chat.locator('time').first().getAttribute('datetime');
+    assert.equal(await chat.locator('time').first().textContent(), new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+    }).format(new Date(at)));
+    f.runtime.log('game', '[CHAT] <Snail> 分段消息');
+    f.runtime.log('game', '与中文🙂\n');
+    await page.waitForFunction(() => document.getElementById('chat-content').textContent.includes('分段消息与中文🙂'));
+    assert.equal(await chat.locator('.chat-message').count(), 4);
+    assert.equal(await page.evaluate(() => window.logSources.filter(source => source.readyState === EventSource.OPEN).length), 1);
+    f.backend.closeAllConnections();
+    f.runtime.log('game', '[CHAT] <Snail> 聊天断线恢复\n');
+    await page.waitForFunction(() => document.getElementById('chat-content').textContent.includes('聊天断线恢复'));
+    assert.equal(await chat.locator('.chat-message').count(), 5);
+    f.runtime.log('palbox', `[ANNOUNCE] ${JSON.stringify('管理员广播\n十分钟后重启')}\n`);
+    await chat.locator('.chat-message-broadcast').waitFor();
+    assert.equal(await chat.locator('.chat-message-broadcast .chat-text').textContent(), '管理员广播\n十分钟后重启');
+    f.runtime.log('game', Array.from({ length: 80 }, (_, i) => `[CHAT] <Snail> 聊天滚动 ${i}\n`).join(''));
+    await page.waitForFunction(() => document.getElementById('chat-content').textContent.includes('聊天滚动 79'));
+    assert.equal(await chat.evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight < 30), true);
+    await chat.evaluate(el => { el.scrollTop = 80; });
+    f.runtime.log('game', '[CHAT] <Snail> 查看历史时收到新聊天\n');
+    await page.waitForFunction(() => document.getElementById('chat-content').textContent.includes('查看历史时收到新聊天'));
+    assert.ok(Math.abs(await chat.evaluate(el => el.scrollTop) - 80) < 2);
+    const output = path.resolve('test-results/chat');
+    await fs.mkdir(output, { recursive: true });
+    await page.screenshot({ path: path.join(output, 'mobile-chat.png'), fullPage: true });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    assert.equal(await chat.evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.screenshot({ path: path.join(output, 'desktop-chat.png'), fullPage: true });
+    await page.locator('#chat-latest').click();
+    await page.waitForFunction(() => document.getElementById('chat-content').textContent.includes('聊天滚动 79') && !document.getElementById('chat-older').disabled);
+    assert.doesNotMatch(await chat.textContent(), /再干嘛/);
+    for (let count = 0; count < 8 && !(await chat.textContent()).includes('再干嘛'); count++) {
+      await page.locator('#chat-older').click();
+      await page.waitForFunction(() => document.getElementById('chat-older').textContent !== '正在加载…');
+    }
+    assert.equal(await chat.locator('.chat-text').filter({ hasText: '再干嘛' }).count(), 2);
+    await page.locator('#nav-configuration').click();
+    await page.waitForFunction(() => window.logSources.every(source => source.readyState === EventSource.CLOSED));
+    await page.goto(f.base + '/#game/chat');
+    await page.waitForFunction(() => document.getElementById('chat-content').textContent.includes('聊天滚动 79'));
+    assert.equal(await page.locator('#nav-game-chat').getAttribute('aria-current'), 'page');
+    assert.equal(await page.locator('#game-overview').isVisible(), false);
+    assert.deepEqual(errors, []);
+    console.log('PASS 公告聊天独立入口、广播迁移、跨多页查找聊天、实时断线补齐、安全显示、本地时间、历史加载与手机布局');
   } finally {
     for (const resolve of pendingStatus) resolve(baseline);
     await browser?.close();

@@ -6,6 +6,7 @@ import { createRunningConfigPanel } from './running-config-panel.js';
 import { compactLogDisplay } from './log-display.js';
 import { createTimeFormatter } from './time.js';
 import { createBackupRetentionAutosave } from './backup-retention-autosave.js';
+import { createChatPanel } from './chat-panel.js';
 
 const BACKUP_GROUPS = {
   manual: '手动备份',
@@ -86,8 +87,9 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   const playerPanel = document.createElement('section');
   playerPanel.id = 'online-player-management';
   playerPanel.className = 'management-panel player-management';
-  playerPanel.setAttribute('aria-label', '在线玩家与广播');
-  playerPanel.innerHTML = `<div class="management-heading"><div><h2>在线玩家</h2><p id="online-player-note" class="management-note">正在读取玩家状态…</p></div></div><form id="manager-announce" class="player-broadcast"><label for="announce-message"><svg class="icon" aria-hidden="true"><use href="#i-globe"/></svg>全服广播</label><div class="player-broadcast-controls"><input id="announce-message" maxlength="500" required placeholder="向在线玩家发送公告…"><button class="button secondary" type="submit" disabled>发送广播</button></div></form><div id="manager-players-list" class="player-card-grid">游戏服尚未连接</div>`;
+  playerPanel.setAttribute('aria-label', '在线玩家');
+  playerPanel.innerHTML = `<div class="management-heading"><div><h2>在线玩家</h2><p id="online-player-note" class="management-note">正在读取玩家状态…</p></div></div><div id="manager-players-list" class="player-card-grid">游戏服尚未连接</div>`;
+  createChatPanel({ dom, api, window });
   const bannedPanel = document.createElement('section');
   bannedPanel.id = 'banned-management';
   bannedPanel.className = 'management-panel player-management';
@@ -684,7 +686,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     playersRenderKey = key;
     const container = $('manager-players-list'); container.replaceChildren();
     $('online-player-count').textContent = String(list.length);
-    $('online-player-note').textContent = !lastStatus?.running ? '启动游戏服务后，可查看在线玩家并发送广播。' : !lastStatus?.ready ? '正在连接游戏管理接口，请稍候…' : '查看在线玩家，可移出玩家或封禁账号；点击顶部刷新状态更新列表。';
+    $('online-player-note').textContent = !lastStatus?.running ? '启动游戏服务后，可查看在线玩家。' : !lastStatus?.ready ? '正在连接游戏管理接口，请稍候…' : '查看在线玩家，可移出玩家或封禁账号；点击顶部刷新状态更新列表。';
     if (!list.length) playerEmpty(container,
       !lastStatus?.running ? '游戏服务未运行' : !lastStatus?.ready ? '正在连接玩家列表' : '暂无在线玩家',
       !lastStatus?.running ? '启动游戏服务后，可在这里查看在线玩家。' : !lastStatus?.ready ? '管理接口就绪后，可查看玩家状态。' : '玩家加入服务器后，可点击顶部刷新状态更新列表。');
@@ -713,10 +715,16 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     const form = $('manager-announce');
     const button = form.querySelector('button');
     const sending = Boolean(pendingAnnouncement);
-    input.disabled = sending || Boolean(lastStatus?.task) || !lastStatus?.running || !lastStatus?.ready;
-    button.disabled = input.disabled || !input.value.trim();
+    input.disabled = sending;
+    const ready = Boolean(lastStatus?.running && lastStatus?.ready && !lastStatus?.task);
+    button.disabled = sending || !ready || !input.value.trim();
     button.textContent = sending ? '发送中…' : '发送广播';
     form.setAttribute('aria-busy', String(sending));
+    const state = $('announce-note');
+    state.textContent = sending ? '发送中…' : !lastStatus ? '读取中' : !lastStatus.running ? '服务未启动' : !lastStatus.ready ? '连接中' : lastStatus.task ? '任务执行中' : '可发送';
+    state.dataset.ready = String(ready && !sending);
+    state.title = !lastStatus?.running ? '可先编辑公告，启动游戏服务后发送。' : !lastStatus.ready ? '游戏管理接口就绪后可发送。' : lastStatus.task ? '当前任务完成后可发送。' : '广播会发送给当前在线的所有玩家。';
+    $('announce-count').textContent = `${input.value.length} / 500`;
   }
   function finishAnnouncement(task) {
     if (!pendingAnnouncement?.id || task?.id !== pendingAnnouncement.id || task.state === 'running') return;
@@ -1028,6 +1036,11 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     } finally { control.disabled = false; }
   });
   $('announce-message').addEventListener('input', renderAnnouncement);
+  $('announce-message').addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return;
+    event.preventDefault();
+    $('manager-announce').requestSubmit();
+  });
   $('manager-announce').addEventListener('submit', async event => {
     event.preventDefault();
     if ($('manager-announce').querySelector('button').disabled) return;
