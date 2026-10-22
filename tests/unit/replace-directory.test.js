@@ -50,3 +50,17 @@ test('回滚失败保留原数据并报告位置', async t => {
   const stage = (await fs.readdir(root)).find(name => name.startsWith('.import-'));
   assert.equal(await fs.readFile(path.join(root, stage, 'previous/old'), 'utf8'), 'old-data');
 });
+
+test('后续配置提交失败会回滚已经替换的目录，包括原目录不存在的情况', async t => {
+  for (const existed of [true, false]) {
+    const { root, source, target } = await fixture(t);
+    if (!existed) await fs.rm(target, { recursive: true });
+    await assert.rejects(replaceDirectory(source, target, { afterReplace: async () => {
+      assert.equal(await fs.readFile(path.join(target, 'new'), 'utf8'), 'new-data');
+      throw new Error('configuration commit failed');
+    } }), /configuration commit failed/);
+    if (existed) assert.equal(await fs.readFile(path.join(target, 'old'), 'utf8'), 'old-data');
+    else await assert.rejects(fs.access(target), { code: 'ENOENT' });
+    assert.deepEqual(await fs.readdir(root), existed ? ['source', 'target'] : ['source']);
+  }
+});

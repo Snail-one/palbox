@@ -1,12 +1,12 @@
 import path from 'node:path';
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import { createHash, randomBytes } from 'node:crypto';
 import { parse, encodeString, decodeString, mergeConfiguration, applyManagedAccess, applyManagedChanges, MAX_CONFIGURATION_SOURCE_LENGTH } from '../../shared/domain/config.js';
 import {
   createProfile, createWorkspace, validateWorkspace, MAX_PROFILES,
   GAME_DEFAULT_PROFILE_ID, GAME_DEFAULT_PROFILE_NAME, OFFICIAL_DEFAULT_ORIGIN, DERIVED_DEFAULT_ORIGIN
 } from '../../shared/domain/workspace.js';
-import { jsonWrite, readJson, failure } from './files.js';
+import { atomicWrite, jsonWrite, readJson, failure } from './files.js';
 
 export function managedTemplate(port, source, { password } = {}) {
   return applyManagedChanges(source, new Map([
@@ -209,7 +209,7 @@ export class ManagementStore {
     this.writes = operation.catch(() => {});
     return operation;
   }
-  persist() { return jsonWrite(this.file, this.snapshot()); }
+  persist(snapshot = this.snapshot()) { return jsonWrite(this.file, snapshot); }
   /**
    * Overlay an imported PalWorldSettings.ini onto the official default, fill
    * missing parameters from that baseline, and store the result on the locked
@@ -226,20 +226,61 @@ export class ManagementStore {
     if (!profile?.initialSource) throw failure('未找到游戏默认配置。', 409);
     return mergedImportedSource(profile, importedSource);
   }
-  applyImportedConfig(importedSource) {
+  applyImportedConfig(importedSource, { configFile, onCleanupError = () => {} } = {}) {
     const operation = this.writes.then(async () => {
       if (typeof importedSource !== 'string' || !importedSource.trim()) throw failure('导入的游戏配置为空。', 409);
       parse(importedSource);
       const official = await this.readDefaultFile();
-      this.applyDefaultProfile(this.workspace, official);
-      const profile = this.workspace.profiles.find(entry => entry.locked === true);
+      const candidate = structuredClone(this.workspace);
+      this.applyDefaultProfile(candidate, official);
+      const profile = candidate.profiles.find(entry => entry.locked === true);
       if (!profile?.initialSource) throw failure('未找到游戏默认配置。', 409);
       const merged = mergedImportedSource(profile, importedSource);
       profile.source = merged;
       profile.updatedAt = new Date().toISOString();
-      this.workspace.activeId = profile.id;
-      this.revision += 1;
-      await this.persist();
+      candidate.activeId = profile.id;
+      const next = { workspace: candidate, revision: this.revision + 1 };
+      const stage = await mkdtemp(path.join(this.directory, 'palbox/.configuration-'));
+      const originals = [];
+      let preserve = false;
+      try {
+        // The write queue stays locked through commit and rollback, so a
+        // concurrent workspace save cannot be overwritten by recovery.
+        for (const file of [this.file, ...(configFile ? [configFile] : [])]) {
+          let value = null;
+          try { value = await readFile(file); }
+          catch (error) { if (error.code !== 'ENOENT') throw error; }
+          const backup = path.join(stage, originals.length === 0 ? 'workspace.json' : 'PalWorldSettings.ini');
+          if (value !== null) await atomicWrite(backup, value);
+          originals.push({ file, backup, existed: value !== null });
+        }
+        let workspaceAttempted = false;
+        try {
+          if (configFile) await atomicWrite(configFile, merged);
+          workspaceAttempted = true;
+          await this.persist(next);
+        } catch (error) {
+          const errors = [];
+          for (const original of originals.toReversed()) {
+            if (original.file === this.file && !workspaceAttempted) continue;
+            try {
+              if (original.existed) await atomicWrite(original.file, await readFile(original.backup));
+              else await rm(original.file, { force: true });
+            } catch (caught) { errors.push(`${original.file}: ${caught.message}`); }
+          }
+          if (errors.length) {
+            preserve = true;
+            const rollback = failure(`${error.message}；配置回滚失败，原文件副本已保留在 ${stage}：${errors.join('；')}`, 500);
+            rollback.rollbackFailed = true;
+            throw rollback;
+          }
+          throw error;
+        }
+        this.workspace = candidate;
+        this.revision = next.revision;
+      } finally {
+        if (!preserve) await rm(stage, { recursive: true, force: true }).catch(onCleanupError);
+      }
       return merged;
     });
     this.writes = operation.catch(() => {});

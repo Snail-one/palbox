@@ -21,15 +21,15 @@ test('重置拒绝父目录链接，0 内的链接只移除链接本身', async 
     await writeFile(path.join(outside, 'keep'), 'outside');
     const link = path.join(directory, parent); await mkdir(path.dirname(link), { recursive: true });
     await symlink(outside, link, 'dir');
-    await assert.rejects(native.clearWorlds(() => {}), /存档目录不能包含链接/);
+    await assert.rejects(native.clearWorld('WORLD', () => {}), /存档目录不能包含链接/);
     assert.equal(await readFile(path.join(outside, 'keep'), 'utf8'), 'outside');
   }
   const { directory, saved, native } = await fixture(t);
   const outside = path.join(directory, 'outside'); await mkdir(outside);
   await writeFile(path.join(outside, 'keep'), 'outside');
-  const root = path.join(saved, 'SaveGames/0'); await mkdir(root, { recursive: true });
+  const root = path.join(saved, 'SaveGames/0/WORLD'); await mkdir(root, { recursive: true });
   await symlink(outside, path.join(root, 'linked-world'), 'dir');
-  assert.equal(await native.clearWorlds(() => {}), 1);
+  assert.equal(await native.clearWorld('WORLD', () => {}), 1);
   assert.deepEqual(await readdir(root), []);
   assert.equal(await readFile(path.join(outside, 'keep'), 'utf8'), 'outside');
 });
@@ -41,12 +41,12 @@ test('删除前再次检查游戏状态，检查期间启动则保留存档', as
   const manager = new Manager({ directory, runtime: { saved, game: null } });
   const locate = native.safeDirectory.bind(native);
   native.safeDirectory = async parts => { const root = await locate(parts); manager.runtime.game = {}; return root; };
-  await assert.rejects(native.clearWorlds(() => manager.requireResetAllowed({ confirmation: 'delete' })), { status: 409 });
+  await assert.rejects(native.clearWorld('WORLD', () => manager.requireResetAllowed({ confirmation: 'delete' })), { status: 409 });
   assert.equal(await readFile(file, 'utf8'), 'keep');
 });
 
 test('没有存档目录时重置成功，不创建占位目录', async t => {
   const { saved, native } = await fixture(t);
-  assert.equal(await native.clearWorlds(() => {}), 0);
+  assert.equal(await native.clearWorld('WORLD', () => {}), 0);
   await assert.rejects(access(saved), { code: 'ENOENT' });
 });

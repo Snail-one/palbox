@@ -217,7 +217,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       const descriptions = {
         apply: '将当前配置写入游戏，不创建备份。游戏服正在运行时会先存档、停服，再应用并重启。',
         backup: '仅在游戏服停止时打包当前世界目录和 PalWorldSettings.ini，结构与官方备份下载相同，完成后保持停服。',
-        'reset-save': '将先把当前世界目录和 PalWorldSettings.ini 打包到“重置前备份”，再清空 SaveGames/0 下的全部内容，包括世界、玩家存档和该目录中的官方备份历史。其他世界、日志和封禁名单不会进入这份备份。备份失败时中止重置；游戏配置和世界备份归档保留。必须先停止游戏服务器，完成后保持停服。',
+        'reset-save': '将先把当前世界目录和 PalWorldSettings.ini 打包到“重置前备份”，再清空 SaveGames/0/<当前世界 ID>/ 中的世界、玩家存档和该世界的官方备份历史。其他世界、游戏配置、日志、封禁名单和世界备份归档保留。无法确认当前世界或保护备份失败时中止重置。必须先停止游戏服务器，完成后保持停服。',
         update: '仅在游戏服停止时使用 SteamCMD 更新服务端，不自动创建备份，更新完成后保持停服。',
         stop: '保存世界后停止游戏服，管理面板继续运行。',
         'force-stop': '立即强制停止游戏服，可能丢失最近一次未保存的进度。仅在正常停止失败时使用。',

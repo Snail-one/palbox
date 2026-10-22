@@ -40,14 +40,15 @@ export class NativeBackups {
     return (await readdir(root, { withFileTypes: true })).filter(entry => entry.isDirectory() && worldName.test(entry.name)).map(entry => entry.name);
   }
 
-  async clearWorlds(assertStopped) {
-    assertStopped();
+  async clearWorld(worldId, assertStopped) {
+    if (!worldName.test(worldId || '')) throw failure('世界 ID 无效。');
+    await assertStopped();
     let root;
-    try { root = await this.safeDirectory(['SaveGames', '0']); }
+    try { root = await this.safeDirectory(['SaveGames', '0', worldId]); }
     catch (error) { if (error.code === 'ENOENT') return 0; throw error; }
     const entries = await readdir(root);
     for (const name of entries) {
-      assertStopped();
+      await assertStopped();
       // Remove links themselves; never follow them outside the save directory.
       await rm(path.join(root, name), { recursive: true, force: true });
     }
