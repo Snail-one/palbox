@@ -144,6 +144,7 @@ export class Manager extends EventEmitter {
       this.validateSettings(settings);
       if (settings.backupRetention > MAX_BACKUP_RETENTION) { settings.backupRetention = MAX_BACKUP_RETENTION; write = true; }
       if (!Object.hasOwn(settings, 'autoStart')) { settings.autoStart = false; write = true; }
+      if (!Object.hasOwn(settings, 'autoProxy')) { settings.autoProxy = false; write = true; }
       if (!Object.hasOwn(settings, 'gameArgs')) { settings.gameArgs = []; write = true; }
       if (!Object.hasOwn(settings, 'installArgs')) { settings.installArgs = [...DEFAULT_INSTALL_ARGS]; write = true; }
       if (!Object.hasOwn(settings, 'shutdownWait')) { settings.shutdownWait = 5; write = true; }
@@ -183,6 +184,9 @@ export class Manager extends EventEmitter {
     if (!Number.isInteger(settings.backupRetention) || settings.backupRetention < 1 || settings.backupRetention > 100) throw new Error(this.settingsError());
     if (Object.hasOwn(settings, 'backupRetentions') && !validBackupRetentions(settings.backupRetentions)) throw new Error(this.settingsError());
     if (Object.hasOwn(settings, 'autoStart') && typeof settings.autoStart !== 'boolean') throw new Error(this.settingsError());
+    if (Object.hasOwn(settings, 'autoProxy') && typeof settings.autoProxy !== 'boolean') {
+      throw new Error(`settings.json 中的自动代理须为布尔值。请编辑 ${this.settingsFile} 修正 autoProxy 后重新启动。`);
+    }
     if (Object.hasOwn(settings, 'shutdownWait') && (!Number.isInteger(settings.shutdownWait) || settings.shutdownWait < 0 || settings.shutdownWait > 300)) {
       throw new Error(`settings.json 中的关服倒计时须为 0 到 300 的整数秒。请编辑 ${this.settingsFile} 修正 shutdownWait 后重新启动。`);
     }
@@ -202,11 +206,12 @@ export class Manager extends EventEmitter {
   get backupRetention() { return this.settings?.backupRetention ?? 5; }
   get backupRetentions() { return Object.fromEntries(categories.map(category => [category, this.settings?.backupRetentions?.[category] ?? this.backupRetention])); }
   get autoStart() { return this.settings?.autoStart === true; }
+  get autoProxy() { return this.settings?.autoProxy === true; }
   get gameArgs() { return this.settings?.gameArgs ?? []; }
   get installArgs() { return this.settings?.installArgs ?? DEFAULT_INSTALL_ARGS; }
   get shutdownWait() { return this.settings?.shutdownWait ?? 5; }
   get shutdownMessage() { return this.settings?.shutdownMessage ?? DEFAULT_SHUTDOWN_MESSAGE; }
-  syncRuntimeArgs() { this.runtime.args = [...this.gameArgs]; this.runtime.shutdownWait = this.shutdownWait; this.runtime.shutdownMessage = this.shutdownMessage; }
+  syncRuntimeArgs() { this.runtime.args = [...this.gameArgs]; this.runtime.autoProxy = this.autoProxy; this.runtime.shutdownWait = this.shutdownWait; this.runtime.shutdownMessage = this.shutdownMessage; }
   syncRuntimeInstallArgs() { this.runtime.installArgs = this.installArgs.map(arg => arg === '{server}' ? this.runtime.server : arg); }
   async setupAdmin(username, password) {
     if (!this.setupRequired) throw failure('管理员已初始化，请直接登录。', 409);
@@ -217,7 +222,7 @@ export class Manager extends EventEmitter {
       if (!validUsername(name)) throw failure('管理员用户名须为 1 到 64 个字符，且不能包含控制字符。', 400);
       if (typeof password !== 'string' || password.length < 12) throw failure('管理密码至少需要 12 位。', 400);
       if (password.length > 1024) throw failure('管理密码不能超过 1024 位。', 400);
-      const next = { admin: { username: name, ...await passwordRecord(password) }, backupRetention: 5, autoStart: false, shutdownWait: 5, shutdownMessage: DEFAULT_SHUTDOWN_MESSAGE, gameArgs: [], installArgs: [...DEFAULT_INSTALL_ARGS] };
+      const next = { admin: { username: name, ...await passwordRecord(password) }, backupRetention: 5, autoStart: false, autoProxy: false, shutdownWait: 5, shutdownMessage: DEFAULT_SHUTDOWN_MESSAGE, gameArgs: [], installArgs: [...DEFAULT_INSTALL_ARGS] };
       await jsonWrite(this.settingsFile, next);
       this.settings = next;
       this.setupRequired = false;
@@ -805,6 +810,7 @@ export class Manager extends EventEmitter {
       backupRetention: this.backupRetention,
       backupRetentions: this.backupRetentions,
       autoStart: this.autoStart,
+      autoProxy: this.autoProxy,
       shutdownWait: this.shutdownWait,
       shutdownMessage: this.shutdownMessage,
       gameArgs: [...this.gameArgs],
@@ -839,11 +845,12 @@ export class Manager extends EventEmitter {
     const hasRetention = Object.hasOwn(value, 'backupRetention');
     const hasRetentions = Object.hasOwn(value, 'backupRetentions');
     const hasAutoStart = Object.hasOwn(value, 'autoStart');
+    const hasAutoProxy = Object.hasOwn(value, 'autoProxy');
     const hasShutdownWait = Object.hasOwn(value, 'shutdownWait');
     const hasShutdownMessage = Object.hasOwn(value, 'shutdownMessage');
     const hasArgs = Object.hasOwn(value, 'gameArgs');
     const hasInstallArgs = Object.hasOwn(value, 'installArgs');
-    if (!hasRetention && !hasRetentions && !hasAutoStart && !hasShutdownWait && !hasShutdownMessage && !hasArgs && !hasInstallArgs) throw failure('请提供要保存的设置。');
+    if (!hasRetention && !hasRetentions && !hasAutoStart && !hasAutoProxy && !hasShutdownWait && !hasShutdownMessage && !hasArgs && !hasInstallArgs) throw failure('请提供要保存的设置。');
     const next = { ...this.settings, gameArgs: [...this.gameArgs], installArgs: [...this.installArgs] };
     if (hasRetention) {
       if (!Number.isInteger(value.backupRetention) || value.backupRetention < 1 || value.backupRetention > MAX_BACKUP_RETENTION) throw failure(`世界备份保留数量须为 1 到 ${MAX_BACKUP_RETENTION}。`);
@@ -857,6 +864,10 @@ export class Manager extends EventEmitter {
     if (hasAutoStart) {
       if (typeof value.autoStart !== 'boolean') throw failure('自动启动设置必须为布尔值。');
       next.autoStart = value.autoStart;
+    }
+    if (hasAutoProxy) {
+      if (typeof value.autoProxy !== 'boolean') throw failure('自动代理设置必须为布尔值。');
+      next.autoProxy = value.autoProxy;
     }
     if (hasShutdownWait) {
       if (!Number.isInteger(value.shutdownWait) || value.shutdownWait < 0 || value.shutdownWait > 300) throw failure('关服倒计时须为 0 到 300 的整数秒。');

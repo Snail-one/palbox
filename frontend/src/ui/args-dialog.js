@@ -1,4 +1,4 @@
-export function createArgsDialog({ dom, prefix, onSave }) {
+export function createArgsDialog({ dom, prefix, onSave, extras = [] }) {
   const { $ } = dom;
   const dialog = $(`${prefix}-dialog`);
   const input = $(`${prefix}-input`);
@@ -11,6 +11,7 @@ export function createArgsDialog({ dom, prefix, onSave }) {
   function setBusy(value) {
     busy = value;
     save.disabled = value; cancel.disabled = value; close.disabled = value;
+    for (const node of extras) node.disabled = value;
   }
   function open(value) {
     input.value = value;

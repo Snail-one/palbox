@@ -242,10 +242,10 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       await refresh();
     } catch (caught) { error(caught.message); }
   }
-  const gameArgsDialog = createArgsDialog({ dom, prefix: 'game-args', onSave: async gameArgs => {
-    const saved = await api.request('settings', { method: 'PUT', body: { gameArgs } });
+  const gameArgsDialog = createArgsDialog({ dom, prefix: 'game-args', extras: [$('game-args-auto-proxy')], onSave: async gameArgs => {
+    const saved = await api.request('settings', { method: 'PUT', body: { gameArgs, autoProxy: $('game-args-auto-proxy').checked } });
     settingsCache = saved;
-    notify('启动参数已保存，将在下次启动或重启游戏服时生效');
+    notify('启动参数已保存。游戏参数将在下次启动或重启时生效；自动代理将在下次安装或更新服务端时生效');
   } });
   $('edit-shutdown-wait').addEventListener('click', () => {
     const dialog = $('shutdown-wait-dialog');
@@ -316,7 +316,10 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   });
   $('running-config-dialog').addEventListener('close', () => { runningRead++; runningPanel.clear(); });
   for (const id of ['running-config-close', 'running-config-done']) $(id).addEventListener('click', () => $('running-config-dialog').close());
-  $('edit-game-args').addEventListener('click', () => gameArgsDialog.open((settingsCache?.gameArgs ?? []).join('\n')));
+  $('edit-game-args').addEventListener('click', () => {
+    $('game-args-auto-proxy').checked = settingsCache?.autoProxy === true;
+    gameArgsDialog.open((settingsCache?.gameArgs ?? []).join('\n'));
+  });
   const installArgsDialog = createArgsDialog({ dom, prefix: 'install-args', onSave: async installArgs => {
     const saved = await api.request('settings', { method: 'PUT', body: { installArgs } });
     settingsCache = saved;

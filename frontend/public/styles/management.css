@@ -71,6 +71,7 @@
 .auto-start-switch input:checked + .toggle { background: var(--accent); }
 .auto-start-switch input:checked + .toggle:after { transform: translateX(14px); }
 .auto-start-switch input:focus-visible + .toggle { outline: 3px solid #e68b50; outline-offset: 3px; }
+.dialog-proxy-switch { margin: 0 0 12px; font-size: 13px; color: var(--ink); }
 @media (max-width: 1000px) {
   .management-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .management-metrics .server-metric:first-child { grid-column: span 2; }

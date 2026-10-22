@@ -157,7 +157,7 @@ test('启动移除旧备份分类与保留设置，旧归档不再展示且文�
   const manager = new Manager({ directory: f.directory }); t.after(() => manager.close());
   await manager.initialize();
   assert.deepEqual(manager.publicSettings(), {
-    backupRetention: 5, backupRetentions: { ...Object.fromEntries(BACKUP_CATEGORIES.map(category => [category, 5])), manual: 7 }, autoStart: false, shutdownWait: 5, shutdownMessage: 'Palbox 正在维护服务器', gameArgs: [],
+    backupRetention: 5, backupRetentions: { ...Object.fromEntries(BACKUP_CATEGORIES.map(category => [category, 5])), manual: 7 }, autoStart: false, autoProxy: false, shutdownWait: 5, shutdownMessage: 'Palbox 正在维护服务器', gameArgs: [],
     installArgs: ['+force_install_dir', path.join(f.directory, 'server'), '+login', 'anonymous', '+app_update', '2394010', 'validate', '+quit']
   });
   const migrated = JSON.parse(await readFile(settingsFile, 'utf8'));

@@ -106,13 +106,13 @@ export class Runtime extends EventEmitter {
     if (!child?.pid) return;
     try { process.kill(-child.pid, signal); } catch (error) { if (error.code !== 'ESRCH') throw error; }
   }
-  run(command, args, channel = 'palbox', { captureLimit = 65536, pty = false, onOutput, timeoutMs = 0, ...options } = {}) {
+  run(command, args, channel = 'palbox', { captureLimit = 65536, pty = false, onOutput, timeoutMs = 0, direct = false, ...options } = {}) {
     if (this.closing) return Promise.reject(failure('面板正在关闭。', 503));
     return new Promise((resolve, reject) => {
       const usePty = pty && ptyAvailable;
       const executable = usePty ? '/usr/bin/script' : command;
       const argv = usePty ? ['-qefc', [command, ...args].map(shellQuote).join(' '), '/dev/null'] : args;
-      const child = spawn(executable, argv, { shell: false, detached: true, env: this.childEnvironment(), stdio: ['ignore', 'pipe', 'pipe'], ...options });
+      const child = spawn(executable, argv, { shell: false, detached: true, env: this.childEnvironment({ direct }), stdio: ['ignore', 'pipe', 'pipe'], ...options });
       this.command = child;
       let timedOut = false;
       const timer = timeoutMs ? setTimeout(() => { timedOut = true; this.kill(child, 'SIGKILL'); }, timeoutMs) : null;
@@ -130,11 +130,12 @@ export class Runtime extends EventEmitter {
       });
     });
   }
-  childEnvironment() {
-    const env = { ...process.env, TZ: 'UTC' };
+  childEnvironment({ direct = false, source = process.env } = {}) {
+    const env = { ...source, TZ: 'UTC' };
     if (managedSteamcmd(this)) env.HOME = path.resolve(this.directory, 'steam-home');
     delete env.PALBOX_ADMIN_PASSWORD;
     delete env.PALBOX_ADMIN_PASSWORD_FILE;
+    if (direct) for (const key of ['http_proxy', 'https_proxy', 'all_proxy', 'ftp_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'FTP_PROXY', 'socks_proxy', 'SOCKS_PROXY', 'socks5_proxy', 'SOCKS5_PROXY', 'NODE_USE_ENV_PROXY']) delete env[key];
     return env;
   }
   async install({ onProgress } = {}) {
@@ -143,7 +144,9 @@ export class Runtime extends EventEmitter {
     await mkdir(this.server, { recursive: true });
     const args = this.installArgs || ['+force_install_dir', this.server, '+login', 'anonymous', '+app_update', '2394010', 'validate', '+quit'];
     let progressText = '';
-    const result = await this.run(this.steamcmd, args, 'steamcmd', { pty: true, onOutput: text => {
+    const direct = this.autoProxy !== true;
+    this.log('steamcmd', direct ? '自动代理已关闭，本次安装或更新直接连接。\n' : '自动代理已开启，本次安装或更新沿用环境中的代理。\n');
+    const result = await this.run(this.steamcmd, args, 'steamcmd', { pty: true, direct, onOutput: text => {
       progressText = (progressText + stripVTControlCharacters(String(text))).slice(-4096);
       const state = [...progressText.matchAll(/Update state \([^)]+\)\s*([^\r\n]+)/gi)].at(-1)?.[1];
       if (!state) return;

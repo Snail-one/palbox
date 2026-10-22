@@ -85,7 +85,7 @@ docker compose up -d --build
 │       └── Logs/
 ├── palbox/
 │   ├── workspace.json                 配置库、输入基准与保存版本
-│   ├── settings.json                  管理员用户名、密码哈希、世界备份保留设置、自动启动、启动参数
+│   ├── settings.json                  管理员用户名、密码哈希、世界备份保留设置、自动启动、启动参数、自动代理
 │   ├── tasks.json                     最近 40 个任务
 │   ├── player-history.json            玩家连接历史（UserID、昵称、IP、连接时间、登录状态）
 │   └── imports/                       导入存档的临时暂存（1 小时后清理）
@@ -125,7 +125,7 @@ docker compose up -d --build
 
 应用管理配置需要 `RESTAPIEnabled=True`、非空 `AdminPassword` 和有效的 `RESTAPIPort`。已导入且关闭 REST API 的配置需要先调整这几个参数；不会静默覆盖用户导入的配置。`PALBOX_GAME_PORT` 控制游戏进程的实际监听端口，修改时要同步修改 `compose.yaml` 中 `ports` 的宿主机端口；INI 中的 `PublicPort` 只负责公布端口。
 
-游戏启动参数通过「游戏管理 → 服务器概况 → 游戏服务」中的「启动参数」按钮编辑，每行一个参数，保存到 `palbox/settings.json` 的 `gameArgs`。保存不会自动重启游戏服，将在下次启动或重启时生效；应用配置、备份恢复等流程触发的自动重启同样使用新参数。`-port` 由 `PALBOX_GAME_PORT` 管理，不能在启动参数中填写。
+游戏启动参数通过「游戏管理 → 服务器概况 → 游戏服务」中的「启动参数」按钮编辑，每行一个参数，保存到 `palbox/settings.json` 的 `gameArgs`。同一窗口中的「自动代理」开关保存在 `autoProxy`，默认关闭。关闭时安装和更新服务端直连；开启后沿用容器或进程环境中的代理，下次安装或更新时生效。保存不会自动重启游戏服，将在下次启动或重启时生效；应用配置、备份恢复等流程触发的自动重启同样使用新参数。`-port` 由 `PALBOX_GAME_PORT` 管理，不能在启动参数中填写。
 
 同一区域的「安装参数」按钮显示完整 SteamCMD 参数并允许编辑，保存到 `settings.json` 的 `installArgs`，下次安装或更新时生效。安装目录、App ID `2394010` 和末尾的 `+quit` 由面板校验，其余参数可自定义。
 

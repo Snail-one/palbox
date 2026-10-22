@@ -26,6 +26,11 @@ test('默认跟随系统时区，服务端子进程始终使用 UTC', t => {
   assert.equal(createTimeFormatter().dateTime('2026-07-18T06:00:00Z'), '2026/07/17 23:00:00');
   const runtime = new Runtime('/tmp/palbox-time-zone-test');
   assert.equal(runtime.childEnvironment().TZ, 'UTC');
+  const direct = runtime.childEnvironment({ direct: true, source: { http_proxy: 'http://127.0.0.1:9', HTTPS_PROXY: 'http://127.0.0.1:9', NO_PROXY: 'localhost', HOME: '/keep' } });
+  assert.equal(direct.http_proxy, undefined);
+  assert.equal(direct.HTTPS_PROXY, undefined);
+  assert.equal(direct.NO_PROXY, 'localhost');
+  assert.equal(direct.TZ, 'UTC');
   assert.equal(process.env.TZ, 'America/Los_Angeles');
   process.env.TZ = 'Asia/Shanghai';
   assert.equal(createTimeFormatter().dateTime('2026-07-18T06:00:00Z'), '2026/07/18 14:00:00');
