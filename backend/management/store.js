@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
-import { parse, serialize, encodeString, decodeString } from '../../shared/domain/config.js';
+import { parse, serialize, encodeString, decodeString, MAX_CONFIGURATION_SOURCE_LENGTH } from '../../shared/domain/config.js';
 import {
   createProfile, createWorkspace, validateWorkspace, MAX_PROFILES,
   GAME_DEFAULT_PROFILE_ID, GAME_DEFAULT_PROFILE_NAME, OFFICIAL_DEFAULT_ORIGIN, DERIVED_DEFAULT_ORIGIN
@@ -29,7 +29,7 @@ export function validateConfigurationWorkspace(value, { maxProfiles = MAX_PROFIL
   try { validateWorkspace(value); } catch (error) { throw failure(error.message); }
   if (value.profiles.length > maxProfiles) throw failure(`最多保留 ${MAX_PROFILES} 套配置（含游戏默认配置），请先删除不需要的配置。`);
   for (const profile of value.profiles) {
-    if (profile.source.length > 1024 * 1024 || (profile.initialSource?.length || 0) > 1024 * 1024 || profile.name.length > 100) throw failure('配置内容或名称过长。');
+    if (profile.source.length > MAX_CONFIGURATION_SOURCE_LENGTH || (profile.initialSource?.length || 0) > MAX_CONFIGURATION_SOURCE_LENGTH || profile.name.length > 100) throw failure('配置内容或名称过长。');
     try {
       parse(profile.source);
       if (profile.initialSource !== undefined) parse(profile.initialSource);

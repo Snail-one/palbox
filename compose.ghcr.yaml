@@ -38,7 +38,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    stop_grace_period: 120s
+    # 关服倒计时最多 300 秒，另预留 API 请求和进程退出时间。
+    stop_grace_period: 420s
     security_opt:
       - no-new-privileges:true
     ports:

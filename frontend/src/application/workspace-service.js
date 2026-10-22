@@ -1,4 +1,4 @@
-import { parse, mergeConfiguration } from '../../../shared/domain/config.js';
+import { parse, mergeConfiguration, MAX_CONFIGURATION_SOURCE_LENGTH } from '../../../shared/domain/config.js';
 import { createProfile, createWorkspace, validateWorkspace, MAX_PROFILES } from '../../../shared/domain/workspace.js';
 
 /** Coordinates persistence through an injected { load, save } repository. */
@@ -74,6 +74,7 @@ export class WorkspaceService {
 
   importConfiguration(name, source, defaultSource, { origin } = {}) {
     const merged = mergeConfiguration(defaultSource, source);
+    if (merged.length > MAX_CONFIGURATION_SOURCE_LENGTH || defaultSource.length > MAX_CONFIGURATION_SOURCE_LENGTH) throw new Error('合并后的配置内容过长，无法保存，请精简后重试。');
     const profile = this.add(name, merged, { origin });
     profile.initialSource = defaultSource;
     return profile;

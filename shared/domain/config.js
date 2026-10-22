@@ -1,4 +1,5 @@
 const SECTION = '/Script/Pal.PalGameWorldSettings';
+export const MAX_CONFIGURATION_SOURCE_LENGTH = 1024 * 1024;
 class ConfigError extends Error {
   constructor(message, position, source) {
     const line = source.slice(0, position).split('\n').length;

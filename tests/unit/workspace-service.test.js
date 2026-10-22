@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { WorkspaceService } from '../../frontend/src/application/workspace-service.js';
-import { OFFICIAL_DEFAULT_ORIGIN } from '../../shared/domain/workspace.js';
+import { createProfile, OFFICIAL_DEFAULT_ORIGIN } from '../../shared/domain/workspace.js';
 import template from '../../shared/domain/template.js';
-import { parse } from '../../shared/domain/config.js';
+import { parse, MAX_CONFIGURATION_SOURCE_LENGTH } from '../../shared/domain/config.js';
 import { EditorSession } from '../../shared/domain/editor-session.js';
 
 const KEY = 'workspace';
@@ -29,6 +29,14 @@ function setup(initial = { version: 1, activeId: 'initial', profiles: [{ id: 'in
   const service = new WorkspaceService({ repository: createRepository(() => storage), template, id: () => `p-${++sequence}`, now: () => '2026-10-17T00:00:00Z' });
   return { service, data, storage, fail: () => { fail = true; } };
 }
+
+test('普通 HTTP 页面没有 randomUUID 时仍生成配置编号', t => {
+  const original = globalThis.crypto.randomUUID;
+  globalThis.crypto.randomUUID = undefined;
+  t.after(() => { globalThis.crypto.randomUUID = original; });
+  const profile = createProfile('配置', 'OptionSettings=(ExpRate=1)');
+  assert.match(profile.id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+});
 
 test('兼容现有 v1 工作空间记录，加载不会覆盖源文件', () => {
   const old = { version: 1, activeId: 'old', profiles: [{ id: 'old', name: '旧配置', source: '; keep\n' + template, updatedAt: '2026-01-01' }] };
@@ -131,6 +139,22 @@ test('导入语法错误或配置数量超限时不新增配置或改变当前�
   assert.throws(() => service.importConfiguration('超限', 'OptionSettings=(A=1)', template), /最多保留/);
   assert.deepEqual(service.profiles, before);
   assert.equal(service.active.id, activeId);
+});
+
+test('合并后超过服务端保存上限时保留当前配置，不能先添加再保存失败', () => {
+  const { service, data } = setup();
+  const before = structuredClone(service.profiles);
+  const activeId = service.active.id;
+  const saved = data.get(KEY);
+  const defaults = 'OptionSettings=(DefaultOnly="' + 'x'.repeat(MAX_CONFIGURATION_SOURCE_LENGTH - 100) + '")';
+  const imported = 'OptionSettings=(ImportedOnly="' + 'y'.repeat(100) + '")';
+  assert.ok(defaults.length < MAX_CONFIGURATION_SOURCE_LENGTH);
+  assert.ok(imported.length < MAX_CONFIGURATION_SOURCE_LENGTH);
+  assert.throws(() => service.importConfiguration('合并超限', imported, defaults), /合并后的配置内容过长/);
+  assert.deepEqual(service.profiles, before);
+  assert.equal(service.active.id, activeId);
+  assert.equal(data.get(KEY), saved);
+  assert.equal(service.persisted, true);
 });
 
 test('保存失败回滚已保存源文件，不影响可供复制的编辑结果', () => {
