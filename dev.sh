@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if (( EUID == 0 || UID == 0 )); then
+  echo '启动失败：禁止以 root（UID 0）运行 PalBox。请使用普通用户启动；sudo 仅用于执行 install.sh。' >&2
+  exit 1
+fi
+
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 
 watch=true

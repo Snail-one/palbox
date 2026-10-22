@@ -3,6 +3,7 @@ import { createServer } from './http-server.js';
 import { Manager } from './management/manager.js';
 import { createManagementApi } from './management/api.js';
 import { logPolicyFromEnv } from './management/log-retention.js';
+import { assertNonRoot } from '../shared/runtime-user.js';
 
 process.env.TZ = 'UTC';
 
@@ -13,6 +14,7 @@ function port(value, name) {
 
 let manager;
 try {
+  assertNonRoot();
   const listenPort = port(process.env.PORT || '8081', 'PORT');
   const host = process.env.HOST || '127.0.0.1';
   const secureCookie = /^(?:true|1)$/i.test(process.env.PALBOX_SECURE_COOKIE || '');

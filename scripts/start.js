@@ -1,6 +1,10 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { userInfo } from 'node:os';
+import { assertNonRoot } from '../shared/runtime-user.js';
+
+try { assertNonRoot(); }
+catch (error) { console.error(`启动失败：${error.message}`); process.exit(1); }
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const watch = process.argv.includes('--watch');

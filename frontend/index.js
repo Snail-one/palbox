@@ -1,6 +1,8 @@
 import { createServer } from './http-server.js';
+import { assertNonRoot } from '../shared/runtime-user.js';
 
 try {
+  assertNonRoot();
   const value = process.env.PORT || '8080';
   if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 65535) throw new Error('PORT 必须是 1 到 65535 的整数。');
   const host = process.env.HOST || '127.0.0.1';
