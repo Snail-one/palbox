@@ -1,244 +1,178 @@
 # Palbox
 
-中文帕鲁（Palworld）服务管理面板与 `PalWorldSettings.ini` 配置编辑器。
+中文帕鲁（Palworld）服务管理面板与 `PalWorldSettings.ini` 配置编辑器，支持 Linux 直接安装和 Docker 部署。
 
-支持在浏览器中编辑配置，可在 Linux 宿主机一键安装或通过 Docker 部署，管理游戏服务端的安装、启停、更新和备份。
+[直接安装](#linux-直接安装) · [Docker 部署](#docker-部署) · [首次使用](#首次使用) · [数据与备份](#数据与备份) · [常见问题](#常见问题) · [开发与文档](#开发与文档)
 
-[快速开始](#快速开始) · [Linux 一键安装](#linux-宿主机安装游戏服务端) · [Docker 部署](#docker-部署) · [使用指南](docs/usage.md) · [开发与测试](#开发与测试) · [文档](#文档)
+- **游戏管理**：安装、更新、启停、自动启动、日志、公告聊天和玩家管理。
+- **配置管理**：中文参数说明、搜索、多配置、INI 导入、源码编辑与自动保存。文件和粘贴导入均以游戏默认配置为底，覆盖导入参数，缺项沿用默认值，并创建独立配置。
+- **存档管理**：官方自动备份、手动世界备份、恢复，以及 ZIP／7Z／tar.gz 存档导入。
+- **账号管理**：管理员账号、登录记录和可选的 TOTP 二次验证。
 
-## 功能
+## Linux 直接安装
 
-- **配置编辑**：分类表单、参数搜索、INI 导入、源码编辑与一键复制。
-- **参数说明**：提供参数中文说明，区分官方说明、社区解释与未识别参数；默认配置读取游戏目录中的官方 `DefaultPalWorldSettings.ini`。
-- **多配置管理**：内置「游戏默认配置」（自动生成管理员密码、输入源码只读、参数可修改并应用，未修改时随官方文件同步），以及新建、重命名、复制、删除、自动保存与恢复初始配置。
-- **格式保留**：保留注释、参数顺序与未知字段，已识别数值按模板格式补齐小数位。
-- **游戏服务管理**：安装、启动、自动启动、停止、强制停止、重启、更新检查，以及配置应用、增量实时日志、历史分页与来源筛选、任务记录、玩家移出/封禁、封禁名单与解封，以及网页配置安装/启动参数。
-- **备份与恢复**：官方自动存档备份的查看、在线下载与停服恢复，另提供整个 `Pal/Saved` 的世界备份与分类管理，以及导入世界存档或完整备份压缩包并自动恢复。
-- **日志保留**：按 UTC 自然日归档，默认保留含当天在内的最近 7 天，面板登录记录单独保留 15 天；每天每类文件各 5 MiB，额外保留四份容量分卷（每天每类最多 5 个文件），超出容量覆盖当天最旧内容。容量、每天的历史份数与保留天数可配置。
-
-## 管理面板
-
-项目只提供一个管理网页，包含「游戏管理」「存档管理」「配置管理」和独立的「登录日志」入口。「游戏管理 → 公告聊天」实时显示游戏日志中的玩家聊天，支持加载更早记录，并集中提供全服广播。「存档管理」下设「官方备份」「世界备份」两个二级菜单，分别管理游戏快照和世界备份归档。配置统一保存到服务器，登录后可以管理游戏服务、存档与备份。前后端独立运行：前端提供网页并代理 `/api/`，后端提供管理 API。Docker 使用独立前端容器和包含 Node.js、SteamCMD 的后端容器，一个后端管理一个游戏服务端。
-
-## 快速开始
-
-### 环境要求
-
-- Node.js **22 或以上版本**。
-- 支持 ES Modules 的现代浏览器。
-
-### 本地启动
-
-下载或克隆项目后，在项目根目录执行：
+适用于 **Ubuntu / Debian x86_64（amd64）和 systemd**。用已有普通用户下载项目，在项目根目录执行安装：
 
 ```sh
-npm start
-```
-
-打开 **<http://127.0.0.1:8080>**，首次访问时在页面中设置管理员用户名和至少 12 位密码，随后用该账号登录，按 `Ctrl+C` 停止服务。已有 `data/` 数据沿用已有管理员账号，无需重新初始化；旧版 `settings.json`（没有用户名）会拒绝启动，按日志提示备份并删除该文件后重新初始化。
-
-默认仅监听本机。Linux / macOS 下可通过环境变量修改地址和端口：
-
-```sh
-HOST=127.0.0.1 PORT=8090 API_PORT=8091 npm start
-```
-
-`npm start` 同时启动前端（默认 `127.0.0.1:8080`）和后端（默认 `127.0.0.1:8081`），通过 `API_HOST` / `API_PORT` 调整后端监听。配置保存在项目的 `data/` 目录；默认不自动下载或启动游戏。请通过 HTTP 访问页面。
-
-### Linux 宿主机安装游戏服务端
-
-Ubuntu / Debian 的 **x86_64** 服务器可在完整项目的根目录一键安装并启动：
-
-```sh
+git clone https://github.com/Snail-one/palbox.git
+cd palbox
 sudo bash ./install.sh
 ```
 
-脚本原地准备系统依赖、项目独立 Node.js 和 `data/`，使用项目所属的已有普通用户注册 systemd 服务并设置开机启动，不搬迁程序、不另建系统用户。`sudo bash ./install.sh --uninstall` 停止并取消开机启动，保留 `data/`、配置和程序。默认面板为 `http://127.0.0.1:8080`；远程服务器按安装输出建立 SSH 隧道后访问。SteamCMD 和游戏服务端继续通过网页安装。配置保存在项目的 `.palbox.env`，终端与后台启动共用同一入口。参数、用户规则和服务管理见 [Linux 原生部署](docs/native.md)。
+脚本准备系统依赖和项目独立的 Node.js，注册后台服务并启用开机启动，无需提前安装 Node.js 或运行 `npm install`。主程序保留在当前项目目录，数据保存在其中的 `data/`；项目目录需要长期保留。SteamCMD 和游戏服务端通过网页另行安装。
 
-也可以使用已有 Node.js 22 或以上版本直接运行源码，先准备系统依赖：
+默认面板地址为 **<http://127.0.0.1:8080>**。远程服务器可使用下方的 [SSH 隧道](#远程访问)，或修改监听地址。
+
+### 安装与监听设置
+
+以下命令均在项目根目录执行。重复运行会保留配置和数据、重新启动服务；未指定的参数沿用已有设置。
+
+| 操作 | 命令 |
+| --- | --- |
+| 安装／重新注册服务 | `sudo bash ./install.sh` |
+| 面板绑定所有 IPv4 网卡 | `sudo bash ./install.sh --host 0.0.0.0` |
+| 面板恢复为仅本机访问 | `sudo bash ./install.sh --host 127.0.0.1` |
+| 开放面板并修改端口为 8090 | `sudo bash ./install.sh --host 0.0.0.0 --port 8090` |
+| 修改后端本机端口为 8091 | `sudo bash ./install.sh --api-port 8091` |
+| 指定已有普通运行用户 | `sudo bash ./install.sh --user ubuntu` |
+| 查看全部选项 | `bash ./install.sh --help` |
+
+`0.0.0.0` 表示监听所有 IPv4 网卡，浏览器应访问 `http://服务器IP:端口`。云安全组和系统防火墙也需放行该 TCP 端口。游戏默认使用 UDP `8211`；后端 `8081` 和游戏 REST API 端口无需对公网开放。
+
+运行用户必须已存在且能读写项目数据。应用禁止以 root 运行，`sudo` 仅用于安装和系统服务管理。更多权限规则见 [原生部署文档](docs/native.md)。
+
+### 启停、日志与卸载
+
+| 操作 | 命令 |
+| --- | --- |
+| 查看状态 | `sudo systemctl status palbox --no-pager` |
+| 查看实时日志 | `sudo journalctl -u palbox -f` |
+| 查看最近 100 条日志 | `sudo journalctl -u palbox -n 100 --no-pager` |
+| 启动／停止／重启 | `sudo systemctl start palbox` ／ `sudo systemctl stop palbox` ／ `sudo systemctl restart palbox` |
+| 取消开机启动并立即停止 | `sudo systemctl disable --now palbox` |
+| 恢复开机启动并立即启动 | `sudo systemctl enable --now palbox` |
+| 卸载后台服务 | `sudo bash ./install.sh --uninstall` |
+
+卸载会停止服务、取消开机启动并移除本项目的 `palbox.service`，保留程序、`data/`、`.palbox.env` 和 `.runtime/`。重新安装执行 `sudo bash ./install.sh`。需要彻底删除时，先备份，再手动删除项目目录及自行配置的其他数据目录。
+
+### 更新面板
+
+先停止服务并 [备份数据](#数据与备份)，再更新代码、重新安装：
 
 ```sh
-sudo apt-get update
-sudo apt-get install -y lib32gcc-s1
+sudo systemctl stop palbox
+# 备份完成后执行；适用于 Git 克隆且没有本地代码改动的部署。
+git pull --ff-only
+sudo bash ./install.sh
 ```
 
-以普通用户运行 `npm start`，在网页初始化并登录管理员账号，进入「游戏管理」：
-
-1. 点击「安装 SteamCMD」，自动从 Valve 下载、解压并初始化，进度见「运行日志 → 安装与更新」。失败后可查看日志并再次点击重试。
-2. SteamCMD 就绪后，点击「安装服务端」。
-3. 游戏安装完成后，点击「启动」。
-
-SteamCMD 保存在数据目录下的 `steamcmd/`，其独立运行主目录保存在 `steam-home/`，不会修改当前用户的 Steam 配置；游戏、存档、备份和面板数据继续保存在同一数据目录内。通过 `PALBOX_DATA_DIR` 可指定其他数据目录。已有 SteamCMD 可通过 `PALBOX_STEAMCMD=/绝对路径/steamcmd.sh` 指定；自定义路径只检测和使用，不会自动覆盖。Docker 沿用镜像中的 SteamCMD，已就绪时不显示安装按钮。
-
-两种启动方式使用同一个项目目录和其中的 `data/`，SteamCMD 位于 `data/steamcmd/steamcmd.sh`，游戏服务端位于 `data/server/`。例如项目在 `/home/ubuntu/palbox` 且属于 `ubuntu`，后台服务和终端启动都使用 `ubuntu`，数据都在 `/home/ubuntu/palbox/data/`。新数据目录自动设置运行用户权限；已有目录权限不匹配会提示。项目归 root 且无法推断普通用户时，通过 `--user` 指定已有普通用户。
-
-`npm start` 前台运行，退出时会停止服务；需要后台运行和开机启动时使用上述安装脚本。需要远程访问时配置前端监听地址，并只开放所需的面板端口与游戏 UDP 端口，后端管理 API 和游戏 REST API 不应对公网开放。
-
-安装完成后也可用 `bash ./dev.sh --no-watch` 在终端启动，脚本会使用项目独立的 Node.js 和 `.palbox.env`。调试前先停止 systemd 服务，并使用配置中的同一个普通用户，避免两个实例操作同一数据目录。
-
-所有服务启动入口均禁止 root（UID 0）运行，会在创建数据或监听端口前直接退出。请使用普通用户启动面板；`sudo` 只用于运行安装脚本准备系统依赖和服务。
-
-### 编辑配置
-
-1. 新建配置、导入 `.ini` 文件，或粘贴 `OptionSettings=(...)`。
-2. 使用分类表单修改参数；编辑输入源码后，点击「应用源码」。
-3. 点击「应用配置」，由管理后端写入游戏配置文件并按需重启游戏服；也可复制 INI 备份。
-
-有效修改自动保存；未应用源码和非法输入保留为页面草稿。有效配置保存在服务器中，清除浏览器网站数据不会删除配置、存档与备份。
-
-完整操作、保存状态、快捷键和游戏配置路径见 [使用指南](docs/usage.md)。
+压缩包部署则替换程序文件，保留 `data/`、`.palbox.env` 和 `.runtime/`，再执行安装脚本。**游戏服务端更新**在网页「游戏管理」中单独操作。
 
 ## Docker 部署
 
-适用于需要从面板管理游戏服务端的场景。准备可运行 Docker Compose 的 **Linux amd64** 主机，并为游戏预留足够的 CPU、内存和磁盘空间。
+需要可运行 Docker Compose 的 **Linux amd64** 主机，前后端分别运行在两个容器中。
 
-本地构建使用 `compose.yaml`，在线镜像部署使用独立的 `compose.ghcr.yaml`。首次启动前按需修改所用文件的网页绑定地址、游戏端口和宿主机数据目录；修改 `PALBOX_GAME_PORT` 时，`ports` 里的 UDP 映射要一起改。
+### 使用发布镜像
 
-随后启动：
-
-```sh
-docker compose up -d --build
-docker compose logs -f frontend palbox
-```
-
-打开 **<http://127.0.0.1:8080>**，首次访问时在页面中创建管理员用户名和至少 12 位密码，随后用该账号登录。可在侧栏「账号」修改登录用户名或管理面板密码，或绑定验证器，启用 TOTP 二次验证并保存一次性恢复码。修改用户名或密码需验证当前密码，已启用二次验证时还需动态验证码或恢复码；新密码需 12–1024 位，修改后其他设备需要重新登录。进入「游戏管理」后点击「安装服务端」下载游戏服务端，安装完成后点击「启动」；安装进度可在「运行日志 → 安装与更新」查看。
-
-只有服务器 IP 时，可保留默认回环监听，通过 [SSH 隧道](docs/docker.md#只有-ip-的远程访问) 加密访问，无需域名。TOTP 安全设置变更后自动轮换会话，旧 Cookie 立即失效。
-
-> 旧版 `settings.json`（只有密码哈希、没有用户名）不兼容当前版本。升级时请先备份 `data/`，按启动日志提示删除 `palbox/settings.json` 后重新初始化管理员；配置、存档与备份不会受影响。
-
-| 配置项 | 默认值 |
-| --- | --- |
-| 面板地址 | `http://127.0.0.1:8080` |
-| 游戏端口 | UDP `8211` |
-| 宿主机数据目录 | `./data` |
-| 容器数据目录 | `/data` |
-
-管理模式中，「已保存」表示面板配置已存盘；点击「应用配置」才会写入游戏并按需重启。
-
-目录结构、全部环境变量、网络访问、已有存档迁入及备份操作见 [Docker 部署文档](docs/docker.md)。
-
-### 使用 GitHub 发布镜像
-
-普通提交和 PR 运行测试及容器启动检查，确认通过后再打 Git tag。只有推送 tag 时才构建并发布前后端镜像到 GHCR，同时标记原始 Git tag 和 `latest`，不重复测试。手动触发仅构建验证，可选择分支或填写已有 tag，不推送镜像、不更新仓库中的 `latest`。Dependabot 每周提交 npm、Docker 和 GitHub Actions 的依赖更新 PR。
-
-只需下载 [compose.ghcr.yaml](compose.ghcr.yaml)，放到部署目录，无需源码或 Dockerfile。使用已发布镜像启动：
+下载 [compose.ghcr.yaml](compose.ghcr.yaml) 到一个长期保留的部署目录，在该目录执行：
 
 ```sh
 docker compose -f compose.ghcr.yaml pull
 docker compose -f compose.ghcr.yaml up -d
-docker compose -f compose.ghcr.yaml logs -f frontend palbox
 ```
 
-具体镜像地址、发布步骤和手动运行方式见 [GitHub CI/CD](docs/ci-cd.md)。
+无需下载源码或准备 Node.js。默认面板地址为 **<http://127.0.0.1:8080>**。主程序位于各自容器的 `/app/`，宿主机 `./data` 挂载到后端容器 `/data`。
 
-## 开发与测试
+需要直接通过服务器 IP 访问时，修改该文件的 `frontend.ports`：
 
-### 开发服务
-
-同时调试「游戏管理」和「配置管理」，可直接运行启动脚本：
-
-```sh
-./dev.sh
+```yaml
+# 原值："127.0.0.1:8080:8080/tcp"
+- "0.0.0.0:8080:8080/tcp"
 ```
 
-也可执行 `npm run dev:managed`。脚本会查找 PATH、fnm 或 nvm 中的 Node.js 22 及以上版本，无需安装 npm 依赖即可启动。默认监听 `127.0.0.1:8080`，首次访问时在页面中创建管理员用户名和至少 12 位密码，数据保存在项目的 `data/` 目录，默认不自动下载或启动游戏。已有数据沿用已有管理员账号。
+然后重新执行 `docker compose -f compose.ghcr.yaml up -d`。修改游戏端口时，同时修改后端的 `PALBOX_GAME_PORT` 和 UDP 端口映射。
 
-可覆盖启动参数，例如：
+### 常用命令
+
+以下命令均在所用 Compose 文件所在目录执行。
+
+| 操作 | 发布镜像部署 | 源码构建部署 |
+| --- | --- | --- |
+| 启动／应用部署配置 | `docker compose -f compose.ghcr.yaml up -d` | `docker compose up -d --build` |
+| 查看状态 | `docker compose -f compose.ghcr.yaml ps` | `docker compose ps` |
+| 查看日志 | `docker compose -f compose.ghcr.yaml logs -f --tail=100 frontend palbox` | `docker compose logs -f --tail=100 frontend palbox` |
+| 停止／再次启动 | `docker compose -f compose.ghcr.yaml stop` ／ `docker compose -f compose.ghcr.yaml start` | `docker compose stop` ／ `docker compose start` |
+| 重启 | `docker compose -f compose.ghcr.yaml restart` | `docker compose restart` |
+| 卸载容器和项目网络 | `docker compose -f compose.ghcr.yaml down` | `docker compose down` |
+
+更新前先停止容器并 [备份数据](#数据与备份)。发布镜像部署重新执行 `pull` 和 `up -d`；源码构建部署在更新项目代码后执行 `docker compose up -d --build`。仅重启容器不会拉取新镜像或重新构建源码。
+
+`down` 保留绑定挂载的 `./data`，也保留镜像和 Compose 文件。需要彻底删除时，先备份，再手动删除部署目录及自行挂载的其他数据目录。更多环境变量和网络设置见 [Docker 部署文档](docs/docker.md)。
+
+## 首次使用
+
+1. 打开面板，设置管理员用户名和至少 12 位密码；已有数据沿用原账号。
+2. 在「游戏管理」中安装 SteamCMD（Docker 已内置），再安装游戏服务端并启动。
+3. 在「配置管理」中新建、导入或粘贴配置。有效修改自动保存；编辑源码后点击「应用源码」。
+4. 点击「应用配置」才会写入游戏配置；游戏正在运行时会按需重启。
+
+开启网页中的「自动启动」，可让面板启动后自动运行已安装的游戏服。完整操作见 [使用指南](docs/usage.md)。
+
+### 远程访问
+
+默认只监听服务器本机。可在自己的电脑上建立 SSH 隧道，无需修改监听设置：
 
 ```sh
-PORT=8090 API_PORT=8091 ./dev.sh
+ssh -N -L 18080:127.0.0.1:8080 登录用户@服务器IP
 ```
 
-也可使用标准开发命令启动同一管理面板：
+保持连接，在自己的电脑打开 **<http://127.0.0.1:18080>**。面板端口有修改时，将命令最后的 `8080` 换为实际端口。
+
+首次管理员初始化需要来自本机或可信内网；仅有公网 IP 时先通过 SSH 隧道初始化。公网长期访问可使用 HTTPS 反向代理，具体设置见 [访问说明](docs/docker.md#只有-ip-的远程访问)。
+
+## 数据与备份
+
+直接安装以项目下的 `data/` 为数据根目录；Docker 默认以 Compose 文件旁的 `data/` 为根目录，对应容器 `/data/`。
+
+| 内容 | 数据根目录下的相对路径 |
+| --- | --- |
+| 游戏服务端 | `server/` |
+| 实际游戏配置 | `server/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini` |
+| 游戏存档 | `server/Pal/Saved/SaveGames/` |
+| 面板账号、配置库和任务 | `palbox/` |
+| 面板世界备份 | `backups/` |
+| 面板、安装、游戏及登录日志 | `logs/` |
+| SteamCMD | 直接安装为 `steamcmd/`；Docker 中为 `/opt/steamcmd/`，位于数据根目录之外 |
+
+**完整备份请先停止面板服务或容器，再复制整个数据根目录**，并保存直接安装的 `.palbox.env` 或 Docker 使用的 Compose 文件；备份放到部署目录之外。自定义挂载或 `PALBOX_DATA_DIR` 时，以实际路径为准。
+
+网页中的「世界备份」只打包游戏的整个 `Pal/Saved/`，不包含面板账号、配置库和程序。迁移整个面板时需要完整数据备份。备份恢复操作见 [使用指南](docs/usage.md#官方自动备份与世界备份)。
+
+## 常见问题
+
+| 问题 | 处理方式 |
+| --- | --- |
+| 远程无法打开面板 | 检查监听地址、端口映射、云安全组和防火墙；默认 `127.0.0.1` 可通过 SSH 隧道访问。 |
+| 安装后没有游戏服务端 | 安装脚本只准备面板，通过网页继续安装 SteamCMD 和游戏服务端。 |
+| 提示不能以 root 启动 | 使用配置的普通用户；后台服务通过 `systemctl` 管理，终端启动不要加 `sudo`。 |
+| 安装或更新游戏失败 | 查看「运行日志 → 安装与更新」，检查 Steam 网络连接和系统依赖后重试。 |
+| 配置已保存但游戏没变化 | 点击「应用配置」；「已保存」只表示配置库已经存盘。 |
+| 旧版账号配置无法启动 | 先备份数据，再按启动日志处理 `palbox/settings.json`；缺少用户名的旧版账号需重新初始化。 |
+
+## 开发与文档
+
+已有 **Node.js 22 或以上版本**时，可用普通用户在项目目录执行 `npm start` 前台运行，或用 `bash ./dev.sh` 开发；按 `Ctrl+C` 停止。调试已有部署前先停止 systemd 服务，避免两个实例操作同一份数据。生产运行无需安装 npm 依赖。
 
 ```sh
-npm run dev
-```
-
-前后端服务各自监听服务代码变更并自动重启；浏览器代码或样式修改后刷新页面即可。按 `Ctrl+C` 会停止两个服务。
-
-也可在两个终端分别启动，独立调试或部署：
-
-```sh
-# 终端一：仅管理 API，默认 127.0.0.1:8081
-npm run dev:backend
-
-# 终端二：网页与 API 代理，默认 127.0.0.1:8080
-PALBOX_API_URL=http://127.0.0.1:8081 npm run dev:frontend
-```
-
-生产独立启动使用 `npm run start:backend` / `npm run start:frontend`。两个入口各自读取 `HOST` 和 `PORT`；`PALBOX_API_URL` 是前端进程访问后端的 HTTP(S) 地址（仅 origin，不含路径）。浏览器统一请求当前站点的 `/api/`，上传、下载、登录 Cookie 与 CSRF 校验均经由代理。后端不提供 HTML 或静态文件，前端无需访问游戏数据目录。
-
-### 单元与集成测试
-
-仅使用 Node.js 内置模块，无需安装第三方依赖：
-
-```sh
-npm test
-```
-
-可分别运行 `npm run test:unit` 和 `npm run test:integration`。启动项目后，访问 `/tests/index.html` 也可运行浏览器共用配置测试。
-
-### 浏览器测试
-
-首次运行时安装开发依赖和 Chromium：
-
-```sh
-npm ci
+npm test                       # 单元与集成测试
+npm ci                         # 浏览器测试依赖
 npx playwright install chromium
+npm run test:e2e               # 浏览器回归，使用临时测试数据
 ```
 
-运行编辑器和管理模式的浏览器回归：
-
-```sh
-npm run test:e2e
-npm run test:e2e:managed
-npm run test:e2e:steamcmd
-npm run test:e2e:logs
-npm run test:e2e:on-demand
-npm run test:e2e:running
-npm run test:e2e:reset
-npm run test:e2e:username
-```
-
-测试默认自行启动临时服务并在结束后关闭。管理测试使用模拟游戏进程，不会下载真实游戏。日志专项测试覆盖统一窗口的多来源合并与筛选、状态接口阻塞时的实时更新、中文与终端控制码、频道切换、断线重连和滚动位置。Playwright 仅用于开发测试，生产运行不依赖它。
-
-`npm run test:browser` 是 `test:e2e` 的兼容别名。编辑器测试使用独立临时管理服务，可通过 `PALBOX_QA_OUTPUT` 指定截图和导入样例目录，默认输出到 `test-results/e2e`。
-
-## 项目结构
-
-```text
-palbox/
-├── frontend/
-│   ├── public/         页面、样式和静态资源
-│   ├── src/            浏览器应用、工作空间操作、API 适配器和界面
-│   ├── http-server.js  静态资源服务与流式 API 代理
-│   └── index.js        前端独立入口
-├── backend/
-│   ├── management/     认证、配置存储、游戏进程、任务与备份
-│   ├── http-server.js  仅 API 和健康检查
-│   └── index.js        后端独立入口
-├── shared/domain/      前后端共用的配置解析、参数目录、模板与编辑规则
-├── scripts/start.js    本地双进程启动与退出协调
-├── install.sh          Ubuntu / Debian 一键安装、卸载开机服务与 systemd 启动
-├── docker/             后端容器入口脚本
-├── .github/            CI、tag 镜像发布工作流和 Dependabot 配置
-├── tests/              单元、集成与浏览器测试
-├── docs/               使用、部署与架构文档
-├── Dockerfile          frontend / backend 两个镜像目标
-├── compose.yaml        前后端独立容器配置
-└── compose.ghcr.yaml   独立的 GHCR 在线镜像部署配置
-```
-
-前端使用原生 ES Modules，服务端使用 Node.js 内置模块，无构建步骤。模块职责、依赖边界和扩展方式见 [架构说明](docs/architecture.md)。
-
-## 文档
-
-- [使用指南](docs/usage.md)：配置编辑、保存与恢复、快捷键和游戏配置路径。
-- [Linux 原生部署](docs/native.md)：一键安装、目录、系统用户、开机启动、更新和远程访问。
-- [Docker 部署](docs/docker.md)：安装部署、环境变量、游戏服务管理和备份恢复。
-- [GitHub CI/CD](docs/ci-cd.md)：tag 发布镜像、手动运行、CI 检查和依赖更新机器人。
-- [参数明细](docs/parameters.md)：参数用途、说明来源和验证状态。
-- [参数核对记录](docs/parameter-review.md)：参数与说明的核对依据。
-- [架构说明](docs/architecture.md)：模块职责、数据流、存储兼容和扩展位置。
+- [使用指南](docs/usage.md)：配置编辑、玩家管理、日志、存档与备份恢复。
+- [Linux 原生部署](docs/native.md)：系统依赖、用户权限、运行目录和服务管理。
+- [Docker 部署](docs/docker.md)：环境变量、挂载、网络和容器部署。
+- [架构说明](docs/architecture.md)：项目结构、模块边界、数据流和测试。
+- [GitHub CI/CD](docs/ci-cd.md)：镜像构建、发布与版本标签。
+- [参数明细](docs/parameters.md) · [参数核对记录](docs/parameter-review.md)。
