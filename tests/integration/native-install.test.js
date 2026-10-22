@@ -92,6 +92,7 @@ elif name == 'journalctl': print('fixture: service failed to start')
 else: raise RuntimeError('Unexpected mock command: ' + name)
 `, { mode: 0o755 });
   for (const name of ['id', 'stat', 'useradd', 'apt-get', 'chown', 'dpkg-query', 'install', 'runuser', 'curl', 'systemctl', 'journalctl']) await symlink(mock, path.join(bin, name));
+  await symlink('/bin/true', path.join(bin, '7z'));
   const systemd = path.join(directory, 'systemd');
   const config = path.join(app, '.palbox.env');
   const data = path.join(app, 'data');

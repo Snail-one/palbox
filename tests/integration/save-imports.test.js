@@ -2,13 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, utimes, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { execFile } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import { managementFixture } from '../helpers/management-fixture.js';
 
 const run = promisify(execFile);
 const saved = f => f.runtime.saved;
+const sevenZip = ['7zz', '7z'].find(name => spawnSync(name, ['i'], { stdio: 'ignore' }).status === 0);
 
 async function archive(base, entries) {
   const source = path.join(base, 'source');
@@ -254,6 +255,40 @@ test('拒绝无效上传、恶意归档和非法 ID', { skip: process.platform !
   assert.equal((await f.task('import-save', { id: '../../etc/passwd' })).state, 'failed');
   assert.equal((await f.upload('/api/save-import', Buffer.concat([Buffer.from([0x1f, 0x8b]), Buffer.alloc(2 * 1024 * 1024)]))).status, 413);
   assert.ok(staged.id);
+});
+
+test('zip 和 7z 世界包替换当前世界，保留其他世界', { skip: process.platform !== 'linux' ? '仅 Linux' : !sevenZip ? '需要系统 7zip（7z 或 7zz）' : false }, async t => {
+  const f = await managementFixture(); t.after(() => f.close()); await f.login();
+  const tmp = await mkdtemp(path.join(tmpdir(), 'palbox-zip-import-')); t.after(() => rm(tmp, { recursive: true, force: true }));
+  await waitTask(f, 'install');
+  const world = path.join(saved(f), 'SaveGames/0/CURRENT');
+  await mkdir(path.join(world, 'Players'), { recursive: true });
+  await writeFile(path.join(world, 'Level.sav'), 'old');
+  await writeFile(path.join(world, 'Players/old.sav'), 'old-player');
+  await mkdir(path.join(saved(f), 'SaveGames/0/OTHER'), { recursive: true });
+  await writeFile(path.join(saved(f), 'SaveGames/0/OTHER/Level.sav'), 'other-world');
+  await writeFile(path.join(saved(f), 'Config/LinuxServer/GameUserSettings.ini'), 'DedicatedServerName=CURRENT\n');
+  for (const format of ['zip', '7z']) {
+    const source = path.join(tmp, format);
+    await mkdir(path.join(source, 'Players'), { recursive: true });
+    await writeFile(path.join(source, 'Level.sav'), `${format}-world`);
+    await writeFile(path.join(source, 'LevelMeta.sav'), `${format}-meta`);
+    await writeFile(path.join(source, 'Players/new.sav'), `${format}-player`);
+    const archive = path.join(tmp, `world.${format}`);
+    await run(sevenZip, ['a', `-t${format}`, '-bso0', '-bd', archive, 'Level.sav', 'LevelMeta.sav', 'Players/new.sav'], { cwd: source });
+    const type = format === '7z' ? 'application/x-7z-compressed' : 'application/zip';
+    const upload = await f.upload('/api/save-import', await readFile(archive), { contentType: type });
+    assert.equal(upload.status, 201, await upload.clone().text());
+    const staged = await upload.json();
+    assert.equal(staged.kind, 'world');
+    await waitTask(f, 'import-save', { id: staged.id });
+    assert.equal(await readFile(path.join(world, 'Level.sav'), 'utf8'), `${format}-world`);
+    assert.equal(await readFile(path.join(world, 'LevelMeta.sav'), 'utf8'), `${format}-meta`);
+    assert.equal(await readFile(path.join(world, 'Players/new.sav'), 'utf8'), `${format}-player`);
+    await assert.rejects(access(path.join(world, 'Players/old.sav')), { code: 'ENOENT' });
+    assert.equal(await readFile(path.join(saved(f), 'SaveGames/0/OTHER/Level.sav'), 'utf8'), 'other-world');
+    assert.deepEqual(await readdir(path.join(f.directory, 'palbox/imports')), []);
+  }
 });
 
 test('初始化清理过期的导入暂存', { skip: process.platform !== 'linux' }, async t => {

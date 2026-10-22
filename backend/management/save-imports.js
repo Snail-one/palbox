@@ -106,6 +106,57 @@ function tarEnvironment() {
   return env;
 }
 
+function sevenZipEnvironment() {
+  return { ...process.env, LC_ALL: 'C.UTF-8', LANG: 'C.UTF-8', TZ: 'UTC' };
+}
+
+// 7-Zip reads /dev/tty for a password when headers are encrypted. A fixed
+// non-empty password makes that fail immediately instead of blocking the panel.
+const SEVEN_ZIP_PASSWORD = '-ppalbox-import-rejects-encrypted-archives';
+
+function encryptedArchive(stderr) {
+  return /encrypted|wrong password/i.test(String(stderr || ''));
+}
+
+const ARCHIVE_TYPES = new Map([
+  ['application/gzip', 'gzip'],
+  ['application/x-gzip', 'gzip'],
+  ['application/zip', 'zip'],
+  ['application/x-zip-compressed', 'zip'],
+  ['application/x-7z-compressed', '7z'],
+  ['application/octet-stream', null]
+]);
+
+export function detectArchive(magic) {
+  if (magic.length >= 6 && magic[0] === 0x37 && magic[1] === 0x7a && magic[2] === 0xbc && magic[3] === 0xaf && magic[4] === 0x27 && magic[5] === 0x1c) return '7z';
+  if (magic.length >= 4 && magic[0] === 0x50 && magic[1] === 0x4b && [0x03, 0x05, 0x07].includes(magic[2]) && [0x04, 0x06, 0x08].includes(magic[3])) return 'zip';
+  if (magic.length >= 2 && magic[0] === 0x1f && magic[1] === 0x8b) return 'gzip';
+  return null;
+}
+
+let sevenZipCommand;
+async function sevenZipBinary() {
+  if (sevenZipCommand) return sevenZipCommand;
+  for (const name of ['7zz', '7z']) {
+    try {
+      await run(name, ['i'], { timeout: 10000, stdio: 'ignore' });
+      sevenZipCommand = name;
+      return name;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw failure('无法运行 7zip。', 500);
+    }
+  }
+  throw failure('服务器未安装 7zip，无法导入 .zip 或 .7z。请安装 7zip 后重试。', 500);
+}
+
+function classifySevenZipEntry(fields) {
+  if (fields.get('Encrypted') === '+') throw failure('压缩包包含加密文件，无法导入。', 400);
+  const attributes = fields.get('Attributes') || '';
+  if (/(^|\s)l[-rwxsStT]{9}(?:\s|$)/.test(attributes)) return 'link';
+  if (fields.get('Folder') === '+' || /(^|\s)d[-rwxsStT]{9}(?:\s|$)/.test(attributes)) return 'directory';
+  return 'file';
+}
+
 export class SaveImports {
   constructor({ directory, runtime, native, limits = {} }) {
     this.directory = path.resolve(directory);
@@ -181,7 +232,14 @@ export class SaveImports {
     return { bytes, count: entries.length };
   }
 
-  async scan(archive, { signal, maxBytes = this.limits.maxUncompressedBytes } = {}) {
+  async scan(archive, options = {}) {
+    const format = options.format || 'gzip';
+    if (format === 'gzip') return this.scanGzip(archive, options);
+    if (format === 'zip' || format === '7z') return this.scanSeven(archive, options);
+    throw failure('不支持的压缩格式。', 400);
+  }
+
+  async scanGzip(archive, { signal, maxBytes = this.limits.maxUncompressedBytes } = {}) {
     const entries = [];
     let bytes = 0;
     let expanded = 0;
@@ -251,6 +309,64 @@ export class SaveImports {
     return { ...detectSnapshot(entries), entries, uncompressedBytes: bytes };
   }
 
+  async scanSeven(archive, { signal, maxBytes = this.limits.maxUncompressedBytes } = {}) {
+    const binary = await sevenZipBinary();
+    const child = spawn(binary, ['l', '-slt', '-ba', '-sccUTF-8', SEVEN_ZIP_PASSWORD, archive], { env: sevenZipEnvironment(), signal, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', chunk => { if (stderr.length < 4096) stderr += chunk.slice(0, 4096 - stderr.length); });
+    const entries = [];
+    let bytes = 0;
+    let listingBytes = 0;
+    let pending = '';
+    const timer = setTimeout(() => child.kill('SIGKILL'), this.limits.tarTimeoutMs);
+    const closed = new Promise((resolve, reject) => {
+      child.on('error', reject);
+      child.on('close', resolve);
+    });
+    const parseBlock = block => {
+      if (!block.trim()) return;
+      const fields = new Map();
+      for (const line of block.split('\n')) {
+        if (line.length > this.limits.maxListingLine) throw failure('压缩包包含过长的路径。', 400);
+        const separator = line.indexOf(' = ');
+        if (separator === -1) continue;
+        fields.set(line.slice(0, separator), line.slice(separator + 3));
+      }
+      if (!fields.has('Path')) return;
+      const type = classifySevenZipEntry(fields);
+      const size = Number(fields.get('Size') || 0);
+      if (!Number.isSafeInteger(size) || size < 0) throw failure('压缩包包含无效文件大小。', 400);
+      if (type === 'file') bytes += size;
+      if (bytes > maxBytes) throw failure('压缩包解压后超过大小或暂存总量限制。', 413);
+      entries.push({ name: fields.get('Path'), type, size });
+      if (entries.length > this.limits.maxEntries) throw failure('压缩包条目数量超过限制。', 413);
+    };
+    try {
+      child.stdout.setEncoding('utf8');
+      for await (const chunk of child.stdout) {
+        listingBytes += Buffer.byteLength(chunk);
+        if (listingBytes > this.limits.maxListingBytes) throw failure('压缩包目录过大，无法安全校验。', 413);
+        pending += chunk.replaceAll('\r', '');
+        let end;
+        while ((end = pending.indexOf('\n\n')) !== -1) {
+          parseBlock(pending.slice(0, end));
+          pending = pending.slice(end + 2);
+        }
+        if (pending.length > this.limits.maxListingBytes) throw failure('压缩包目录过大，无法安全校验。', 413);
+      }
+      parseBlock(pending);
+      const code = await closed;
+      if (code !== 0) throw failure(encryptedArchive(stderr) ? '压缩包包含加密文件，无法导入。' : '不是有效的 .zip 或 .7z 存档。', 400);
+    } catch (error) {
+      child.kill('SIGKILL');
+      await closed.catch(() => {});
+      if (error.status) throw error;
+      throw failure(encryptedArchive(stderr) ? '压缩包包含加密文件，无法导入。' : '不是有效的 .zip 或 .7z 存档。', 400);
+    } finally { clearTimeout(timer); }
+    return { ...detectSnapshot(entries), entries, uncompressedBytes: bytes };
+  }
+
   async verify(directory) {
     let bytes = 0;
     let count = 0;
@@ -304,19 +420,32 @@ export class SaveImports {
     return verified;
   }
 
-  async extract(archive, detected, directory, { signal } = {}) {
+  async extract(archive, detected, directory, { signal, format = 'gzip' } = {}) {
     const extract = path.join(directory, 'extract');
     const snapshot = path.join(directory, 'snapshot');
     await mkdir(extract, { mode: 0o700 });
     try {
       try {
-        await run('tar', ['-xzf', archive, '--ignore-zeros', '--no-same-owner', '--no-same-permissions', '--no-overwrite-dir', '-C', extract], {
-          maxBuffer: 1024 * 1024,
-          timeout: this.limits.tarTimeoutMs,
-          signal,
-          env: tarEnvironment()
-        });
-      } catch { throw failure('无法解压存档压缩包。', 400); }
+        if (format === 'gzip') {
+          await run('tar', ['-xzf', archive, '--ignore-zeros', '--no-same-owner', '--no-same-permissions', '--no-overwrite-dir', '-C', extract], {
+            maxBuffer: 1024 * 1024,
+            timeout: this.limits.tarTimeoutMs,
+            signal,
+            env: tarEnvironment()
+          });
+        } else {
+          await run(await sevenZipBinary(), ['x', `-o${extract}`, '-y', '-bd', '-bso0', SEVEN_ZIP_PASSWORD, archive], {
+            maxBuffer: 1024 * 1024,
+            timeout: this.limits.tarTimeoutMs,
+            signal,
+            env: sevenZipEnvironment()
+          });
+        }
+      } catch (error) {
+        if (error.status) throw error;
+        if (encryptedArchive(error.stderr)) throw failure('压缩包包含加密文件，无法导入。', 400);
+        throw failure('无法解压存档压缩包。', 400);
+      }
       let source = extract;
       for (const part of detected.root.split('/').filter(Boolean)) {
         source = path.join(source, part);
@@ -332,14 +461,14 @@ export class SaveImports {
   async receive(request, { authorize = () => {} } = {}) {
     authorize();
     const type = String(request.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
-    if (!['application/gzip', 'application/x-gzip', 'application/octet-stream'].includes(type)) throw failure('请上传 .tar.gz 格式的存档或完整备份。', 415);
+    if (!ARCHIVE_TYPES.has(type)) throw failure('请上传 .tar.gz、.zip 或 .7z 格式的存档或完整备份。', 415);
     const declared = Number(request.headers['content-length']);
     if (Number.isFinite(declared) && declared > this.limits.maxCompressedBytes) throw failure('存档压缩包超过大小限制。', 413);
     if (this.receiving.size) throw failure('已有存档正在上传，请稍后再试。', 429);
     const id = randomUUID();
     this.receiving.add(id);
     const directory = path.join(this.root, id);
-    const archive = path.join(directory, 'upload.tar.gz');
+    let archive = path.join(directory, 'upload.bin');
     let handle;
     let timer;
     const controller = new AbortController();
@@ -361,7 +490,7 @@ export class SaveImports {
         authorize();
         bytes += chunk.length;
         if (bytes > this.limits.maxCompressedBytes || usage.bytes + bytes > this.limits.maxStagedBytes) throw failure('存档压缩包超过大小或暂存总量限制。', 413);
-        if (magic.length < 2) magic = Buffer.concat([magic, chunk]).subarray(0, 2);
+        if (magic.length < 6) magic = Buffer.concat([magic, chunk]).subarray(0, 6);
         let offset = 0;
         while (offset < chunk.length) offset += (await handle.write(chunk, offset, chunk.length - offset, null)).bytesWritten;
       }
@@ -369,13 +498,18 @@ export class SaveImports {
       // Bound validation and extraction as well as reading a slow request body.
       timer = setTimeout(() => controller.abort(), 2 * this.limits.tarTimeoutMs);
       authorize();
-      if (magic.length < 2 || magic[0] !== 0x1f || magic[1] !== 0x8b) throw failure('上传文件不是 gzip 压缩包。', 400);
+      const format = detectArchive(magic);
+      const declaredFormat = ARCHIVE_TYPES.get(type);
+      if (!format || (declaredFormat && declaredFormat !== format)) throw failure('请上传 .tar.gz、.zip 或 .7z 格式的存档或完整备份。', 400);
+      const stored = path.join(directory, format === 'gzip' ? 'upload.tar.gz' : format === 'zip' ? 'upload.zip' : 'upload.7z');
       await handle.sync();
       await handle.close();
       handle = null;
-      const detected = await this.scan(archive, { signal: controller.signal, maxBytes: Math.min(this.limits.maxUncompressedBytes, this.limits.maxStagedBytes - usage.bytes - bytes) });
+      await rename(archive, stored);
+      archive = stored;
+      const detected = await this.scan(archive, { format, signal: controller.signal, maxBytes: Math.min(this.limits.maxUncompressedBytes, this.limits.maxStagedBytes - usage.bytes - bytes) });
       authorize();
-      const extracted = await this.extract(archive, detected, directory, { signal: controller.signal });
+      const extracted = await this.extract(archive, detected, directory, { format, signal: controller.signal });
       const inspected = await this.inspectSnapshot(extracted.snapshot, detected.kind);
       if (extracted.verified.files.length !== detected.copy.length) throw failure('压缩包文件数量不一致，请重新打包。', 400);
       const meta = {

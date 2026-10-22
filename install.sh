@@ -174,8 +174,9 @@ step '检查系统依赖。'
 missing=()
 if ! command -v curl >/dev/null 2>&1 || ! curl --version >/dev/null 2>&1; then missing+=(curl); fi
 if ! dpkg-query -W -f '${Status}' lib32gcc-s1 2>/dev/null | grep -qx 'install ok installed'; then missing+=(lib32gcc-s1); fi
+if ! command -v 7zz >/dev/null 2>&1 && ! command -v 7z >/dev/null 2>&1; then missing+=(7zip); fi
 if (( ${#missing[@]} == 0 )); then
-  echo '[PalBox] curl 和 lib32gcc-s1 已可用，跳过安装。'
+  echo '[PalBox] curl、lib32gcc-s1 和 7zip 已可用，跳过安装。'
 else
   step "安装缺少的系统依赖：${missing[*]}。"
   apt-get update

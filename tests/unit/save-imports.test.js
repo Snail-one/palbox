@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectSnapshot, SaveImports } from '../../backend/management/save-imports.js';
+import { detectArchive, detectSnapshot, SaveImports } from '../../backend/management/save-imports.js';
 import { NativeBackups } from '../../backend/management/native-backups.js';
 import { mkdtemp, mkdir, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { PassThrough, Readable } from 'node:stream';
 import { gunzipSync, gzipSync } from 'node:zlib';
@@ -103,7 +103,45 @@ async function importFixture(t, limits = {}) {
   return { imports, archive, compressed };
 }
 
-const upload = bytes => Object.assign(Readable.from([bytes]), { headers: { 'content-type': 'application/gzip' } });
+const upload = (bytes, type = 'application/gzip') => Object.assign(Readable.from([bytes]), { headers: { 'content-type': type } });
+const run = promisify(execFile);
+const sevenZip = ['7zz', '7z'].find(name => spawnSync(name, ['i'], { stdio: 'ignore' }).status === 0);
+const needsSevenZip = sevenZip ? false : '需要系统 7zip（7z 或 7zz）';
+
+async function packSeven(directory, format, entries, extraArgs = []) {
+  await rm(directory, { recursive: true, force: true });
+  await mkdir(directory, { recursive: true });
+  for (const [name, content] of Object.entries(entries)) {
+    const target = path.join(directory, name);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, content);
+  }
+  const archive = path.join(directory, `world.${format}`);
+  await run(sevenZip, ['a', `-t${format}`, '-bso0', '-bd', ...extraArgs, archive, ...Object.keys(entries)], { cwd: directory });
+  return readFile(archive);
+}
+
+async function specialZip(directory, kind) {
+  const archive = path.join(directory, `${kind}.zip`);
+  const script = path.join(directory, 'make-zip.py');
+  await writeFile(script, `import stat, sys, zipfile
+target, kind = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(target, 'w') as archive:
+    archive.writestr('Level.sav', 'level-bytes')
+    archive.writestr('LevelMeta.sav', 'meta-bytes')
+    if kind == 'link':
+        info = zipfile.ZipInfo('link')
+        info.create_system = 3
+        info.external_attr = (stat.S_IFLNK | 0o777) << 16
+        archive.writestr(info, '/etc/passwd')
+    elif kind == 'slip':
+        archive.writestr('../slip.txt', 'slip')
+    elif kind == 'abs':
+        archive.writestr('/tmp/abs.txt', 'abs')
+`);
+  await run('python3', [script, archive, kind]);
+  return readFile(archive);
+}
 
 test('慢速上传有绝对时限，期间拒绝并发请求，失败后释放锁并清理部分文件', async t => {
   const { imports, compressed } = await importFixture(t, { uploadTimeoutMs: 100 });
@@ -177,4 +215,65 @@ test('扫描后会话撤销不会进入解压，也不会保留上传或元数�
   } }), { status: 401 });
   assert.equal(extracted, false);
   assert.deepEqual(await readdir(imports.root), []);
+});
+
+test('按文件头区分 gzip、zip 和 7z', () => {
+  assert.equal(detectArchive(Buffer.from([0x1f, 0x8b, 0, 0, 0, 0])), 'gzip');
+  assert.equal(detectArchive(Buffer.from([0x50, 0x4b, 0x03, 0x04])), 'zip');
+  assert.equal(detectArchive(Buffer.from([0x50, 0x4b, 0x05, 0x06, 0, 0])), 'zip');
+  assert.equal(detectArchive(Buffer.from([0x50, 0x4b, 0x07, 0x08])), 'zip');
+  assert.equal(detectArchive(Buffer.from([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c])), '7z');
+  assert.equal(detectArchive(Buffer.from([0x50, 0x4b, 0x03, 0x03])), null);
+  assert.equal(detectArchive(Buffer.from([0x1f])), null);
+});
+
+test('zip 和 7z 世界包可上传并还原文件内容', { skip: needsSevenZip }, async t => {
+  const { imports } = await importFixture(t);
+  for (const [format, type] of [['zip', 'application/zip'], ['7z', 'application/x-7z-compressed']]) {
+    const bytes = await packSeven(path.join(imports.directory, format), format, {
+      'Level.sav': `${format}-level`,
+      'LevelMeta.sav': `${format}-meta`,
+      'Players/a.sav': `${format}-player`
+    });
+    const stream = new PassThrough();
+    const pending = imports.receive(Object.assign(stream, { headers: { 'content-type': type } }));
+    stream.write(bytes.subarray(0, 2));
+    stream.write(bytes.subarray(2, 5));
+    stream.end(bytes.subarray(5));
+    const meta = await pending;
+    const snapshot = imports.resolve(meta.id).snapshot;
+    assert.equal(meta.kind, 'world');
+    assert.equal(meta.layout, 'root');
+    assert.equal(await readFile(path.join(snapshot, 'Level.sav'), 'utf8'), `${format}-level`);
+    assert.equal(await readFile(path.join(snapshot, 'LevelMeta.sav'), 'utf8'), `${format}-meta`);
+    assert.equal(await readFile(path.join(snapshot, 'Players/a.sav'), 'utf8'), `${format}-player`);
+  }
+});
+
+test('zip 拒绝符号链接、路径穿越、绝对路径和加密', { skip: needsSevenZip }, async t => {
+  const { imports } = await importFixture(t, { tarTimeoutMs: 5000 });
+  const base = path.join(imports.directory, 'special');
+  await mkdir(base, { recursive: true });
+  await assert.rejects(imports.receive(upload(await specialZip(base, 'link'), 'application/zip')), /链接/);
+  await assert.rejects(imports.receive(upload(await specialZip(base, 'slip'), 'application/zip')), /不允许的路径/);
+  await assert.rejects(imports.receive(upload(await specialZip(base, 'abs'), 'application/zip')), /无效路径/);
+  const encrypted = await packSeven(path.join(base, 'secret'), 'zip', { 'Level.sav': 'level', 'LevelMeta.sav': 'meta' }, ['-psecret']);
+  await assert.rejects(imports.receive(upload(encrypted, 'application/zip')), /加密/);
+  const hidden = await packSeven(path.join(base, 'hidden'), '7z', { 'Level.sav': 'level', 'LevelMeta.sav': 'meta' }, ['-psecret', '-mhe=on']);
+  await assert.rejects(imports.receive(upload(hidden, 'application/x-7z-compressed')), /加密/);
+  assert.deepEqual(await readdir(imports.root), []);
+});
+
+test('内容类型须与文件头一致，octet-stream 按文件头识别', { skip: needsSevenZip }, async t => {
+  const { imports } = await importFixture(t);
+  const bytes = await packSeven(path.join(imports.directory, 'typed'), 'zip', { 'Level.sav': 'level', 'LevelMeta.sav': 'meta' });
+  await assert.rejects(imports.receive(upload(bytes, 'text/plain')), { status: 415 });
+  await assert.rejects(imports.receive(upload(bytes, 'application/gzip')), /请上传/);
+  await assert.rejects(imports.receive(upload(bytes, 'application/x-7z-compressed')), /请上传/);
+  await assert.rejects(imports.receive(upload(Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('not-a-zip')]), 'application/zip')), /不是有效的 .zip 或 .7z/);
+  const streamed = await imports.receive(upload(bytes, 'application/octet-stream'));
+  assert.equal(await readFile(path.join(imports.resolve(streamed.id).snapshot, 'Level.sav'), 'utf8'), 'level');
+  const aliased = await imports.receive(upload(bytes, 'application/x-zip-compressed'));
+  assert.equal(aliased.kind, 'world');
+  assert.equal((await imports.receive(upload(bytes, 'application/zip; charset=binary'))).layout, 'root');
 });

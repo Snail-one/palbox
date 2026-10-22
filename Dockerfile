@@ -15,7 +15,7 @@ RUN test "${TARGETARCH:-amd64}" = amd64 \
     && test "$(dpkg --print-architecture)" = amd64 \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
-        curl ca-certificates lib32gcc-s1 procps \
+        curl ca-certificates lib32gcc-s1 procps 7zip \
         tini gosu libstdc++6 libatomic1 tzdata util-linux xdg-user-dirs \
     && rm -rf /var/lib/apt/lists/* \
     && command -v xdg-user-dir \

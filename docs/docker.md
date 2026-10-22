@@ -2,7 +2,7 @@
 
 前端容器运行网页与 API 代理，后端 `palbox` 容器运行管理 API、SteamCMD 和一个帕鲁专用服务器，支持 Linux amd64。前端没有游戏数据挂载，后端 HTTP 端口仅在 Compose 网络内开放。管理服务在游戏停服时继续运行，不需要 Docker socket。游戏文件首次运行时由 SteamCMD 下载，镜像本身不打包游戏文件。
 
-后端镜像基于 `debian:13-slim`，从官方 `node:22-trixie-slim` 镜像复制 Node.js 22 运行时。SteamCMD 从 `client-update.steamstatic.com` 下载，配置下载重试与连接超时；使用系统自带的 `C.UTF-8`，不额外生成语言环境。除 `curl`、`ca-certificates`、`lib32gcc-s1`、`procps` 外，仅补充入口脚本需要的 `tini`、`gosu`，Node.js 运行库 `libstdc++6`、`libatomic1`，以及支持 `TZ` 的 `tzdata`。`tar` 和用户管理命令由 Debian 基础镜像提供。
+后端镜像基于 `debian:13-slim`，从官方 `node:22-trixie-slim` 镜像复制 Node.js 22 运行时。SteamCMD 从 `client-update.steamstatic.com` 下载，配置下载重试与连接超时；使用系统自带的 `C.UTF-8`，不额外生成语言环境。除 `curl`、`ca-certificates`、`lib32gcc-s1`、`procps`、`7zip` 外，仅补充入口脚本需要的 `tini`、`gosu`，Node.js 运行库 `libstdc++6`、`libatomic1`，以及支持 `TZ` 的 `tzdata`。`7zip` 用于导入 `.zip` 和 `.7z` 存档。`tar` 和用户管理命令由 Debian 基础镜像提供。
 
 前端镜像基于 `node:22-trixie-slim`，仅包含浏览器资源、共享领域模块和静态代理服务。Dockerfile 提供 `frontend` / `backend` 两个独立构建目标；Compose 会分别构建。单独构建时使用 `docker build --target frontend -t palbox-frontend:local .` 和 `docker build --target backend -t palbox:local .`。
 
@@ -140,7 +140,7 @@ docker compose up -d --build
 - 更新：仅在游戏服停止时可用，运行中按钮禁用，后端拒绝更新请求。执行 SteamCMD `app_update 2394010 validate`，不自动存档、关服、创建备份或启动游戏，更新完成后保持停服；需要备份时可先手动创建世界备份。「检查更新」优先通过 [SteamCMD.net API](https://api.steamcmd.net/v1/info/2394010) 查询最新 build，失败时回退 SteamCMD，并与本地 `appmanifest_2394010.acf` 对比，结果以「游戏版本」卡片旁的气泡显示。
 - 官方自动备份：由 `bIsUseBackupSaveData=True` 启用，游戏运行中自行生成，无需面板停服。面板展示 `SaveGames/0/<世界 ID>/backup/world/<时间>/` 中完整的世界和玩家备份，支持在线下载。官方保留档位为每 30 秒 5 份、每 10 分钟 6 份、每 1 小时 12 份、每 1 天 7 份：[官方说明](https://docs.palworldgame.com/settings-and-operation/configuration/#about-bisusebackupsavedata)。
 - 恢复官方备份：确认备份属于当前世界，复制并验证后保存、停服，先创建世界备份并归入「恢复前备份」，再替换世界和玩家存档。保留当前配置与官方备份历史，原先运行的游戏会重新启动。
-- 导入存档：上传 `.tar.gz` / `.tgz` 世界存档或完整备份，最大 1 GB，按包内内容识别类型。完整备份整体替换 `Pal/Saved/`，恢复包内配置、全部世界与玩家、备份历史、日志等内容，使用包内配置的世界 ID；世界存档包清空并替换当前 `GameUserSettings.ini` 的 `DedicatedServerName` 指定的世界目录，写入包内的全部文件和子目录，包括 `Players/` 和 `backup/`，旧内容不残留，目录外的配置与其他世界保留。世界包缺少当前世界 ID 时拒绝导入；完整备份不依赖原来的世界 ID。导入前先校验、保存并停服、创建「导入前备份」，目录替换失败会回滚，完成后恢复原运行状态。完整布局与校验要求见 [使用说明](usage.md)。暂存文件位于 `palbox/imports/`，处理后删除，超过 1 小时自动清理。
+- 导入存档：上传 `.tar.gz` / `.tgz` / `.zip` / `.7z` 世界存档或完整备份，最大 1 GB，按包内内容识别类型。`.zip` 和 `.7z` 使用镜像中的 7zip。完整备份整体替换 `Pal/Saved/`，恢复包内配置、全部世界与玩家、备份历史、日志等内容，使用包内配置的世界 ID；世界存档包清空并替换当前 `GameUserSettings.ini` 的 `DedicatedServerName` 指定的世界目录，写入包内的全部文件和子目录，包括 `Players/` 和 `backup/`，旧内容不残留，目录外的配置与其他世界保留。世界包缺少当前世界 ID 时拒绝导入；完整备份不依赖原来的世界 ID。导入前先校验、保存并停服、创建「导入前备份」，目录替换失败会回滚，完成后恢复原运行状态。完整布局与校验要求见 [使用说明](usage.md)。暂存文件位于 `palbox/imports/`，处理后删除，超过 1 小时自动清理。
 - 创建世界备份：人工触发，仅在游戏服停止且存在有效世界存档时可用。压缩整个 `Pal/Saved/`，包含所有世界、玩家、官方备份历史、游戏配置、日志和封禁名单，完成后保持停服。
 - 重置存档：仅在停服状态下可用，需输入 `delete` 确认。先备份整个 `Pal/Saved` 并归入「重置前备份」，成功后清空 `SaveGames/0` 下的内容；备份失败时中止清空，完成后保持停服。
 - 删除世界备份：在归档条目中点击「删除」并确认，永久移除所选文件，自动更新列表数量和大小。无需停服，不改变当前世界；与其他管理任务串行执行，拒绝越界路径、目录和链接。
@@ -176,7 +176,7 @@ Docker 部署的全部配置都在 `compose.yaml` 中，不再读取 `.env`。
 
 直接运行镜像而不使用 Compose 时，需分别启动前后端，并把前端的 `PALBOX_API_URL` 指向可访问的后端地址。两个容器均通过 `HOST` / `PORT` 配置各自监听（前端默认 8080，后端默认 8081）；`PUID` / `PGID` 仅用于后端运行用户。管理员账号、游戏安装/启动和启动参数统一在网页中管理，不再通过环境变量提供。`npm start` / `dev.sh` 的开发流程同样使用环境变量配置其他参数。
 
-使用现有存档时，可以在面板「存档管理 → 官方备份 → 导入存档」上传世界存档或完整备份 `.tar.gz`，也可以先将完整的 `Pal/Saved` 放入 `./data/server/Pal/Saved`，不要只复制单个 `Level.sav`。世界备份归档在「存档管理 → 世界备份」中管理。安装完成后检查输入配置与存档，再在面板中手动启动。
+使用现有存档时，可以在面板「存档管理 → 官方备份 → 导入存档」上传世界存档或完整备份 `.tar.gz`、`.zip` 或 `.7z`，也可以先将完整的 `Pal/Saved` 放入 `./data/server/Pal/Saved`，不要只复制单个 `Level.sav`。世界备份归档在「存档管理 → 世界备份」中管理。安装完成后检查输入配置与存档，再在面板中手动启动。
 
 ## 验证
 

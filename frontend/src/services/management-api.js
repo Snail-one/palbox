@@ -79,7 +79,8 @@ export function createManagementClient({ fetch, csrf = '' }) {
         xhr.open('POST', '/api/' + path);
         xhr.withCredentials = true;
         xhr.timeout = 15 * 60 * 1000;
-        xhr.setRequestHeader('Content-Type', 'application/gzip');
+        const archiveType = /\.7z$/i.test(file.name) ? 'application/x-7z-compressed' : /\.zip$/i.test(file.name) ? 'application/zip' : 'application/gzip';
+        xhr.setRequestHeader('Content-Type', archiveType);
         xhr.setRequestHeader('X-Palbox-CSRF', token);
         xhr.upload.onprogress = event => { if (event.lengthComputable && onProgress) onProgress(event.loaded / event.total); };
         xhr.onload = () => {
