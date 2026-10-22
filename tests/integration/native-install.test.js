@@ -222,9 +222,21 @@ test('终端启动实际使用项目 Node 和相同配置，错误运行用户�
   let output = ''; child.stdout.on('data', part => { output += part; }); child.stderr.on('data', part => { output += part; });
   try {
     const until = Date.now() + 5000;
-    while (!output.includes('前端已启动') && child.exitCode === null && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 20));
+    let bootstrap;
+    // 前端先监听；后端完成初始化后才会接受 /api/bootstrap。
+    while (Date.now() < until && child.exitCode === null) {
+      if (output.includes(`前端已启动：http://127.0.0.1:${port}`) && output.includes('游戏管理已启动')) {
+        try {
+          const response = await fetch(`http://127.0.0.1:${port}/api/bootstrap`);
+          bootstrap = await response.json();
+          if (response.ok && bootstrap.mode === 'managed') break;
+        } catch { /* 端口刚打开时连接可能尚未接受。 */ }
+      }
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
     assert.match(output, new RegExp(`前端已启动：http://127.0.0.1:${port}`));
-    assert.equal((await (await fetch(`http://127.0.0.1:${port}/api/bootstrap`)).json()).mode, 'managed');
+    assert.match(output, new RegExp(`游戏管理已启动：http://127\\.0\\.0\\.1:${apiPort}`));
+    assert.equal(bootstrap?.mode, 'managed');
     await access(path.join(f.data, 'palbox/workspace.json'));
   } finally { child.kill('SIGTERM'); await closed; }
   await writeFile(f.config, 'PALBOX_SERVICE_USER=some-other-account\n');
