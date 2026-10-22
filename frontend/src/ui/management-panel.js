@@ -41,7 +41,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   section.id = 'server-service';
   section.innerHTML = `
     <h2>游戏服务</h2>
-    <div class="management-actions server-heading-actions"><label class="auto-start-switch" title="启用后，面板或容器重启并完成初始化时会自动创建启动任务；服务端未安装或尚未初始化时跳过"><input type="checkbox" role="switch" class="sr-only" id="auto-start" disabled><span class="toggle" aria-hidden="true"></span><span>自动启动</span></label></div>
+    <div class="management-actions server-heading-actions"><label class="auto-start-switch" title="启用后，面板或容器重启并完成初始化时会自动创建启动任务；服务端未安装或尚未初始化时跳过"><input type="checkbox" role="switch" class="sr-only" id="auto-start" disabled><span class="toggle" aria-hidden="true"></span><span>自动启动</span></label><label class="auto-start-switch" title="开启后，安装和更新服务端时沿用面板环境中的代理；关闭后直连下载。"><input type="checkbox" role="switch" class="sr-only" id="auto-proxy" disabled><span class="toggle" aria-hidden="true"></span><span>自动代理</span></label></div>
     <div class="server-primary-actions" role="group" aria-label="游戏服务操作">
         <span id="game-state" class="save-status" data-state="pending" role="status" title="正在连接面板，读取游戏服务状态。">连接中</span>
         <button class="button primary" data-action="install-steamcmd" hidden>安装 SteamCMD</button><button class="button primary" data-action="install" hidden>安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop" hidden>停止</button><button class="button secondary" data-action="restart" hidden>重启</button>
@@ -242,10 +242,10 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       await refresh();
     } catch (caught) { error(caught.message); }
   }
-  const gameArgsDialog = createArgsDialog({ dom, prefix: 'game-args', extras: [$('game-args-auto-proxy')], onSave: async gameArgs => {
-    const saved = await api.request('settings', { method: 'PUT', body: { gameArgs, autoProxy: $('game-args-auto-proxy').checked } });
+  const gameArgsDialog = createArgsDialog({ dom, prefix: 'game-args', onSave: async gameArgs => {
+    const saved = await api.request('settings', { method: 'PUT', body: { gameArgs } });
     settingsCache = saved;
-    notify('启动参数已保存。游戏参数将在下次启动或重启时生效；自动代理将在下次安装或更新服务端时生效');
+    notify('启动参数已保存，将在下次启动或重启游戏服时生效');
   } });
   $('edit-shutdown-wait').addEventListener('click', () => {
     const dialog = $('shutdown-wait-dialog');
@@ -316,10 +316,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   });
   $('running-config-dialog').addEventListener('close', () => { runningRead++; runningPanel.clear(); });
   for (const id of ['running-config-close', 'running-config-done']) $(id).addEventListener('click', () => $('running-config-dialog').close());
-  $('edit-game-args').addEventListener('click', () => {
-    $('game-args-auto-proxy').checked = settingsCache?.autoProxy === true;
-    gameArgsDialog.open((settingsCache?.gameArgs ?? []).join('\n'));
-  });
+  $('edit-game-args').addEventListener('click', () => gameArgsDialog.open((settingsCache?.gameArgs ?? []).join('\n')));
   const installArgsDialog = createArgsDialog({ dom, prefix: 'install-args', onSave: async installArgs => {
     const saved = await api.request('settings', { method: 'PUT', body: { installArgs } });
     settingsCache = saved;
@@ -1001,6 +998,8 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     settingsRequest ??= api.request('settings').then(settings => {
       $('auto-start').checked = Boolean(settings.autoStart);
       $('auto-start').disabled = false;
+      $('auto-proxy').checked = settings.autoProxy === true;
+      $('auto-proxy').disabled = false;
       settingsCache = settings;
       $('edit-game-args').disabled = false;
       $('edit-install-args').disabled = false;
@@ -1044,6 +1043,18 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     try {
       settingsCache = await api.request('settings', { method: 'PUT', body: { autoStart: checked } });
       notify(checked ? '已启用自动启动：面板或容器重启后将启动游戏服务' : '已关闭自动启动');
+    } catch (caught) {
+      control.checked = !checked;
+      error(caught.message);
+    } finally { control.disabled = false; }
+  });
+  $('auto-proxy').addEventListener('change', async event => {
+    const control = event.currentTarget;
+    const checked = control.checked;
+    control.disabled = true;
+    try {
+      settingsCache = await api.request('settings', { method: 'PUT', body: { autoProxy: checked } });
+      notify(checked ? '已启用自动代理：下次安装或更新服务端时沿用环境中的代理' : '已关闭自动代理：下次安装或更新服务端时直接连接');
     } catch (caught) {
       control.checked = !checked;
       error(caught.message);

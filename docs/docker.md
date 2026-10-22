@@ -125,7 +125,7 @@ docker compose up -d --build
 
 应用管理配置需要 `RESTAPIEnabled=True`、非空 `AdminPassword` 和有效的 `RESTAPIPort`。已导入且关闭 REST API 的配置需要先调整这几个参数；不会静默覆盖用户导入的配置。`PALBOX_GAME_PORT` 控制游戏进程的实际监听端口，修改时要同步修改 `compose.yaml` 中 `ports` 的宿主机端口；INI 中的 `PublicPort` 只负责公布端口。
 
-游戏启动参数通过「游戏管理 → 服务器概况 → 游戏服务」中的「启动参数」按钮编辑，每行一个参数，保存到 `palbox/settings.json` 的 `gameArgs`。同一窗口中的「自动代理」开关保存在 `autoProxy`，默认关闭。关闭时安装和更新服务端直连；开启后沿用容器或进程环境中的代理，下次安装或更新时生效。保存不会自动重启游戏服，将在下次启动或重启时生效；应用配置、备份恢复等流程触发的自动重启同样使用新参数。`-port` 由 `PALBOX_GAME_PORT` 管理，不能在启动参数中填写。
+游戏启动参数通过「游戏管理 → 服务器概况 → 游戏服务」中的「启动参数」按钮编辑，每行一个参数，保存到 `palbox/settings.json` 的 `gameArgs`。保存不会自动重启游戏服，将在下次启动或重启时生效；应用配置、备份恢复等流程触发的自动重启同样使用新参数。`-port` 由 `PALBOX_GAME_PORT` 管理，不能在启动参数中填写。
 
 同一区域的「安装参数」按钮显示完整 SteamCMD 参数并允许编辑，保存到 `settings.json` 的 `installArgs`，下次安装或更新时生效。安装目录、App ID `2394010` 和末尾的 `+quit` 由面板校验，其余参数可自定义。
 
@@ -136,6 +136,7 @@ docker compose up -d --build
 - 启动、停止、重启：管理游戏进程。停止优先调用官方 API 存档和关服，API 不可用时尝试 SIGTERM；未成功退出不会继续改写文件。正常停止失败时可使用「强制停止」，优先调用官方 `/stop`，必要时发送 SIGKILL。
 - 关服设置：在同名设置窗口中编辑倒计时秒数（0–300 秒）和提示文字（1–500 个字符），保存在 `palbox/settings.json` 的 `shutdownWait`、`shutdownMessage`。正常关服调用[官方 `/shutdown`](https://docs.palworldgame.com/api/rest-api/shutdown/) 时传入这两项；保存后下次关服生效，不需要重启面板。旧设置自动沿用默认提示「Palbox 正在维护服务器」。
 - 自动启动：在全局顶部栏的「游戏服务」后切换「自动启动」滑块。启用后，后端启动并监听端口时会自动创建「启动」任务；服务端未安装、尚未完成管理员初始化或检测到游戏已在运行时跳过。设置保存在 `palbox/settings.json` 的 `autoStart`，默认关闭；执行 `docker compose restart palbox`、`up -d` 或宿主机重启后生效。
+- 自动代理：同一位置的「自动代理」滑块保存在 `autoProxy`，默认关闭。关闭时安装和更新服务端直连；开启后沿用容器或进程环境中的代理，下次安装或更新时生效。
 - 更新：仅在游戏服停止时可用，运行中按钮禁用，后端拒绝更新请求。执行 SteamCMD `app_update 2394010 validate`，不自动存档、关服、创建备份或启动游戏，更新完成后保持停服；需要备份时可先手动创建世界备份。「检查更新」优先通过 [SteamCMD.net API](https://api.steamcmd.net/v1/info/2394010) 查询最新 build，失败时回退 SteamCMD，并与本地 `appmanifest_2394010.acf` 对比，结果以「游戏版本」卡片旁的气泡显示。
 - 官方自动备份：由 `bIsUseBackupSaveData=True` 启用，游戏运行中自行生成，无需面板停服。面板展示 `SaveGames/0/<世界 ID>/backup/world/<时间>/` 中完整的世界和玩家备份，支持在线下载。官方保留档位为每 30 秒 5 份、每 10 分钟 6 份、每 1 小时 12 份、每 1 天 7 份：[官方说明](https://docs.palworldgame.com/settings-and-operation/configuration/#about-bisusebackupsavedata)。
 - 恢复官方备份：确认备份属于当前世界，复制并验证后保存、停服，先创建世界备份并归入「恢复前备份」，再替换世界和玩家存档。保留当前配置与官方备份历史，原先运行的游戏会重新启动。
