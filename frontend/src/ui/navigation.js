@@ -56,7 +56,7 @@ export function createNavigation({ dom, window, isDirty, onSave, onConfiguration
     }
     const configuring = route.page === 'configuration';
     $('configuration-actions').hidden = !configuring;
-    $('configuration-apply').hidden = !configuring || route.view === 'profiles';
+    $('configuration-apply').hidden = !configuring;
     if (configuring && route.view !== 'profiles') onConfigurationView(route.mode || 'form');
     $('main').setAttribute('aria-label', route.title);
     document.title = name === route.title ? `PalBox · ${name}` : `PalBox · ${name} · ${route.title}`;

@@ -133,7 +133,7 @@ test('存档页面与游戏、配置页面互不混用，保存快捷键只作�
   app.key(event);
   assert.equal(app.saves, 1);
   app.go('#configuration/profiles');
-  assert.equal(app.$('configuration-apply').hidden, true);
+  assert.equal(app.$('configuration-apply').hidden, false);
   app.go('#game/players');
   assert.equal(app.$('game-players-view').hidden, false);
   assert.equal(app.$('game-overview').hidden, true);
