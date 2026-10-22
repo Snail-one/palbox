@@ -27,6 +27,52 @@ EOF
 }
 die() { echo "安装失败：$*" >&2; exit 1; }
 step() { echo "[PalBox] $*"; }
+text_columns() {
+  local text=$1 i char width=0
+  for (( i = 0; i < ${#text}; i++ )); do
+    char=${text:i:1}
+    if [[ $char == [[:ascii:]] ]]; then width=$((width + 1)); else width=$((width + 2)); fi
+  done
+  printf '%s' "$width"
+}
+print_card() {
+  local title=$1 line width title_width line_width gap dashes
+  shift
+  title_width=$(text_columns "$title")
+  width=$title_width
+  for line in "$@"; do
+    line_width=$(text_columns "$line")
+    if (( line_width > width )); then width=$line_width; fi
+  done
+  if (( width < 28 )); then width=28; fi
+  gap=$((width - title_width - 1))
+  if (( gap < 2 )); then width=$((title_width + 3)); gap=2; fi
+  printf -v dashes '%*s' "$gap" ''
+  printf '╭─ %s %s╮\n' "$title" "${dashes// /─}"
+  for line in "$@"; do
+    gap=$((width - $(text_columns "$line")))
+    printf '│ %s%*s │\n' "$line" "$gap" ''
+  done
+  printf -v dashes '%*s' "$((width + 2))" ''
+  printf '╰%s╯\n' "${dashes// /─}"
+}
+list_global_ips() {
+  local version=$1
+  command -v ip >/dev/null 2>&1 || return 0
+  ip "-$version" -o addr show scope global 2>/dev/null | awk '{split($4, parts, "/"); if (parts[1] != "") print parts[1]}' || true
+}
+append_panel_urls() {
+  local -n target=$1
+  local found=false ip url
+  shift
+  for ip in "$@"; do
+    [[ -n "$ip" ]] || continue
+    found=true
+    if [[ $ip == *:* ]]; then url="http://[$ip]:$listen_port"; else url="http://$ip:$listen_port"; fi
+    if [[ ${target[-1]} == 面板地址：* || ${target[-1]} == '         http://'* ]]; then target+=("         $url"); else target+=("面板地址：$url"); fi
+  done
+  if [[ $found == false ]]; then target+=("面板地址：未检测到对外网卡地址，请使用服务器实际 IP 和端口 $listen_port"); fi
+}
 while (( $# )); do
   case "$1" in
     -h|--help) usage; exit 0 ;;
@@ -124,9 +170,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
-step '安装系统依赖。'
-apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl lib32gcc-s1
+step '检查系统依赖。'
+missing=()
+if ! command -v curl >/dev/null 2>&1 || ! curl --version >/dev/null 2>&1; then missing+=(curl); fi
+if ! dpkg-query -W -f '${Status}' lib32gcc-s1 2>/dev/null | grep -qx 'install ok installed'; then missing+=(lib32gcc-s1); fi
+if (( ${#missing[@]} == 0 )); then
+  echo '[PalBox] curl 和 lib32gcc-s1 已可用，跳过安装。'
+else
+  step "安装缺少的系统依赖：${missing[*]}。"
+  apt-get update
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends --no-upgrade "${missing[@]}"
+fi
 
 temporary="$(mktemp -d /tmp/palbox-install.XXXXXX)"
 install -d -m 0755 "$systemd_dir"
@@ -231,18 +285,46 @@ systemctl enable palbox.service
 switched=false
 
 step '安装完成，PalBox 已启动并设置开机启动。'
-echo "程序目录：$app_dir"
-echo "运行用户：$service_user"
-echo "面板地址：http://$health_host:$listen_port"
-echo "部署配置：$config_file"
-echo "数据目录：$data_dir"
-echo "SteamCMD：$data_dir/steamcmd/steamcmd.sh（网页安装后生成）"
-echo "游戏目录：$data_dir/server（网页安装后生成）"
-echo '首次打开网页创建管理员，依次点击“安装 SteamCMD”“安装服务端”“启动”。'
-if [[ "$listen_host" == 127.0.0.1 || "$listen_host" == ::1 || "$listen_host" == localhost ]]; then
-  echo "远程访问：ssh -N -L 18080:$health_host:$listen_port 登录用户@服务器IP"
-  echo '随后打开 http://127.0.0.1:18080'
-else echo '请使用服务器对应的 IP 访问面板，并从本机或可信内网完成首次管理员初始化。'; fi
-echo '游戏对外连接需放行 UDP 8211（默认），API 仅监听本机。'
-echo '查看日志：sudo journalctl -u palbox -f'
-echo '终端调试：先 sudo systemctl stop palbox，再以相同运行用户执行 bash ./dev.sh --no-watch'
+summary=("状态：已启动，并已设置开机启动" "运行用户：$service_user")
+case "$listen_host" in
+  127.0.0.1|localhost|::1) summary+=("监听：$listen_host:$listen_port（仅本机）" "面板地址：http://$listen_host:$listen_port") ;;
+  0.0.0.0)
+    summary+=("监听：0.0.0.0:$listen_port（所有 IPv4 网卡）")
+    mapfile -t panel_ips < <(list_global_ips 4)
+    append_panel_urls summary "${panel_ips[@]}"
+    ;;
+  ::)
+    summary+=("监听：[::]:$listen_port（所有 IPv6 网卡）")
+    mapfile -t panel_ips < <(list_global_ips 6; list_global_ips 4)
+    append_panel_urls summary "${panel_ips[@]}"
+    ;;
+  *)
+    if [[ $listen_host == *:* ]]; then summary+=("监听：[$listen_host]:$listen_port" "面板地址：http://[$listen_host]:$listen_port");
+    else summary+=("监听：$listen_host:$listen_port" "面板地址：http://$listen_host:$listen_port"); fi
+    ;;
+esac
+summary+=(
+  "程序目录：$app_dir"
+  "部署配置：$config_file"
+  "数据目录：$data_dir"
+  "SteamCMD：$data_dir/steamcmd/steamcmd.sh（网页安装后生成）"
+  "游戏目录：$data_dir/server（网页安装后生成）"
+)
+access=("打开面板创建管理员，再依次点击「安装 SteamCMD」「安装服务端」「启动」。")
+if [[ $listen_host == 127.0.0.1 || $listen_host == localhost || $listen_host == ::1 ]]; then
+  access+=(
+    "当前只监听本机。远程可建立隧道："
+    "ssh -N -L 18080:$listen_host:$listen_port <登录用户>@<服务器IP>"
+    "隧道建立后打开 http://127.0.0.1:18080"
+  )
+else
+  access+=("请使用上面的网卡地址访问。127.0.0.1 只在服务器本机有效，不能作为对外地址。")
+  access+=("首次管理员初始化请从本机或可信内网打开面板。")
+fi
+access+=("游戏默认使用 UDP 8211。后端 API 只监听 127.0.0.1:$api_port。")
+access+=("日志：sudo journalctl -u palbox -f")
+access+=("终端调试：先 sudo systemctl stop palbox，再以 $service_user 执行 bash ./dev.sh --no-watch")
+echo
+print_card '部署' "${summary[@]}"
+echo
+print_card '访问' "${access[@]}"

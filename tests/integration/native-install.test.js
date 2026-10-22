@@ -58,7 +58,12 @@ if name == 'id':
 elif name == 'stat' and args[-1] == str(root / 'project'):
     if (root / 'root-owner').exists(): print('0' if args[1] == '%u' else 'root')
     else: print('1000' if args[1] == '%u' else 'deployer')
-elif name == 'apt-get' or name == 'chown': pass
+elif name == 'apt-get':
+    if 'lib32gcc-s1' in args: (root / 'lib32gcc-installed').touch()
+elif name == 'chown': pass
+elif name == 'dpkg-query':
+    if args[-1] == 'lib32gcc-s1' and (root / 'lib32gcc-installed').exists(): print('install ok installed')
+    else: sys.exit(1)
 elif name == 'useradd': raise RuntimeError('Installer must not create users')
 elif name == 'install':
     filtered, i = [], 0
@@ -70,6 +75,7 @@ elif name == 'runuser':
     if (root / 'deny-data').exists() and str(root / 'project/data') in args: sys.exit(1)
     sys.exit(subprocess.call(args[args.index('--') + 1:]))
 elif name == 'curl':
+    if '--version' in args: sys.exit(0)
     dest = pathlib.Path(args[args.index('-o') + 1])
     url = next(arg for arg in args if arg.startswith('https://'))
     shutil.copyfile(root / url.rsplit('/', 1)[1], dest)
@@ -85,7 +91,7 @@ elif name == 'systemctl':
 elif name == 'journalctl': print('fixture: service failed to start')
 else: raise RuntimeError('Unexpected mock command: ' + name)
 `, { mode: 0o755 });
-  for (const name of ['id', 'stat', 'useradd', 'apt-get', 'chown', 'install', 'runuser', 'curl', 'systemctl', 'journalctl']) await symlink(mock, path.join(bin, name));
+  for (const name of ['id', 'stat', 'useradd', 'apt-get', 'chown', 'dpkg-query', 'install', 'runuser', 'curl', 'systemctl', 'journalctl']) await symlink(mock, path.join(bin, name));
   const systemd = path.join(directory, 'systemd');
   const config = path.join(app, '.palbox.env');
   const data = path.join(app, 'data');
@@ -116,14 +122,17 @@ test('就地安装使用项目属主和 data，不创建用户或搬迁程序，
   await assert.rejects(access(path.join(f.app, 'current')), { code: 'ENOENT' });
   await assert.rejects(access(path.join(f.app, 'releases')), { code: 'ENOENT' });
   const commands = await readFile(path.join(f.directory, 'commands'), 'utf8');
-  assert.match(commands, /apt-get install -y --no-install-recommends curl lib32gcc-s1\n/);
+  assert.match(commands, /apt-get install -y --no-install-recommends --no-upgrade lib32gcc-s1\n/);
+  assert.doesNotMatch(commands, /apt-get install[^\n]* curl/);
   assert.ok(commands.includes(`install -d -o deployer -g deployer -m 0700 ${f.data}`));
   assert.doesNotMatch(commands, /useradd|steamstatic|chown -R.*data/);
 });
 
 test('重新安装保留同一 data、配置和程序目录，不重复下载兼容 Node', linux, async t => {
   const f = await fixture(t);
-  await f.invoke('--host', '0.0.0.0', '--port', '9000', '--api-port', '9001');
+  const opened = await f.invoke('--host', '0.0.0.0', '--port', '9000', '--api-port', '9001');
+  assert.match(opened.stdout, /0\.0\.0\.0:9000（所有 IPv4 网卡）/);
+  assert.doesNotMatch(opened.stdout, /面板地址：http:\/\/127\.0\.0\.1:9000/);
   await writeFile(path.join(f.data, 'world.sav'), 'world-content');
   await writeFile(f.config, `${await readFile(f.config, 'utf8')}PALBOX_GAME_PORT=8888\nPALBOX_SECURE_COOKIE=true\n`);
   await f.invoke();
@@ -135,6 +144,7 @@ test('重新安装保留同一 data、配置和程序目录，不重复下载兼
   assert.match(config, /\nPORT=9100\n/);
   const commands = await readFile(path.join(f.directory, 'commands'), 'utf8');
   assert.equal(commands.match(/https:\/\/nodejs.org\/dist\/latest-v24.x\/SHASUMS256.txt/g).length, 1);
+  assert.equal(commands.match(/apt-get update/g).length, 1);
 });
 
 test('项目归 root 时要求明确普通用户，拒绝 root 和不存在的用户', linux, async t => {
