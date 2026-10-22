@@ -116,7 +116,7 @@ test('就地安装使用项目属主和 data，不创建用户或搬迁程序，
   await assert.rejects(access(path.join(f.app, 'current')), { code: 'ENOENT' });
   await assert.rejects(access(path.join(f.app, 'releases')), { code: 'ENOENT' });
   const commands = await readFile(path.join(f.directory, 'commands'), 'utf8');
-  assert.match(commands, /apt-get install.*lib32gcc-s1/);
+  assert.match(commands, /apt-get install -y --no-install-recommends lib32gcc-s1\n/);
   assert.ok(commands.includes(`install -d -o deployer -g deployer -m 0700 ${f.data}`));
   assert.doesNotMatch(commands, /useradd|steamstatic|chown -R.*data/);
 });

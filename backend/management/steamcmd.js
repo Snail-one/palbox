@@ -91,7 +91,7 @@ export async function installSteamcmd(runtime, { onProgress = () => {}, fetch: d
       await runtime.run(runtime.steamcmd, ['+quit'], 'steamcmd', { cwd: path.dirname(runtime.steamcmd), timeoutMs: 300000 });
       for (const file of ['linux32/steamcmd', 'linux64/steamclient.so']) await access(path.join(path.dirname(runtime.steamcmd), file), constants.R_OK);
     } catch (error) {
-      throw failure(`SteamCMD 初始化失败。Ubuntu / Debian 请先执行 sudo apt-get update && sudo apt-get install -y lib32gcc-s1 lib32stdc++6 ca-certificates tar，再重试；网络错误请查看安装与更新日志。${error.message}`, 500);
+      throw failure(`SteamCMD 初始化失败。Ubuntu / Debian 请先执行 sudo apt-get update && sudo apt-get install -y lib32gcc-s1，再重试；网络错误请查看安装与更新日志。${error.message}`, 500);
     }
     signal.throwIfAborted();
     await writeFile(path.join(path.dirname(runtime.steamcmd), READY_FILE), 'ready\n', { mode: 0o600 });

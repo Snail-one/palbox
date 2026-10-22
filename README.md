@@ -59,7 +59,7 @@ sudo bash ./install.sh
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y lib32gcc-s1 lib32stdc++6 libstdc++6 libatomic1 ca-certificates tar xdg-user-dirs
+sudo apt-get install -y lib32gcc-s1
 ```
 
 以普通用户运行 `npm start`，在网页初始化并登录管理员账号，进入「游戏管理」：
