@@ -1,5 +1,16 @@
-import { parse, mergeConfiguration, MAX_CONFIGURATION_SOURCE_LENGTH } from '../../../shared/domain/config.js';
+import { parse, decodeString, mergeConfiguration, applyManagedAccess, MAX_CONFIGURATION_SOURCE_LENGTH } from '../../../shared/domain/config.js';
 import { createProfile, createWorkspace, validateWorkspace, MAX_PROFILES } from '../../../shared/domain/workspace.js';
+
+function managedPassword(source) {
+  try { return decodeString(parse(source).entries.find(entry => entry.key === 'AdminPassword')?.raw || '""'); }
+  catch { return ''; }
+}
+
+function randomPassword() {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
 
 /** Coordinates persistence through an injected { load, save } repository. */
 export class WorkspaceService {
@@ -73,11 +84,23 @@ export class WorkspaceService {
   }
 
   importConfiguration(name, source, defaultSource, { origin } = {}) {
-    const merged = mergeConfiguration(defaultSource, source);
+    const password = managedPassword(defaultSource) || randomPassword();
+    const merged = applyManagedAccess(mergeConfiguration(defaultSource, source), password);
     if (merged.length > MAX_CONFIGURATION_SOURCE_LENGTH || defaultSource.length > MAX_CONFIGURATION_SOURCE_LENGTH) throw new Error('合并后的配置内容过长，无法保存，请精简后重试。');
     const profile = this.add(name, merged, { origin });
     profile.initialSource = defaultSource;
     return profile;
+  }
+
+  // Overlay an imported file onto one existing profile. Missing keys stay as they are.
+  mergeImportedChanges(id, importedSource) {
+    const profile = this.profiles.find(candidate => candidate.id === id);
+    if (!profile) throw new Error('配置不存在。');
+    parse(importedSource);
+    const password = managedPassword(profile.source) || managedPassword(profile.initialSource) || randomPassword();
+    const merged = applyManagedAccess(mergeConfiguration(profile.source, importedSource), password);
+    if (merged.length > MAX_CONFIGURATION_SOURCE_LENGTH) throw new Error('合并后的配置内容过长，无法保存，请精简后重试。');
+    return merged;
   }
 
   rename(name, id = this.active?.id) {

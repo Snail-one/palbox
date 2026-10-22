@@ -226,8 +226,8 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       };
       const confirmed = await ask({ title: `${names[name]}？`, description: descriptions[name], confirm: names[name], danger: ['restore', 'restore-native', 'reset-save', 'kick', 'force-stop'].includes(name), symbol: 'server',
         ...(name === 'restore' ? { defaultChoice: 'full', choices: [
-          { value: 'world', label: '存档恢复', description: '清空并替换当前世界 ID 目录，恢复备份中的世界、玩家及备份历史等全部世界内容；其他世界和目录外的数据保留。备份里的 PalWorldSettings.ini 会按导入方式合并进「游戏默认配置」并写入游戏，以官方默认为底补全缺项。需要当前世界 ID 有效。' },
-          { value: 'full', label: '完整恢复', description: '新的世界备份会把 PalWorldSettings.ini 按导入方式合并进「游戏默认配置」并写入游戏，以官方默认为底补全缺项，并替换备份中的世界目录；其他世界、日志和封禁名单保留。旧的完整备份仍整体替换 Pal/Saved，备份里没有的内容全部移除；其中的配置同样合并进「游戏默认配置」。' }
+          { value: 'world', label: '存档恢复', description: '清空并替换当前世界 ID 目录，恢复备份中的世界、玩家及备份历史等全部世界内容；其他世界和目录外的数据保留。备份里的 PalWorldSettings.ini 会按导入方式合并进「游戏默认配置」并写入游戏，以官方默认为底补全缺项。REST API 保持开启，管理员密码沿用「游戏默认配置」已有的随机密码。需要当前世界 ID 有效。' },
+          { value: 'full', label: '完整恢复', description: '新的世界备份会把 PalWorldSettings.ini 按导入方式合并进「游戏默认配置」并写入游戏，以官方默认为底补全缺项，并替换备份中的世界目录；其他世界、日志和封禁名单保留。旧的完整备份仍整体替换 Pal/Saved，备份里没有的内容全部移除；其中的配置同样合并进「游戏默认配置」。REST API 保持开启，管理员密码沿用「游戏默认配置」已有的随机密码。' }
         ] } : {}),
         ...(name === 'reset-save' ? { name: '', nameLabel: '输入 delete 确认删除', namePlaceholder: 'delete', nameMaxLength: 6, confirmation: 'delete' } : {}) });
       if (!confirmed) return;

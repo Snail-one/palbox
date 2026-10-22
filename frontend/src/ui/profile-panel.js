@@ -1,20 +1,35 @@
 import { OFFICIAL_DEFAULT_ORIGIN, MAX_PROFILES, GAME_DEFAULT_PROFILE_NAME } from '../../../shared/domain/workspace.js';
 
-export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, isDirty, clipboard, notify, onSaveSource, actions }) {
+export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, isDirty, clipboard, notify, onSaveSource, onImportSource, readFile, validate, actions }) {
   const { $, el, icon, empty } = dom;
   const sourceDialog = $('source-view-dialog');
   const sourceText = $('source-view-text');
   const sourceDescription = $('source-view-description');
   let editingProfile = null;
   let sourceReadOnly = false;
+  let importing = false;
+  let readVersion = 0;
+  onImportSource ??= async () => {};
+  readFile ??= async () => { throw new Error('无法读取文件。'); };
+  validate ??= source => source;
   const limitMessage = `最多保留 ${MAX_PROFILES} 套配置（含游戏默认配置），请先删除不需要的配置。`;
   function hasCapacity() {
     if (workspace.profiles.length < MAX_PROFILES) return true;
     notify(limitMessage, true);
     return false;
   }
-  function closeSourceDialog() { sourceDialog.close(); }
-  function openSourceDialog(profile = workspace.active) {
+  function closeSourceDialog() { if (importing) return; sourceDialog.close(); }
+  function showDialogMode(mode) {
+    const importingMode = mode === 'import';
+    $('source-view-import').hidden = !importingMode;
+    $('source-view-panel').hidden = importingMode;
+    $('source-view-title').textContent = importingMode ? '导入配置' : '查看源配置';
+    $('source-view-tab-import').className = importingMode ? 'selected' : '';
+    $('source-view-tab-source').className = importingMode ? '' : 'selected';
+    $('source-view-tab-import').setAttribute('aria-pressed', String(importingMode));
+    $('source-view-tab-source').setAttribute('aria-pressed', String(!importingMode));
+  }
+  function openSourceDialog(profile = workspace.active, mode = 'source') {
     if (!profile) return;
     const active = profile.id === workspace.active?.id;
     const origin = profile.origin || '已有配置';
@@ -29,13 +44,21 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
     $('source-view-save').hidden = sourceReadOnly;
     $('source-view-save').disabled = sourceReadOnly;
     $('source-view-error').hidden = true;
+    $('profile-import-text').value = '';
+    $('profile-import-file').value = '';
+    $('profile-import-error').hidden = true;
+    $('source-view-import-description').textContent = `把导入内容中的同名参数覆盖到「${profile.name}」，未包含的参数保持当前值。REST API 保持开启，管理员密码沿用这套配置已有的密码；没有密码时会新生成一个。不采用导入内容中的这两项，也不会切换当前选择。`;
     sourceDescription.textContent = `「${profile.name}」的输入源码。来源：${origin}。${sourceReadOnly ? `该条目以游戏目录中的 DefaultPalWorldSettings.ini 作为输入来源，输入源码只读；${active ? '请在可视化编辑或参数列表中修改参数并应用。' : '选择后可在可视化编辑或参数列表中修改参数并应用。'}` : active ? '保存后会替换当前配置的输入源码，当前未应用或无效的编辑将被覆盖。' : '保存后更新该配置，不会切换当前配置。'}`;
+    showDialogMode(mode);
     sourceDialog.showModal();
     sourceText.scrollTop = 0;
   }
   $('view-profile-source').addEventListener('click', () => openSourceDialog());
+  $('source-view-tab-import').addEventListener('click', () => showDialogMode('import'));
+  $('source-view-tab-source').addEventListener('click', () => showDialogMode('source'));
   $('source-view-close').addEventListener('click', closeSourceDialog);
   $('source-view-ok').addEventListener('click', closeSourceDialog);
+  sourceDialog.addEventListener('cancel', event => { if (importing) event.preventDefault(); });
   sourceDialog.addEventListener('close', () => {
     if (sourceDialog.open) return;
     editingProfile = null; sourceText.value = '';
@@ -56,6 +79,59 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
       $('source-view-error').textContent = error.message;
       $('source-view-error').hidden = false;
     } finally { button.disabled = false; }
+  });
+  async function selectImportFile(file) {
+    if (!file || importing) return;
+    const version = ++readVersion;
+    try {
+      const text = await readFile(file);
+      if (version !== readVersion || !sourceDialog.open) return;
+      $('profile-import-text').value = text;
+      $('profile-import-error').hidden = true;
+    } catch (error) {
+      if (version === readVersion && sourceDialog.open) {
+        $('profile-import-error').textContent = error.message;
+        $('profile-import-error').hidden = false;
+      }
+    }
+  }
+  function setImportDrag(on) {
+    const zone = $('profile-import-drop');
+    if (zone.classList) zone.classList.toggle('dragover', on);
+  }
+  $('profile-import-file').addEventListener('change', () => selectImportFile($('profile-import-file').files?.[0]));
+  $('profile-import-drop').addEventListener('keydown', event => {
+    if (event.target !== $('profile-import-drop')) return;
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); $('profile-import-file').click(); }
+  });
+  for (const eventName of ['dragenter', 'dragover']) $('profile-import-drop').addEventListener(eventName, event => {
+    event.preventDefault();
+    setImportDrag(true);
+  });
+  $('profile-import-drop').addEventListener('dragleave', () => setImportDrag(false));
+  $('profile-import-drop').addEventListener('drop', event => {
+    event.preventDefault();
+    setImportDrag(false);
+    selectImportFile(event.dataTransfer?.files?.[0]);
+  });
+  $('profile-import-confirm').addEventListener('click', async () => {
+    if (!editingProfile || importing) return;
+    const button = $('profile-import-confirm');
+    try {
+      const source = validate($('profile-import-text').value);
+      importing = true;
+      button.disabled = true;
+      $('profile-import-error').hidden = true;
+      await onImportSource(editingProfile.id, source);
+      importing = false;
+      closeSourceDialog();
+    } catch (error) {
+      $('profile-import-error').textContent = error.message;
+      $('profile-import-error').hidden = false;
+    } finally {
+      importing = false;
+      button.disabled = false;
+    }
   });
   $('new-profile').addEventListener('click', async () => {
     if (!hasCapacity()) return;
@@ -138,7 +214,7 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
         const origin = profile.origin || '已有配置';
         const originText = el('small', 'profile-origin', `来源：${origin}`);
         originText.title = origin;
-        text.append(el('strong', '', profile.name), el('small', '', `${selected ? '当前配置 · ' : ''}${profile.locked ? '游戏默认来源 · 源码只读' : 'PalWorldSettings.ini'}`), originText);
+        text.append(el('strong', '', profile.name), el('small', '', `${selected ? '当前配置 · ' : ''}${profile.locked ? '游戏默认来源 · 可导入修改' : 'PalWorldSettings.ini'}`), originText);
         button.append(icon('file'), text);
         if (selected) button.append(icon('arrow'));
         button.addEventListener('click', () => openSourceDialog(profile));
@@ -148,7 +224,7 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
         choose.dataset.profileAction = 'select';
         choose.disabled = selected;
         choose.append(icon('check'), el('span', '', selected ? '已选择' : '选择'));
-        if (profile.locked) choose.title = '选择后在可视化编辑中修改参数；输入源码只读。';
+        if (profile.locked) choose.title = '选择后在可视化编辑中修改参数；也可点击条目导入配置。输入源码只读。';
         choose.addEventListener('click', () => {
           if (selected) return;
           Promise.resolve(actions.select(profile.id)).catch(error => notify(error.message, true));

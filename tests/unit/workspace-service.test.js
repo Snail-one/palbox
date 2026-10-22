@@ -113,6 +113,7 @@ test('导入以游戏默认为基准创建独立配置，差异标记和恢复�
   const values = new Map(parse(imported.source).entries.map(({ key, raw }) => [key, raw]));
   assert.equal(values.get('ExpRate'), '3');
   assert.equal(values.get('AdminPassword'), '"managed"');
+  assert.equal(values.get('RESTAPIEnabled'), 'True');
   assert.equal(values.get('Future'), '(X,Y)');
   assert.equal(imported.initialSource, defaults);
   const editor = new EditorSession(imported.source, { baselineSource: imported.initialSource });
@@ -126,6 +127,34 @@ test('导入以游戏默认为基准创建独立配置，差异标记和恢复�
   restored.saveSource(restored.initialSource);
   assert.equal(restored.active.source, defaults);
   assert.deepEqual(restored.profiles[0], original);
+});
+
+test('导入修改覆盖当前配置的同名参数，保持 REST 开启且不采用导入密码', () => {
+  const source = 'OptionSettings=(ServerName="当前",ExpRate=1,RESTAPIEnabled=False,AdminPassword="kept-secret",DayTimeSpeedRate=1)';
+  const { service } = setup({ version: 1, activeId: 'initial', profiles: [{ id: 'initial', name: '我的帕鲁世界', source, initialSource: source }] });
+  const merged = service.mergeImportedChanges('initial', 'OptionSettings=(RESTAPIEnabled=False,AdminPassword="imported-secret",ExpRate=8)');
+  const values = new Map(parse(merged).entries.map(({ key, raw }) => [key, raw]));
+  assert.equal(values.get('RESTAPIEnabled'), 'True');
+  assert.equal(values.get('AdminPassword'), '"kept-secret"');
+  assert.notEqual(values.get('AdminPassword'), '"imported-secret"');
+  assert.equal(values.get('ExpRate'), '8');
+  assert.equal(values.get('ServerName'), '"当前"');
+  assert.equal(values.get('DayTimeSpeedRate'), '1');
+  assert.equal(service.active.id, 'initial');
+  assert.equal(service.active.source, source);
+  assert.equal(service.profiles.length, 1);
+});
+
+test('文件和粘贴导入不采用导入的 REST API 开关和管理员密码', () => {
+  const { service } = setup();
+  const defaults = 'OptionSettings=(ServerName="Default",ExpRate=1,RESTAPIEnabled=True,AdminPassword="managed")';
+  const imported = service.importConfiguration('覆盖管理项', 'OptionSettings=(RESTAPIEnabled=False,AdminPassword="imported-secret",ExpRate=8)', defaults);
+  const values = new Map(parse(imported.source).entries.map(({ key, raw }) => [key, raw]));
+  assert.equal(values.get('RESTAPIEnabled'), 'True');
+  assert.equal(values.get('AdminPassword'), '"managed"');
+  assert.notEqual(values.get('AdminPassword'), '"imported-secret"');
+  assert.equal(values.get('ExpRate'), '8');
+  assert.equal(values.get('ServerName'), '"Default"');
 });
 
 test('导入语法错误或配置数量超限时不新增配置或改变当前选择', () => {

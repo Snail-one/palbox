@@ -165,13 +165,15 @@ test('完整备份整体替换 Saved，恢复多个世界和配置，保持原�
     const task = await waitTask(f, 'import-save', { id: staged.id });
     assert.deepEqual(await readdir(path.join(saved(f), 'SaveGames/0')), ['IMPORTED', 'SECOND']);
     await assert.rejects(access(path.join(saved(f), 'old-only.txt')), { code: 'ENOENT' });
+    const managedPassword = parse(f.manager.store.workspace.profiles.find(profile => profile.locked).initialSource).entries.find(entry => entry.key === 'AdminPassword').raw;
     const disk = await readFile(f.runtime.config, 'utf8');
     const diskValues = new Map(parse(disk).entries.map(entry => [entry.key, entry.raw]));
     const importedValues = new Map(parse(importedConfig).entries.map(entry => [entry.key, entry.raw]));
     assert.equal(disk, f.manager.store.active().source);
     assert.equal(f.manager.store.active().name, '游戏默认配置');
     assert.equal(diskValues.get('ExpRate'), importedValues.get('ExpRate'));
-    assert.equal(diskValues.get('AdminPassword'), importedValues.get('AdminPassword'));
+    assert.equal(diskValues.get('AdminPassword'), managedPassword);
+    assert.notEqual(diskValues.get('AdminPassword'), importedValues.get('AdminPassword'));
     assert.equal(diskValues.get('RESTAPIEnabled'), 'True');
     assert.equal(await readFile(path.join(saved(f), 'SaveGames/0/IMPORTED/backup/world/history/Level.sav'), 'utf8'), 'imported-history');
     assert.equal(await readFile(path.join(saved(f), 'Logs/previous.log'), 'utf8'), 'archived-log');
@@ -224,8 +226,9 @@ test('世界包旁的配置按官方默认导入到游戏默认配置，存档�
   const bytes = await archive(tmp, {
     'SOURCE/Level.sav': 'new',
     'SOURCE/LevelMeta.sav': 'meta',
-    'Config/LinuxServer/PalWorldSettings.ini': '[/Script/Pal.PalGameWorldSettings]\nOptionSettings=(ExpRate=7.500000)\n'
+    'Config/LinuxServer/PalWorldSettings.ini': '[/Script/Pal.PalGameWorldSettings]\nOptionSettings=(RESTAPIEnabled=False,AdminPassword="imported-secret",ExpRate=7.500000)\n'
   });
+  const managedPassword = parse(f.manager.store.workspace.profiles.find(profile => profile.locked).initialSource).entries.find(entry => entry.key === 'AdminPassword').raw;
   const upload = await f.upload('/api/save-import', bytes);
   assert.equal(upload.status, 201, await upload.clone().text());
   const staged = await upload.json();
@@ -243,7 +246,8 @@ test('世界包旁的配置按官方默认导入到游戏默认配置，存档�
   assert.equal(settings.get('ExpRate'), '7.500000');
   assert.equal(settings.get('RESTAPIEnabled'), 'True');
   assert.equal(settings.get('DayTimeSpeedRate'), '1.000000');
-  assert.ok(settings.get('AdminPassword') && settings.get('AdminPassword') !== '""');
+  assert.equal(settings.get('AdminPassword'), managedPassword);
+  assert.notEqual(settings.get('AdminPassword'), '"imported-secret"');
 });
 
 test('完整备份配置无效时上传失败，不停止游戏或替换现有内容', async t => {

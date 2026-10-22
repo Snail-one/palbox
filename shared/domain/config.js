@@ -124,6 +124,22 @@ export function mergeConfiguration(defaultSource, importedSource) {
   return source.slice(0, end) + (defaults.entries.length ? ',' : '') + suffix + source.slice(end);
 }
 
+// Imported files cannot turn REST API off or replace the managed admin password.
+export function applyManagedAccess(source, password) {
+  return applyManagedChanges(source, new Map([
+    ['RESTAPIEnabled', 'True'],
+    ['AdminPassword', encodeString(password)]
+  ]));
+}
+
+export function applyManagedChanges(source, changes) {
+  const parsed = parse(source);
+  const keys = new Set(parsed.entries.map(entry => entry.key));
+  const missing = [...changes].filter(([key]) => !keys.has(key));
+  if (missing.length) source = source.slice(0, parsed.end) + (parsed.entries.length ? ',' : '') + missing.map(([key, raw]) => `${key}=${raw}`).join(',') + source.slice(parsed.end);
+  return serialize(parse(source), changes);
+}
+
 function decodeString(raw) {
   if (!raw.startsWith('"')) return raw;
   return raw.slice(1, -1).replace(/\\(["\\])/g, '$1');

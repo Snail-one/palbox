@@ -78,13 +78,13 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
   const navigation = createNavigation({ dom, window, isDirty, onSave: save, onConfigurationView: mode => panel?.setMode(mode) });
   panel = createEditorPanel({ dom, editor, catalog, ask, notify: notifications.toast, onChanged: () => save({ automatic: true }), ready, onViewChanged: navigation.openEditor, workspace });
   navigation.refresh();
-  async function saveProfileSource(id, source) {
+  async function saveProfileSource(id, source, message = '配置源码已保存') {
     if (!workspace.updateSource(id, source)) throw new Error(workspace.message || '保存失败，请复制备份后重试。');
     if (id === workspace.active?.id) { resetEditor(); panel.render(); }
     profiles.render();
     summary.render();
     if (repository.flush && !(await repository.flush())) throw new Error(repository.error || '保存失败，请复制备份后重试。');
-    notifications.toast('配置源码已保存');
+    notifications.toast(message);
   }
   function changedProfile(successMessage, { source = false } = {}) {
     resetEditor();
@@ -95,7 +95,10 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
     if (source) panel?.showSource();
     if (success && successMessage) notifications.toast(successMessage);
   }
-  const profiles = createProfilePanel({ dom, workspace, ask, beforeLeave, ready, isDirty, clipboard, notify: notifications.toast, onSaveSource: saveProfileSource, actions: {
+  const profiles = createProfilePanel({ dom, workspace, ask, beforeLeave, ready, isDirty, clipboard, notify: notifications.toast, onSaveSource: saveProfileSource, readFile: files.read, validate: files.validate, onImportSource: async (id, source) => {
+    const merged = workspace.mergeImportedChanges(id, source);
+    await saveProfileSource(id, merged, '已按导入内容修改这套配置');
+  }, actions: {
     async select(id) {
       if (id === workspace.active?.id) {
         navigation.closeSidebar();

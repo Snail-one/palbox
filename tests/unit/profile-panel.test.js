@@ -33,13 +33,16 @@ class FakeElement {
 }
 
 const IDS = [
-  'source-view-dialog', 'source-view-text', 'source-view-description', 'view-profile-source',
+  'source-view-dialog', 'source-view-text', 'source-view-description', 'source-view-title', 'view-profile-source',
   'source-view-close', 'source-view-ok', 'source-view-copy', 'source-view-save', 'source-view-file', 'source-view-mode',
-  'source-view-error', 'new-profile', 'rename-profile', 'copy-profile', 'delete-profile',
+  'source-view-error', 'source-view-switch', 'source-view-tab-import', 'source-view-tab-source', 'source-view-import',
+  'source-view-panel', 'source-view-import-description', 'profile-import-drop', 'profile-import-file', 'profile-import-text',
+  'profile-import-error', 'profile-import-confirm', 'new-profile', 'rename-profile', 'copy-profile', 'delete-profile',
   'profile-list', 'profile-count', 'profile-origin', 'import-button'
 ];
 
 function setup({ failSave = false } = {}) {
+  const imports = [];
   const elements = new Map(IDS.map(id => [id, new FakeElement()]));
   const document = {
     getElementById: id => elements.get(id) ?? null,
@@ -75,10 +78,18 @@ function setup({ failSave = false } = {}) {
       if (failSave) throw new Error('保存失败，请复制备份后重试。');
       saves.push({ id, source });
     },
+    onImportSource: async (id, source) => {
+      if (failSave) throw new Error('保存失败，请复制备份后重试。');
+      imports.push({ id, source });
+    },
+    validate: source => {
+      if (!String(source).trim()) throw new Error('配置内容为空。');
+      return source;
+    },
     actions: {}
   });
   panel.render();
-  return { elements, rows: elements.get('profile-list').children, saves, workspace, panel };
+  return { elements, rows: elements.get('profile-list').children, saves, imports, workspace, panel };
 }
 
 test('达到 10 套配置后禁用新建、导入和副本，删除后恢复', () => {
@@ -131,12 +142,40 @@ test('官方默认配置来源的弹窗只读且不会调用保存回调', async
   assert.equal(elements.get('source-view-mode').textContent, 'UTF-8 · 只读');
   assert.equal(elements.get('source-view-file').textContent, '输入源码 · DefaultPalWorldSettings.ini');
   assert.match(elements.get('source-view-description').textContent, /不可修改|只读/);
+  assert.equal(elements.get('source-view-title').textContent, '查看源配置');
+  assert.equal(elements.get('source-view-import').hidden, true);
+  await elements.get('source-view-tab-import').fire('click');
+  assert.equal(elements.get('source-view-title').textContent, '导入配置');
+  assert.equal(elements.get('source-view-import').hidden, false);
+  assert.equal(elements.get('source-view-panel').hidden, true);
+  assert.match(elements.get('source-view-import-description').textContent, /游戏默认配置/);
+  assert.match(elements.get('source-view-import-description').textContent, /REST API 保持开启/);
   await saveButton.fire('click');
   assert.deepEqual(saves, []);
   const tools = rows[1].children[1];
   assert.equal(tools.children[0].disabled, false);
   assert.equal(tools.children[0].children[1].textContent, '选择');
   assert.deepEqual(tools.children.map(button => button.dataset.profileAction), ['select', 'duplicate']);
+});
+
+test('导入配置覆盖当前条目，失败时保留弹窗', async () => {
+  const { elements, rows, imports } = setup();
+  await rows[1].children[0].fire('click');
+  await elements.get('source-view-tab-import').fire('click');
+  elements.get('profile-import-text').value = 'OptionSettings=(ExpRate=8)';
+  await elements.get('profile-import-confirm').fire('click');
+  assert.deepEqual(imports, [{ id: 'official', source: 'OptionSettings=(ExpRate=8)' }]);
+  assert.equal(elements.get('source-view-dialog').open, false);
+
+  const failed = setup({ failSave: true });
+  await failed.rows[1].children[0].fire('click');
+  await failed.elements.get('source-view-tab-import').fire('click');
+  failed.elements.get('profile-import-text').value = 'OptionSettings=(ExpRate=8)';
+  await failed.elements.get('profile-import-confirm').fire('click');
+  assert.equal(failed.elements.get('source-view-dialog').open, true);
+  assert.equal(failed.elements.get('profile-import-error').hidden, false);
+  assert.match(failed.elements.get('profile-import-error').textContent, /保存失败/);
+  assert.deepEqual(failed.imports, []);
 });
 
 test('保存失败时保留弹窗并显示错误', async () => {

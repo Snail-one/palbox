@@ -11,6 +11,7 @@ test('世界备份按选择恢复当前世界，或写入配置并替换包内�
     const f = await managementFixture(); t.after(() => f.close()); await f.login();
     assert.equal((await f.task('install')).state, 'succeeded');
     const originalConfig = await readFile(f.runtime.config, 'utf8');
+    const managedPassword = parse(f.manager.store.workspace.profiles.find(profile => profile.locked).initialSource).entries.find(entry => entry.key === 'AdminPassword').raw;
     await nativeBackupFixture(f.runtime.saved, { worldId: 'SAVED_WORLD' });
     const id = await f.manager.backup('manual');
     const current = await nativeBackupFixture(f.runtime.saved, { worldId: 'CURRENT_WORLD' });
@@ -35,7 +36,8 @@ test('世界备份按选择恢复当前世界，或写入配置并替换包内�
     const wanted = new Map(parse(originalConfig).entries.map(entry => [entry.key, entry.raw]));
     const actual = new Map(parse(restoredConfig).entries.map(entry => [entry.key, entry.raw]));
     assert.equal(actual.get('ExpRate'), wanted.get('ExpRate'));
-    assert.equal(actual.get('AdminPassword'), wanted.get('AdminPassword'));
+    assert.equal(actual.get('AdminPassword'), managedPassword);
+    assert.notEqual(actual.get('AdminPassword'), wanted.get('AdminPassword'));
     assert.equal(actual.get('RESTAPIEnabled'), 'True');
     assert.equal(await readFile(path.join(f.runtime.saved, 'outside-world.txt'), 'utf8'), 'keep-until-full');
     assert.deepEqual(await readdir(path.join(f.runtime.saved, 'SaveGames/0')), ['CURRENT_WORLD', 'SAVED_WORLD']);
