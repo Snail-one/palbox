@@ -221,7 +221,7 @@ export class NativeBackups {
     } catch (error) { await cleanup(); throw error; }
   }
 
-  async replaceWorld(worldId, source, { beforeSwap } = {}) {
+  async replaceWorld(worldId, source, { beforeSwap, onCleanupError = () => {} } = {}) {
     if (!worldName.test(worldId || '')) throw failure('世界 ID 无效。');
     await this.inspect(source, { requirePlayers: false });
     const names = await readdir(source);
@@ -269,20 +269,20 @@ export class NativeBackups {
         }
         throw error;
       }
-    } finally { if (!preserve) await rm(stage, { recursive: true, force: true }); }
+    } finally { if (!preserve) await rm(stage, { recursive: true, force: true }).catch(onCleanupError); }
   }
 
-  async restore(id, beforeReplace) {
+  async restore(id, beforeReplace, { onCleanupError = () => {} } = {}) {
     const backup = await this.get(id);
     if (backup.worldId !== await this.configuredWorld()) throw failure('无法确认该备份属于 GameUserSettings.ini 指定的当前世界，拒绝恢复。', 409);
     const stage = await mkdtemp(path.join(await backupDirectory(this.directory), '.official-restore-'));
     try {
       const source = path.join(stage, 'save');
       await this.copy(id, source);
-      await this.replaceWorld(backup.worldId, source, { beforeSwap: async () => {
+      await this.replaceWorld(backup.worldId, source, { onCleanupError, beforeSwap: async () => {
         await beforeReplace();
         if (backup.worldId !== await this.configuredWorld()) throw failure('当前世界已改变，请刷新后重试。', 409);
       } });
-    } finally { await rm(stage, { recursive: true, force: true }); }
+    } finally { await rm(stage, { recursive: true, force: true }).catch(onCleanupError); }
   }
 }

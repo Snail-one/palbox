@@ -383,11 +383,20 @@ export class Manager extends EventEmitter {
       case 'restore-native': {
         this.assertRestoreTarget(payload.targetWorldId, await this.targetWorld());
         const running = Boolean(this.runtime.game);
-        await this.native.restore(payload.id, async () => {
-          if (running) await this.stopGame({ requireSave: true });
-          await this.backup('before-restore');
-          this.servicePhase('restoring', '正在恢复官方备份中的世界和玩家存档。');
-        });
+        try {
+          await this.native.restore(payload.id, async () => {
+            if (running) await this.stopGame({ requireSave: true });
+            await this.backup('before-restore');
+            this.servicePhase('restoring', '正在恢复官方备份中的世界和玩家存档。');
+          }, { onCleanupError: error => this.runtime.log('palbox', `官方恢复临时文件清理失败：${error.message}\n`) });
+        } catch (error) {
+          // A failed swap keeps the server down only when the previous files could not be put back.
+          if (running && !error.rollbackFailed && !this.runtime.game && !this.closing) {
+            try { await this.startGame(); }
+            catch (caught) { this.runtime.log('palbox', `恢复失败后启动游戏服失败：${caught.message}\n`); }
+          }
+          throw error;
+        }
         if (running) await this.startGame();
         break;
       }
@@ -538,6 +547,19 @@ export class Manager extends EventEmitter {
     }
     return populated;
   }
+  // Emptiness only. Links outside the packed world are not part of the archive.
+  async savedHasPackableContent(directory) {
+    let entries;
+    try { entries = await readdir(directory, { withFileTypes: true }); }
+    catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+    for (const entry of entries) {
+      const info = await lstat(path.join(directory, entry.name));
+      if (info.isSymbolicLink()) continue;
+      if (info.isDirectory()) { if (await this.savedHasPackableContent(path.join(directory, entry.name))) return true; }
+      else if (info.isFile() && info.size > 0) return true;
+    }
+    return false;
+  }
   async backupWorldId() {
     const configured = await this.native.configuredWorld();
     const readable = async id => {
@@ -546,7 +568,18 @@ export class Manager extends EventEmitter {
         return level.isFile() && level.size > 0;
       } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
     };
-    if (configured && await readable(configured)) return configured;
+    if (configured) {
+      if (await readable(configured)) return configured;
+      // An empty or missing current world can use a config-only protection backup.
+      // Leftover files still need a real Level.sav, otherwise restore would delete them.
+      let occupied = false;
+      try {
+        const dir = await this.native.safeDirectory(['SaveGames', '0', configured]);
+        occupied = (await readdir(dir)).length > 0;
+      } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if (occupied) throw failure('当前世界缺少有效的 Level.sav，不能改备份其他世界。', 409);
+      return null;
+    }
     const worlds = [];
     for (const id of await this.native.worlds()) if (await readable(id)) worlds.push(id);
     if (worlds.length > 1) throw failure('无法确定当前世界，不能创建世界备份。', 409);
@@ -559,7 +592,7 @@ export class Manager extends EventEmitter {
     if (this.runtime.game) throw failure('创建备份前需要停止游戏服。', 409);
     try { await this.native.safeDirectory([]); }
     catch (error) { if (error.code === 'ENOENT') return null; throw error; }
-    if (!(await this.checkBackupFiles(this.runtime.saved))) return null;
+    if (!(await this.savedHasPackableContent(this.runtime.saved))) return null;
     const worldId = await this.backupWorldId();
     this.assertRestoreTarget(expectedWorldId, worldId);
     const worldDir = worldId ? path.join(this.runtime.saved, 'SaveGames', '0', worldId) : null;
@@ -576,6 +609,8 @@ export class Manager extends EventEmitter {
       const packedDir = path.join(stage, 'packed');
       await mkdir(packedDir, { mode: 0o700 });
       if (worldDir) {
+        // Reject a linked world directory before copy, which would follow it.
+        await this.native.safeDirectory(['SaveGames', '0', worldId]);
         if (!(await this.checkBackupFiles(worldDir))) throw failure('尚无可备份的世界存档，请先启动游戏并生成存档。', 409);
         await cp(worldDir, path.join(packedDir, worldId), { recursive: true });
       }
@@ -735,6 +770,7 @@ export class Manager extends EventEmitter {
       await this.checkedBackupFile(id);
       this.servicePhase('restoring', source ? '正在恢复当前世界的存档和备份中的游戏配置。' : '正在恢复备份中的游戏配置。');
       if (source) {
+        this.assertRestoreTarget(currentWorld, await this.targetWorld());
         const ensured = await this.native.ensureWorld(currentWorld);
         if (ensured.created) created = ensured.directory;
         await replaceDirectory(source, ensured.directory, {

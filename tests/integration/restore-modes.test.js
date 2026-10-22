@@ -116,6 +116,38 @@ test('统一恢复预览只检测内容，返回当前世界路径和配置选�
   assert.equal((await f.manager.backups()).filter(backup => backup.category === 'before-restore').length, 0);
 });
 
+test('保护备份期间当前世界改变或丢失时中止恢复，不替换任何世界或配置', async t => {
+  for (const missing of [false, true]) await t.test(missing ? '世界配置丢失' : '切换到其他世界', async t => {
+    const f = await managementFixture(); t.after(() => f.close()); await f.login();
+    assert.equal((await f.task('install')).state, 'succeeded');
+    const current = await nativeBackupFixture(f.runtime.saved, { worldId: 'CURRENT' });
+    const id = await f.manager.backup('manual');
+    const other = await nativeBackupFixture(f.runtime.saved, { worldId: 'OTHER' });
+    const settings = path.join(f.runtime.saved, 'Config/LinuxServer/GameUserSettings.ini');
+    await writeFile(settings, 'DedicatedServerName=CURRENT\n');
+    await writeFile(path.join(current.world, 'Level.sav'), 'keep-current-world');
+    await writeFile(path.join(other.world, 'Level.sav'), 'keep-other-world');
+    const config = await readFile(f.runtime.config);
+    const workspace = f.manager.store.snapshot();
+    const backup = f.manager.backup.bind(f.manager);
+    f.manager.backup = async (...args) => {
+      const result = await backup(...args);
+      if (missing) await rm(settings);
+      else await writeFile(settings, 'DedicatedServerName=OTHER\n');
+      return result;
+    };
+    const failed = await f.task('restore', { id, targetWorldId: 'CURRENT' });
+    assert.equal(failed.state, 'failed');
+    assert.match(failed.message, missing ? /GameUserSettings.ini/ : /恢复目标已改变/);
+    assert.equal(await readFile(path.join(current.world, 'Level.sav'), 'utf8'), 'keep-current-world');
+    assert.equal(await readFile(path.join(other.world, 'Level.sav'), 'utf8'), 'keep-other-world');
+    assert.deepEqual(await readFile(f.runtime.config), config);
+    assert.deepEqual(f.manager.store.snapshot(), workspace);
+    assert.equal(f.runtime.game, null);
+    assert.equal((await f.manager.backups()).filter(backup => backup.category === 'before-restore').length, 1);
+  });
+});
+
 test('上传存档和官方快照均提供统一预览，确认后按显示目标恢复并选中配置', async t => {
   const f = await managementFixture(); t.after(() => f.close()); await f.login();
   assert.equal((await f.task('install')).state, 'succeeded');

@@ -240,6 +240,52 @@ test('手动、恢复前、导入前和重置前备份独立保留，恢复保�
   assert.equal(runtime.game, null);
 });
 
+test('日志或其他世界中的链接不阻止当前世界备份，世界目录内的链接仍然拒绝', async t => {
+  const { manager, runtime, directory } = await fixture(t);
+  const world = path.join(runtime.saved, 'SaveGames/0/WORLD1');
+  await mkdir(path.join(world, 'Players'), { recursive: true });
+  await writeFile(path.join(world, 'Level.sav'), 'world-data');
+  await manager.ensureConfig();
+  await writeFile(path.join(runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'), 'DedicatedServerName=WORLD1\n');
+  const outside = path.join(directory, 'outside.log');
+  await writeFile(outside, 'outside-log');
+  await mkdir(path.join(runtime.saved, 'Logs'), { recursive: true });
+  await symlink(outside, path.join(runtime.saved, 'Logs/game.log'));
+  await mkdir(path.join(runtime.saved, 'SaveGames/0/OTHER'), { recursive: true });
+  await symlink(outside, path.join(runtime.saved, 'SaveGames/0/OTHER/Level.sav'));
+  const id = await manager.backup('manual');
+  const list = await runtime.run('tar', ['-tzf', manager.backupFile(id)]);
+  assert.match(list, /^WORLD1\/Level\.sav$/m);
+  assert.doesNotMatch(list, /Logs|OTHER|outside/);
+  assert.equal(await readFile(outside, 'utf8'), 'outside-log');
+  await symlink(outside, path.join(world, 'linked.sav'));
+  await assert.rejects(manager.backup('manual'), /链接或特殊文件/);
+  assert.equal(await readFile(path.join(world, 'Level.sav'), 'utf8'), 'world-data');
+  assert.equal(await readFile(outside, 'utf8'), 'outside-log');
+});
+
+test('当前世界没有有效存档时不改备份其他世界，恢复也不会替换该世界', async t => {
+  const { manager, runtime } = await fixture(t);
+  const current = path.join(runtime.saved, 'SaveGames/0/CURRENT');
+  const other = path.join(runtime.saved, 'SaveGames/0/OTHER');
+  await mkdir(path.join(current, 'Players'), { recursive: true });
+  await mkdir(other, { recursive: true });
+  await writeFile(path.join(other, 'Level.sav'), 'other-world');
+  await writeFile(path.join(current, 'Level.sav'), 'current-world');
+  await manager.ensureConfig();
+  await writeFile(path.join(runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'), 'DedicatedServerName=CURRENT\n');
+  const id = await manager.backup('manual');
+  await writeFile(path.join(current, 'Level.sav'), '');
+  await writeFile(path.join(current, 'Players/player.sav'), 'keep-player');
+  await assert.rejects(manager.backup('manual'), /缺少有效的 Level\.sav/);
+  await assert.rejects(manager.backup('before-restore'), /缺少有效的 Level\.sav/);
+  await assert.rejects(manager.restore(id), /缺少有效的 Level\.sav/);
+  assert.equal(await readFile(path.join(current, 'Players/player.sav'), 'utf8'), 'keep-player');
+  assert.equal(await readFile(path.join(current, 'Level.sav'), 'utf8'), '');
+  assert.equal(await readFile(path.join(other, 'Level.sav'), 'utf8'), 'other-world');
+  assert.equal((await manager.backups()).filter(entry => entry.category === 'before-restore').length, 0);
+});
+
 test('自动保护备份跳过空目录，有配置时保留配置备份，手动备份仍要求世界存档', async t => {
   const { manager, runtime } = await fixture(t);
   await mkdir(path.join(runtime.saved, 'SaveGames/0/EMPTY'), { recursive: true });

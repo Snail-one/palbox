@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import { BACKUP_CATEGORIES } from '../../backend/management/backup-paths.js';
 import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdir, rm, readdir, symlink, copyFile } from 'node:fs/promises';
+import fs from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import path from 'node:path';
 import { managementFixture } from '../helpers/management-fixture.js';
 import { nativeBackupFixture } from '../helpers/native-backup-fixture.js';
@@ -106,6 +108,96 @@ test('官方备份恢复先备份停服，替换世界与玩家，保留配置�
   await f.task('stop');
   assert.equal((await f.task('restore-native', { id: backup.id })).state, 'succeeded');
   assert.equal(f.runtime.game, null);
+});
+
+test('官方备份恢复在保护备份失败后重新启动游戏，世界保持原样', async t => {
+  const f = await managementFixture(); t.after(() => f.close()); await f.login();
+  await f.task('install');
+  const backup = await nativeBackupFixture(f.runtime.saved);
+  await f.task('start');
+  const pid = f.runtime.game.pid;
+  f.manager.backup = async () => { throw new Error('模拟保护备份失败'); };
+  const task = await f.task('restore-native', { id: backup.id });
+  assert.equal(task.state, 'failed');
+  assert.match(task.message, /保护备份失败/);
+  assert.ok(f.runtime.game);
+  assert.notEqual(f.runtime.game.pid, pid);
+  assert.equal(f.runtime.ready, true);
+  assert.equal(await readFile(path.join(backup.world, 'Level.sav'), 'utf8'), 'current-world');
+  assert.equal(await readFile(path.join(backup.world, 'Players/current.sav'), 'utf8'), 'current-player');
+});
+
+test('官方恢复成功后两层临时目录清理失败只记录日志，不误报任务失败', async t => {
+  for (const running of [false, true]) await t.test(running ? '恢复运行中的游戏' : '恢复后保持停止', async t => {
+    const f = await managementFixture(); t.after(() => f.close()); await f.login();
+    assert.equal((await f.task('install')).state, 'succeeded');
+    const backup = await nativeBackupFixture(f.runtime.saved);
+    if (running) assert.equal((await f.task('start')).state, 'succeeded');
+    const config = await readFile(f.runtime.config);
+    const remove = fs.rm;
+    let cleanupFailures = 0;
+    t.mock.method(fs, 'rm', async (file, ...options) => {
+      if (path.basename(String(file)).startsWith('.official-restore-')) {
+        cleanupFailures++;
+        throw new Error('模拟官方恢复清理失败');
+      }
+      return remove(file, ...options);
+    });
+    syncBuiltinESMExports();
+    t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+    const task = await f.task('restore-native', { id: backup.id });
+    assert.equal(task.state, 'succeeded', task.message);
+    assert.equal(cleanupFailures, 2);
+    assert.equal(await readFile(path.join(backup.world, 'Level.sav'), 'utf8'), 'official-world');
+    assert.equal(await readFile(path.join(backup.world, 'Players/original.sav'), 'utf8'), 'official-player');
+    assert.deepEqual(await readFile(f.runtime.config), config);
+    assert.equal(Boolean(f.runtime.game), running);
+    assert.match(await f.runtime.logs('palbox'), /官方恢复临时文件清理失败：模拟官方恢复清理失败/);
+  });
+});
+
+test('官方恢复失败后的清理错误不能覆盖原错误或回滚失败标记', async t => {
+  for (const rollbackFails of [false, true]) await t.test(rollbackFails ? '回滚失败保持停服' : '回滚成功恢复原游戏', async t => {
+    const f = await managementFixture(); t.after(() => f.close()); await f.login();
+    assert.equal((await f.task('install')).state, 'succeeded');
+    const backup = await nativeBackupFixture(f.runtime.saved);
+    assert.equal((await f.task('start')).state, 'succeeded');
+    const rename = fs.rename, remove = fs.rm;
+    t.mock.method(fs, 'rename', async (source, target) => {
+      if (target === path.join(backup.world, 'Level.sav')) {
+        if (path.basename(path.dirname(source)) === 'save') throw new Error('模拟官方存档写入失败');
+        if (rollbackFails && path.basename(path.dirname(source)) === 'previous') throw new Error('模拟官方存档回滚失败');
+      }
+      return rename(source, target);
+    });
+    let cleanupFailures = 0;
+    t.mock.method(fs, 'rm', async (file, ...options) => {
+      if (path.basename(String(file)).startsWith('.official-restore-')) {
+        cleanupFailures++;
+        throw new Error('模拟失败后的清理错误');
+      }
+      return remove(file, ...options);
+    });
+    syncBuiltinESMExports();
+    t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+    const task = await f.task('restore-native', { id: backup.id });
+    assert.equal(task.state, 'failed');
+    assert.doesNotMatch(task.message, /清理错误/);
+    assert.equal(cleanupFailures, rollbackFails ? 1 : 2);
+    if (rollbackFails) {
+      assert.match(task.message, /恢复回滚失败，原文件已保留在/);
+      assert.equal(f.runtime.game, null);
+      const stages = (await readdir(path.join(f.directory, 'backups'))).filter(name => name.startsWith('.official-restore-'));
+      const originals = await Promise.all(stages.map(name => readFile(path.join(f.directory, 'backups', name, 'previous/Level.sav'), 'utf8').catch(() => null)));
+      assert.ok(originals.includes('current-world'));
+    } else {
+      assert.match(task.message, /模拟官方存档写入失败/);
+      assert.equal(await readFile(path.join(backup.world, 'Level.sav'), 'utf8'), 'current-world');
+      assert.equal(await readFile(path.join(backup.world, 'Players/current.sav'), 'utf8'), 'current-player');
+      assert.ok(f.runtime.game);
+    }
+    assert.match(await f.runtime.logs('palbox'), /官方恢复临时文件清理失败：模拟失败后的清理错误/);
+  });
 });
 
 test('不完整、链接、越界和其他世界的官方备份不能恢复，写入中的备份不能导出', async t => {
