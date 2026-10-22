@@ -61,9 +61,13 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
   }
   async function selectProfile(name) {
     await configurationPage(page, 'profiles');
-    await page.getByRole('group', { name }).getByRole('button', { name: '选择', exact: true }).click();
-    await page.waitForFunction(() => document.getElementById('action-dialog').open || !document.getElementById('view-form').hidden || !document.getElementById('view-advanced').hidden);
+    const row = page.getByRole('group', { name });
+    const targetId = await row.getAttribute('data-profile-id');
+    await row.getByRole('button', { name: '选择', exact: true }).click();
+    await page.waitForFunction(id => document.getElementById('action-dialog').open || document.querySelector(`[data-profile-id="${id}"]`)?.classList.contains('selected'), targetId);
     if (await page.locator('#action-dialog').isVisible()) return;
+    assert.equal(new URL(page.url()).hash, '#configuration/profiles');
+    await configurationPage(page, 'form');
     if (await page.locator('#view-form').isHidden()) await page.locator('#editor-mode-form').click();
     await page.locator('#view-form').waitFor();
   }
@@ -401,6 +405,9 @@ const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
     assert.equal(await lockedRow.locator('[data-profile-action="delete"]').count(), 0);
     await page.locator('#source-view-ok').click();
     await lockedRow.getByRole('button', { name: '选择', exact: true }).click();
+    await page.waitForFunction(() => document.getElementById('profile-title').textContent === '游戏默认配置');
+    assert.equal(new URL(page.url()).hash, '#configuration/profiles');
+    await configurationPage(page, 'form');
     await page.locator('#view-form').waitFor();
     assert.equal(await text('#profile-title'), '游戏默认配置');
     assert.equal(await page.locator('#field-ServerName').isEditable(), true);

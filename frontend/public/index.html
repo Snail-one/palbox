@@ -110,6 +110,7 @@
           <div class="profile-info">
             <div class="profile-title-row"><h2 id="profile-title"></h2><span class="tag">INI 配置</span></div>
             <div class="profile-details"><span id="profile-server"></span><span class="detail-separator" aria-hidden="true">·</span><span id="profile-origin">来源：—</span><span class="detail-separator" aria-hidden="true">·</span><span id="profile-updated"></span></div>
+            <span id="profile-default-status" class="profile-default-status" hidden></span>
           </div>
           <div class="profile-tools" role="group" aria-label="当前配置操作">
             <button id="view-profile-source" class="button secondary" aria-label="查看配置源码" title="查看当前配置的输入源码"><svg class="icon" aria-hidden="true"><use href="#i-code"/></svg>查看</button>
@@ -120,7 +121,7 @@
         </section>
         <div class="summary-card"><div><span class="summary-label">已修改参数</span><div><strong id="change-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption"><span class="save-status" id="change-caption" role="status" data-state="saved" title="所有有效修改已自动保存到服务器。" aria-label="所有有效修改已自动保存到服务器。">已保存</span></span></div><button type="button" class="summary-card summary-link" id="unknown-summary" aria-label="查看和编辑未识别参数"><div><span class="summary-label">未识别参数</span><div><strong id="unknown-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption">点击集中查看和编辑 →</span></button></div>
         <section id="configuration-profiles" class="configuration-library" aria-labelledby="configuration-library-title" hidden>
-          <div class="configuration-library-heading"><div><h2 id="configuration-library-title">我的配置 <span id="profile-count" class="subtle-tag">0</span></h2><p>选择一套配置开始编辑，最多保留 10 套配置（含游戏默认配置）。</p></div><button class="button primary" id="new-profile"><svg class="icon"><use href="#i-plus"/></svg>新建配置</button></div>
+          <div class="configuration-library-heading"><div><h2 id="configuration-library-title">我的配置 <span id="profile-count" class="subtle-tag">0</span></h2><p>选择当前配置，点击名称可查看或导入。最多保留 10 套配置（含游戏默认配置）。</p></div><button class="button primary" id="new-profile"><svg class="icon"><use href="#i-plus"/></svg>新建配置</button></div>
           <div id="profile-list" class="profile-list"></div>
         </section>
         <div id="configuration-editor">

@@ -1,6 +1,7 @@
 import { MAX_PROFILES, GAME_DEFAULT_PROFILE_NAME } from '../../../shared/domain/workspace.js';
+import { parse } from '../../../shared/domain/config.js';
 
-export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, isDirty, clipboard, notify, onSaveSource, onImportSource, readFile, validate, actions }) {
+export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, isDirty, clipboard, notify, onSaveSource, onImportSource, readFile, validate, getDefaultConfiguration = () => ({ state: 'unknown' }), actions }) {
   const { $, el, icon, empty } = dom;
   const sourceDialog = $('source-view-dialog');
   const sourceText = $('source-view-text');
@@ -170,6 +171,32 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
   return {
     render() {
       empty($('profile-list'));
+      const defaults = getDefaultConfiguration();
+      const baseline = workspace.profiles.find(profile => profile.locked)?.initialSource;
+      let requiredKeys = [];
+      try { if (baseline) requiredKeys = parse(baseline).entries.map(entry => entry.key); } catch { /* No valid baseline to compare. */ }
+      function defaultStatus(profile) {
+        if (defaults.state !== 'ready' || !requiredKeys.length) {
+          return { state: 'unknown', label: defaults.state === 'missing' ? '默认文件缺失，无法确认' : defaults.state === 'unavailable' ? '默认文件无法读取' : '尚未检测到官方默认文件', description: '无法读取当前官方默认配置，不能确认是否已同步最新参数。' };
+        }
+        let complete = false;
+        try { const keys = new Set(parse(profile.source).entries.map(entry => entry.key)); complete = requiredKeys.every(key => keys.has(key)); } catch { /* Invalid content is never marked current. */ }
+        const current = defaults.baselineCurrent && profile.initialSource === baseline && complete;
+        return current
+          ? { state: 'current', label: '已同步最新默认配置', description: '已基于当前官方默认文件补齐参数；自定义修改会保留。是否应用到游戏请查看配置应用状态。' }
+          : { state: 'pending', label: '待同步最新默认配置', description: '官方默认基准已更新，或配置尚未包含全部默认参数。请先保存有效修改，再刷新同步。' };
+      }
+      function setDefaultStatus(node, profile) {
+        const status = defaultStatus(profile);
+        node.textContent = status.label;
+        node.dataset.state = status.state;
+        node.title = status.description;
+      }
+      const activeStatus = $('profile-default-status');
+      if (activeStatus) {
+        activeStatus.hidden = !workspace.active;
+        if (workspace.active) setDefaultStatus(activeStatus, workspace.active);
+      }
       $('profile-count').textContent = workspace.profiles.length;
       const full = workspace.profiles.length >= MAX_PROFILES;
       $('profile-count').title = `${workspace.profiles.length} / ${MAX_PROFILES} 套配置（含游戏默认配置）`;
@@ -217,6 +244,9 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
         originText.title = origin;
         const baseLabel = workspace.profiles.some(entry => entry.locked) ? '官方默认 · 源码只读' : '源码只读';
         text.append(el('strong', '', profile.name), el('small', '', `${selected ? '当前配置 · ' : ''}${profile.locked ? '游戏默认来源 · 可导入修改' : baseLabel}`), originText);
+        const sync = el('span', 'profile-default-status');
+        setDefaultStatus(sync, profile);
+        text.append(sync);
         button.append(icon('file'), text);
         if (selected) button.append(icon('arrow'));
         button.addEventListener('click', () => openSourceDialog(profile));

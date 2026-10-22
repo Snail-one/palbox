@@ -105,7 +105,7 @@ export function createManagementClient({ fetch, csrf = '' }) {
 }
 
 // Keep editing synchronous while serializing server writes and tracking acknowledgement.
-export function createRemoteRepository({ api, workspace, revision }) {
+export function createRemoteRepository({ api, workspace, revision, defaultConfiguration }) {
   let snapshot = workspace;
   let queued = null;
   let working = null;
@@ -136,6 +136,7 @@ export function createRemoteRepository({ api, workspace, revision }) {
     return working;
   }
   return {
+    get defaultConfiguration() { return defaultConfiguration; },
     get revision() { return revision; },
     get pending() { return Boolean(working || queued) && !error; },
     get error() { return error; },

@@ -16,6 +16,7 @@ import { createAccountSecurity } from './ui/account-security.js';
 export function createApp({ document, window, catalog, repository, clipboard, files, management }) {
   const dom = createDom(document);
   const workspace = new WorkspaceService({ repository, template: catalog.template });
+  let defaultConfiguration = repository.defaultConfiguration;
   const emptySource = '[/Script/Pal.PalGameWorldSettings]\nOptionSettings=()\n';
   const editor = new EditorSession(workspace.active?.source ?? emptySource, { validate: catalog.validate, formatOutput: catalog.formatOutput, baselineSource: workspace.initialSource });
   function resetEditor() { editor.reset(workspace.active?.source ?? emptySource, { baselineSource: workspace.initialSource }); }
@@ -95,20 +96,23 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
     if (source) panel?.showSource();
     if (success && successMessage) notifications.toast(successMessage);
   }
-  const profiles = createProfilePanel({ dom, workspace, ask, beforeLeave, ready, isDirty, clipboard, notify: notifications.toast, onSaveSource: saveProfileSource, readFile: files.read, validate: files.validate, onImportSource: async (id, source) => {
+  const profiles = createProfilePanel({ dom, workspace, ask, beforeLeave, ready, isDirty, clipboard, notify: notifications.toast,
+    getDefaultConfiguration: () => ({ ...defaultConfiguration, baselineCurrent: Boolean(defaultConfiguration?.version) && defaultConfiguration.version === repository.defaultConfiguration?.version }),
+    onSaveSource: saveProfileSource, readFile: files.read, validate: files.validate, onImportSource: async (id, source) => {
     const merged = workspace.mergeImportedChanges(id, source);
     await saveProfileSource(id, merged, '已按导入内容修改这套配置');
   }, actions: {
     async select(id) {
       if (id === workspace.active?.id) {
         navigation.closeSidebar();
-        navigation.openEditor('form');
         return;
       }
-      if (!(await beforeLeave())) { navigation.openEditor(); return; }
+      if (!(await beforeLeave())) return;
       workspace.select(id);
-      // Source is read-only for every profile; parameter edits stay in the form.
-      changedProfile();
+      resetEditor();
+      persist();
+      render();
+      navigation.closeSidebar();
     },
     async create(name) {
       try {
@@ -181,7 +185,11 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
   function render() { profiles.render(); panel.render(); summary.render(); }
   render();
   notifications.storage(workspace.message);
-  const managementPanel = createManagementPanel({ dom, api: management, ask, notify: notifications.toast, onWorkspaceChanged(revision) {
+  const managementPanel = createManagementPanel({ dom, api: management, ask, notify: notifications.toast, onWorkspaceChanged(revision, defaults) {
+    if (defaults && (defaults.state !== defaultConfiguration?.state || defaults.version !== defaultConfiguration?.version)) {
+      defaultConfiguration = defaults;
+      profiles.render();
+    }
     if (revision > repository.revision && !isDirty() && !document.querySelector('dialog[open]')) window.location.reload();
   }, onDefaultsImported() {
     if (!isDirty() && !document.querySelector('dialog[open]')) window.location.reload();

@@ -126,7 +126,7 @@ export function createManagementApi(manager, options = {}) {
       }
       if (pathname === '/api/logout' && request.method === 'POST') { auth.logout(request, response); json(200, { ok: true }); return; }
       if (pathname === '/api/workspace') {
-        if (request.method === 'GET') { await manager.store.syncDefaultProfile(); json(200, manager.store.snapshot()); return; }
+        if (request.method === 'GET') { await manager.store.syncDefaultProfile(); json(200, { ...manager.store.snapshot(), defaultConfiguration: manager.store.defaultConfiguration }); return; }
         if (request.method === 'PUT') { const input = await body(request); json(200, await manager.store.update(input.workspace, input.revision, checks)); return; }
       }
       if (pathname === '/api/status/stream' && request.method === 'GET') {

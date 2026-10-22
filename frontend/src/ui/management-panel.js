@@ -839,7 +839,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     if (!sameInstance && lastStatus) retiredStatusInstances.add(lastStatus.stateInstance);
     const sameGame = sameInstance && snapshot.running && lastStatus?.running && snapshot.startedAt === lastStatus.startedAt;
     const value = { info: null, metrics: null, players: [], ...(sameGame ? lastStatus : {}), ...snapshot };
-    onWorkspaceChanged?.(value.revision); lastStatus = value; lastErrorMessage = '';
+    onWorkspaceChanged?.(value.revision, value.defaultConfiguration); lastStatus = value; lastErrorMessage = '';
     const game = $('game-state');
     const serviceState = gameServiceState(value);
     game.textContent = serviceState.label;

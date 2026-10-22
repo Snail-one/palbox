@@ -26,6 +26,11 @@
 .profile-item-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
 .profile-item-actions .button { padding: 6px 8px; gap: 5px; font-size: 10px; }
 .profile-item-actions .icon { width: 14px; height: 14px; }
+.profile-default-status { display: inline-flex; align-items: center; gap: 5px; margin-top: 7px; padding: 3px 7px; border-radius: 5px; font-size: 10px; line-height: 1.5; color: var(--muted); background: #f3f4f4; max-width: 100%; overflow-wrap: anywhere; }
+.profile-default-status::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.profile-default-status[data-state="current"] { color: #287149; background: #edf7f0; }
+.profile-default-status[data-state="pending"] { color: #916212; background: #fff7e5; }
+.profile-default-status[hidden] { display: none; }
 @media (max-width: 760px) {
   .configuration-library { padding: 16px; }
   .configuration-library-heading { align-items: start; flex-wrap: wrap; }

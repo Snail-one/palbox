@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { parse, encodeString, decodeString, mergeConfiguration, applyManagedAccess, applyManagedChanges, MAX_CONFIGURATION_SOURCE_LENGTH } from '../../shared/domain/config.js';
 import {
   createProfile, createWorkspace, validateWorkspace, MAX_PROFILES,
@@ -80,6 +80,7 @@ export class ManagementStore {
     this.revision = 0;
     this.gamePort = gamePort;
     this.workspace = null;
+    this.defaultConfiguration = { state: 'unknown', version: null };
     this.writes = Promise.resolve();
   }
   async initialize() {
@@ -160,15 +161,16 @@ export class ManagementStore {
         workspace.activeId ??= locked.id;
         changed = true;
       } else {
-        // Keep the generated admin password stable, enable REST management, and
-        // follow the file only while the user has not edited the working source.
+        // Rebase the default entry too: new and unchanged parameters follow the
+        // official file while user overrides and managed credentials survive.
         const password = sourcePassword(locked.initialSource) || sourcePassword(locked.source);
         const managed = managedTemplate(this.gamePort, source, { password });
-        const unedited = locked.source === locked.initialSource;
-        let nextSource = unedited || !locked.source ? managed : locked.source;
+        const rebased = { ...locked };
+        rebaseProfile(rebased, managed, previousManaged);
+        let nextSource = rebased.source;
         // An edited default may predate password generation (or have it cleared).
         // Keep its parameters but restore the managed credentials.
-        if (!unedited && nextSource && !sourcePassword(nextSource)) nextSource = managedTemplate(this.gamePort, nextSource, { password });
+        if (locked.source && !sourcePassword(locked.source)) nextSource = managedTemplate(this.gamePort, nextSource, { password });
         if (locked.name !== GAME_DEFAULT_PROFILE_NAME || locked.origin !== OFFICIAL_DEFAULT_ORIGIN || locked.locked !== true || locked.initialSource !== managed || locked.source !== nextSource) {
           Object.assign(locked, {
             name: GAME_DEFAULT_PROFILE_NAME, origin: OFFICIAL_DEFAULT_ORIGIN, locked: true,
@@ -193,9 +195,13 @@ export class ManagementStore {
   syncDefaultProfile() {
     const operation = this.writes.then(async () => {
       let source = null;
-      try { source = await this.readDefaultFile({ optional: true }); }
-      catch { source = null; }
-      if (!this.applyDefaultProfile(this.workspace, source)) return false;
+      let state;
+      try { source = await this.readDefaultFile({ optional: true }); state = source === null ? 'missing' : 'ready'; }
+      catch { state = 'unavailable'; }
+      const changed = this.applyDefaultProfile(this.workspace, source);
+      const baseline = this.workspace.profiles.find(profile => profile.locked)?.initialSource;
+      this.defaultConfiguration = { state, version: state === 'ready' && baseline ? createHash('sha256').update(baseline).digest('hex') : null };
+      if (!changed) return false;
       this.revision += 1;
       await this.persist();
       return true;

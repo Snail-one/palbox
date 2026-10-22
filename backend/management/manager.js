@@ -816,6 +816,7 @@ export class Manager extends EventEmitter {
     const game = this.runtime.game;
     const status = { stateInstance: this.stateInstance, stateRevision, installed, steamcmd, installedBuild, version: this.versionCache?.version || null, hasWorldSave: await this.hasWorldSave(), running: Boolean(game), ready: this.runtime.ready, configuration, hasConfiguration: Boolean(active), startedAt: this.runtime.startedAt, lastExit: this.runtime.lastExit, task: this.busy, tasks: this.tasks, revision: this.store.revision, port: this.runtime.port };
     status.playerHistoryRevision = this.playerHistoryRecorder.revision;
+    status.defaultConfiguration = this.store.defaultConfiguration;
     const endpoints = scope === 'overview' ? ['info', 'metrics', 'players'] : scope === 'players' ? ['players'] : [];
     for (const endpoint of endpoints) status[endpoint] = endpoint === 'players' ? [] : null;
     if (game && endpoints.length) {

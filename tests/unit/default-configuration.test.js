@@ -159,6 +159,54 @@ test('其他配置以官方默认为底，未修改的跟随文件，已修改�
   assert.equal(await store.syncDefaultProfile(), false);
 });
 
+test('导入后的游戏默认配置随官方更新补入新增参数，保留修改且不直接改写游戏文件', async t => {
+  const { directory, file } = await fixture(t);
+  await writeFile(file, official);
+  const store = new ManagementStore(directory, 9000);
+  await store.initialize();
+  await store.applyImportedConfig('OptionSettings=(ExpRate=4.000000,ExtraRate=3)');
+  const activeId = store.active().id;
+  const password = values(store.active().source).get('AdminPassword');
+  const gameConfig = path.join(directory, 'server/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini');
+  await mkdir(path.dirname(gameConfig), { recursive: true });
+  const applied = store.active().source;
+  await writeFile(gameConfig, applied);
+  const ordinary = createProfile('自定义配置', applied, { origin: DERIVED_DEFAULT_ORIGIN });
+  const snapshot = store.snapshot();
+  snapshot.workspace.profiles.push(ordinary);
+  await store.update(snapshot.workspace, snapshot.revision);
+
+  const changed = official.replace('ExpRate=2.500000', 'ExpRate=7.000000')
+    .replace('ServerName="Official World"', 'ServerName="Next World",NewGameSetting=10');
+  await writeFile(file, changed);
+  assert.equal(await store.syncDefaultProfile(), true);
+  for (const profile of store.workspace.profiles) {
+    const settings = values(profile.source);
+    assert.equal(settings.get('NewGameSetting'), '10');
+    assert.equal(settings.get('ServerName'), '"Next World"');
+    assert.equal(settings.get('ExpRate'), '4.000000');
+    assert.equal(settings.get('ExtraRate'), '3');
+    assert.equal(settings.get('AdminPassword'), password);
+    assert.equal(settings.get('RESTAPIEnabled'), 'True');
+    assert.equal(values(profile.initialSource).get('ExpRate'), '7.000000');
+  }
+  assert.equal(store.active().id, activeId);
+  assert.equal(await readFile(gameConfig, 'utf8'), applied);
+  assert.equal(await store.syncDefaultProfile(), false);
+
+  const restarted = new ManagementStore(directory, 9000);
+  await restarted.initialize();
+  assert.deepEqual(restarted.workspace, store.workspace);
+  await writeFile(file, changed.replace('NewGameSetting=10', 'NewGameSetting=20'));
+  assert.equal(await restarted.syncDefaultProfile(), true);
+  for (const profile of restarted.workspace.profiles) {
+    assert.equal(values(profile.source).get('NewGameSetting'), '20');
+    assert.equal(values(profile.source).get('ExpRate'), '4.000000');
+    assert.equal(values(profile.source).get('ExtraRate'), '3');
+  }
+  assert.equal(await restarted.syncDefaultProfile(), false);
+});
+
 test('已有游戏配置仍被保留，不被官方配置覆盖', async t => {
   const { directory, file } = await fixture(t);
   const config = path.join(directory, 'server/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini');
@@ -254,6 +302,10 @@ test('默认配置接口要求登录，文件缺失时返回明确错误且现�
   assert.equal(values(defaults.body.source).get('ServerName'), '"Official World"');
   const bootstrap = await request('/api/bootstrap', { cookie });
   assert.equal(values(bootstrap.body.template).get('FutureFlag'), '(Enabled=True)');
+  const latest = (await request('/api/workspace', { cookie })).body.defaultConfiguration;
+  assert.equal(latest.state, 'ready');
+  assert.match(latest.version, /^[a-f0-9]{64}$/);
+  assert.deepEqual((await manager.status()).defaultConfiguration, latest);
   await rm(file);
   const missing = await request('/api/default-configuration', { cookie });
   assert.equal(missing.status, 409);
@@ -264,7 +316,15 @@ test('默认配置接口要求登录，文件缺失时返回明确错误且现�
   const manualTemplate = await request('/api/configuration-template', { cookie });
   assert.equal(manualTemplate.status, 200);
   assert.equal(manualTemplate.body.origin, '手动创建的配置');
-  assert.equal((await request('/api/workspace', { cookie })).body.workspace.activeId, manager.store.active().id);
+  const workspace = (await request('/api/workspace', { cookie })).body;
+  assert.equal(workspace.workspace.activeId, manager.store.active().id);
+  assert.deepEqual(workspace.defaultConfiguration, { state: 'missing', version: null });
+  await writeFile(file, 'invalid default file');
+  assert.deepEqual((await request('/api/workspace', { cookie })).body.defaultConfiguration, { state: 'unavailable', version: null });
+  await writeFile(file, official.replace('ExpRate=2.500000', 'ExpRate=3.000000'));
+  const updated = (await request('/api/workspace', { cookie })).body.defaultConfiguration;
+  assert.equal(updated.state, 'ready');
+  assert.notEqual(updated.version, latest.version);
 });
 
 test('游戏默认配置可修改参数并应用，但名称和来源由服务端维护', async t => {

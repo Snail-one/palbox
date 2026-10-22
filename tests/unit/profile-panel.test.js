@@ -38,10 +38,10 @@ const IDS = [
   'source-view-error', 'source-view-switch', 'source-view-tab-import', 'source-view-tab-source', 'source-view-import',
   'source-view-panel', 'source-view-import-description', 'profile-import-drop', 'profile-import-file', 'profile-import-text',
   'profile-import-error', 'profile-import-confirm', 'new-profile', 'rename-profile', 'copy-profile', 'delete-profile',
-  'profile-list', 'profile-count', 'profile-origin', 'import-button'
+  'profile-list', 'profile-count', 'profile-origin', 'profile-default-status', 'import-button'
 ];
 
-function setup({ failSave = false } = {}) {
+function setup({ failSave = false, defaults = { state: 'ready', baselineCurrent: true } } = {}) {
   const imports = [];
   const elements = new Map(IDS.map(id => [id, new FakeElement()]));
   const document = {
@@ -63,11 +63,14 @@ function setup({ failSave = false } = {}) {
   };
   const imported = { id: 'imported', name: '二号世界', source: 'OptionSettings=(ExpRate=2)', origin: '导入文件：world.ini' };
   const official = { id: 'official', name: '游戏默认配置', source: 'OptionSettings=(ExpRate=1)', origin: '官方默认配置（DefaultPalWorldSettings.ini）', locked: true };
+  official.initialSource = official.source;
+  imported.initialSource = official.source;
   const workspace = { active: imported, profiles: [imported, official] };
   const saves = [];
   const panel = createProfilePanel({
     dom,
     workspace,
+    getDefaultConfiguration: () => defaults,
     ask: async () => null,
     beforeLeave: async () => true,
     ready: () => true,
@@ -89,8 +92,38 @@ function setup({ failSave = false } = {}) {
     actions: {}
   });
   panel.render();
-  return { elements, rows: elements.get('profile-list').children, saves, imports, workspace, panel };
+  return { elements, rows: elements.get('profile-list').children, saves, imports, workspace, panel, defaults };
 }
+
+test('每套配置显示官方默认同步状态，自定义修改仍为最新，缺项或旧基准显示待同步', () => {
+  const { elements, rows, workspace, panel, defaults } = setup();
+  const badge = row => row.children[0].children[1].children.find(child => child.className === 'profile-default-status');
+  assert.deepEqual(rows.map(row => badge(row).textContent), ['已同步最新默认配置', '已同步最新默认配置']);
+  assert.equal(elements.get('profile-default-status').dataset.state, 'current');
+  workspace.profiles[0].initialSource = 'OptionSettings=(ExpRate=0.5)';
+  panel.render();
+  assert.equal(badge(rows[0]).dataset.state, 'pending');
+  assert.equal(badge(rows[1]).dataset.state, 'current');
+  workspace.profiles[0].initialSource = workspace.profiles[1].initialSource;
+  workspace.profiles[0].source = 'OptionSettings=(Extra=1)';
+  panel.render();
+  assert.equal(badge(rows[0]).dataset.state, 'pending');
+  defaults.baselineCurrent = false;
+  panel.render();
+  assert.deepEqual(rows.map(row => badge(row).dataset.state), ['pending', 'pending']);
+});
+
+test('官方文件缺失或不可读时，即使保留了缓存配置也不能标记为最新', () => {
+  for (const state of ['missing', 'unavailable', 'unknown']) {
+    const { rows, elements } = setup({ defaults: { state, baselineCurrent: true } });
+    for (const row of rows) {
+      const badge = row.children[0].children[1].children.find(child => child.className === 'profile-default-status');
+      assert.equal(badge.dataset.state, 'unknown');
+      assert.doesNotMatch(badge.textContent, /已同步/);
+    }
+    assert.equal(elements.get('profile-default-status').dataset.state, 'unknown');
+  }
+});
 
 test('达到 10 套配置后禁用新建、导入和副本，删除后恢复', () => {
   const { elements, workspace, panel } = setup();
