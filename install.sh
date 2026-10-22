@@ -126,7 +126,7 @@ trap cleanup EXIT
 
 step '安装系统依赖。'
 apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends lib32gcc-s1
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl lib32gcc-s1
 
 temporary="$(mktemp -d /tmp/palbox-install.XXXXXX)"
 install -d -m 0755 "$systemd_dir"
