@@ -173,15 +173,49 @@ export class NativeBackups {
     return before;
   }
 
+  async copyLiveConfig(destination) {
+    const sourcePath = path.join(this.saved, 'Config/LinuxServer/PalWorldSettings.ini');
+    let source;
+    try { source = await open(sourcePath, constants.O_RDONLY | constants.O_NOFOLLOW); }
+    catch (error) {
+      if (error.code === 'ENOENT') throw failure('当前游戏配置缺少 PalWorldSettings.ini。', 409);
+      if (error.code === 'ELOOP') throw failure('当前游戏配置包含链接，拒绝下载。', 409);
+      throw error;
+    }
+    try {
+      const before = await source.stat();
+      if (!before.isFile() || !before.size) throw failure('当前游戏配置 PalWorldSettings.ini 无效。', 409);
+      await mkdir(destination, { recursive: true, mode: 0o700 });
+      const target = await open(path.join(destination, 'PalWorldSettings.ini'), 'wx', 0o600);
+      try {
+        const buffer = Buffer.alloc(1024 * 1024);
+        let position = 0;
+        while (position < before.size) {
+          const { bytesRead } = await source.read(buffer, 0, Math.min(buffer.length, before.size - position), position);
+          if (!bytesRead) throw failure('当前游戏配置正在变化，请重试。', 409);
+          let written = 0;
+          while (written < bytesRead) written += (await target.write(buffer, written, bytesRead - written)).bytesWritten;
+          position += bytesRead;
+        }
+        await target.sync();
+        if (signature(await source.stat()) !== signature(before)) throw failure('当前游戏配置正在变化，请重试。', 409);
+      } finally { await target.close(); }
+    } finally { await source.close(); }
+  }
+
   async export(id, { timeZone = 'UTC' } = {}) {
     const downloadFilename = createBackupDownloadFilename(timeZone);
     const stage = await mkdtemp(path.join(await backupDirectory(this.directory), '.official-export-'));
     const cleanup = () => rm(stage, { recursive: true, force: true });
     try {
-      const source = path.join(stage, 'save');
-      const backup = await this.copy(id, source);
+      const snapshot = path.join(stage, 'snapshot');
+      const backup = await this.copy(id, snapshot);
+      const packed = path.join(stage, 'packed');
+      await mkdir(packed, { mode: 0o700 });
+      await rename(snapshot, path.join(packed, backup.worldId));
+      await this.copyLiveConfig(path.join(packed, 'Config/LinuxServer'));
       const file = path.join(stage, 'backup.tar.gz');
-      await run('tar', ['-czf', file, '-C', source, '--', ...await readdir(source)]);
+      await run('tar', ['-czf', file, '-C', packed, '--', ...await readdir(packed)]);
       return { file, filename: downloadFilename(snapshotDate(backup.timestamp), 'pal', backup.worldId), cleanup };
     } catch (error) { await cleanup(); throw error; }
   }

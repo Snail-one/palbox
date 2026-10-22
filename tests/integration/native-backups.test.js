@@ -28,10 +28,18 @@ test('官方备份在线查看和下载不停止游戏，下载包包含世界�
   const file = path.join(f.directory, 'download.tar.gz');
   await writeFile(file, Buffer.from(await download.arrayBuffer()));
   const listing = await f.runtime.run('tar', ['-tzf', file]);
-  assert.match(listing, /^Level.sav$/m);
-  assert.match(listing, /^LevelMeta.sav$/m);
-  assert.match(listing, /^Players\/original.sav$/m);
-  assert.doesNotMatch(listing, /Config|current.sav|backup\/world/);
+  const world = backup.worldId;
+  assert.match(listing, new RegExp(`^${world}/Level.sav$`, 'm'));
+  assert.match(listing, new RegExp(`^${world}/LevelMeta.sav$`, 'm'));
+  assert.match(listing, new RegExp(`^${world}/Players/original.sav$`, 'm'));
+  assert.match(listing, /^Config\/LinuxServer\/PalWorldSettings.ini$/m);
+  assert.doesNotMatch(listing, /GameUserSettings|current\.sav|backup\/world/);
+  assert.equal(await f.runtime.run('tar', ['-xOf', file, 'Config/LinuxServer/PalWorldSettings.ini']), await readFile(f.runtime.config, 'utf8'));
+  await rm(f.runtime.config);
+  const missing = await f.request('/api/native-backup?id=' + encodeURIComponent(backup.id));
+  assert.equal(missing.status, 409);
+  assert.match((await missing.json()).error, /PalWorldSettings\.ini/);
+  await writeFile(f.runtime.config, 'OptionSettings=(ExpRate=1)\n');
   assert.equal(f.runtime.game.pid, pid);
   assert.equal(f.manager.tasks.length, tasks);
   await assert.rejects(f.manager.submit('backup', { category: 'scheduled' }), /官方机制/);
@@ -53,6 +61,7 @@ test('官方备份下载文件名使用请求时区，处理跨日、夏令时�
   ];
   for (const [timeZone, timestamp, localTimestamp] of cases) {
     const backup = await nativeBackupFixture(f.runtime.saved, { timestamp });
+    await writeFile(path.join(f.runtime.saved, 'Config/LinuxServer/PalWorldSettings.ini'), 'OptionSettings=(ExpRate=1)\n');
     const query = new URLSearchParams({ id: backup.id, timeZone });
     const response = await f.request('/api/native-backup?' + query);
     assert.equal(response.status, 200);

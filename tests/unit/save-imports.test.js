@@ -63,6 +63,10 @@ test('完整备份按目录内容识别，支持多个世界并保留配置和�
     assert.equal(detectSnapshot([file(`${prefix}Config/LinuxServer/PalWorldSettings.ini`), ...snapshot(`${prefix}SaveGames/0/ONE`)]).kind, 'full');
   }
   assert.equal(detectSnapshot([...snapshot(''), file('Config/extra.txt')]).kind, 'world');
+  const downloaded = detectSnapshot([...snapshot('WORLD3'), file('Config/LinuxServer/PalWorldSettings.ini', 20)]);
+  assert.equal(downloaded.kind, 'world');
+  assert.equal(downloaded.layout, 'world');
+  assert.deepEqual(downloaded.copy, ['Level.sav', 'LevelMeta.sav', 'Players/player.sav']);
 });
 
 test('世界存档拒绝多个世界或缺少元数据，保留 Players 内的全部普通文件', () => {

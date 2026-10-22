@@ -65,15 +65,6 @@ function validateEntries(entries) {
 export function detectSnapshot(entries) {
   const normalized = validateEntries(entries);
   const files = new Map(normalized.filter(entry => entry.type === 'file').map(entry => [entry.name, entry]));
-  // A full Saved archive contains server configuration; world-only wrappers
-  // such as Pal/Saved/SaveGames/0/<ID> still import into the current world.
-  for (const root of ['Pal/Saved', 'Saved', '']) {
-    const prefix = root ? `${root}/` : '';
-    if (files.has(`${prefix}Level.sav`) && files.has(`${prefix}LevelMeta.sav`)) continue;
-    if (!normalized.some(entry => entry.name === `${prefix}Config` || entry.name.startsWith(`${prefix}Config/`))) continue;
-    if (!files.get(`${prefix}Config/LinuxServer/PalWorldSettings.ini`)?.size) throw failure('完整备份缺少有效的 PalWorldSettings.ini。');
-    return { kind: 'full', root, layout: 'full', worldId: null, copy: [...files.keys()].filter(name => name.startsWith(prefix)).map(name => name.slice(prefix.length)) };
-  }
   const candidates = [];
   for (const entry of files.values()) {
     if (entry.name !== 'Level.sav' && !entry.name.endsWith('/Level.sav')) continue;
@@ -86,6 +77,18 @@ export function detectSnapshot(entries) {
     if (!layout) continue;
     const worldId = layout === 'root' ? null : root.split('/').at(-1);
     candidates.push({ root, layout, worldId });
+  }
+  // A full Saved archive contains server configuration. One world directory
+  // placed beside Config/ is an official download and still imports as a world.
+  const besideConfig = candidates.length === 1 && candidates[0].layout === 'world';
+  if (!besideConfig) {
+    for (const root of ['Pal/Saved', 'Saved', '']) {
+      const prefix = root ? `${root}/` : '';
+      if (files.has(`${prefix}Level.sav`) && files.has(`${prefix}LevelMeta.sav`)) continue;
+      if (!normalized.some(entry => entry.name === `${prefix}Config` || entry.name.startsWith(`${prefix}Config/`))) continue;
+      if (!files.get(`${prefix}Config/LinuxServer/PalWorldSettings.ini`)?.size) throw failure('完整备份缺少有效的 PalWorldSettings.ini。');
+      return { kind: 'full', root, layout: 'full', worldId: null, copy: [...files.keys()].filter(name => name.startsWith(prefix)).map(name => name.slice(prefix.length)) };
+    }
   }
   if (!candidates.length) throw failure('压缩包中没有可导入的世界存档（需要 Level.sav 和 LevelMeta.sav）。');
   if (candidates.length > 1) throw failure('压缩包包含多个世界存档，请只保留一个世界后重新压缩。');
