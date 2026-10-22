@@ -73,7 +73,7 @@ flowchart TD
 
 `install.sh` 提供 Ubuntu / Debian 原生就地安装：缺少 `curl` 或 `lib32gcc-s1` 时才安装，已可用则不更新软件源；并准备校验后的 `.runtime/node`，使用项目所属的已有普通用户，新数据统一放在当前项目的 `data/`，不创建系统用户、搬迁程序或建立版本链接。配置保存在项目的 `.palbox.env`；终端与 systemd 均调用 `dev.sh`，由 Node.js `--env-file` 加载同一配置，再由 `scripts/start.js` 协调前后端并检查实际运行用户。新数据目录自动设置用户权限，已有数据无权限时中止提示。systemd 使用 `KillMode=mixed` 先交由面板正常停服，再清理残留进程。安装器检查前后端连通，失败恢复原部署配置；代码与应用写入的数据不回退。安装器不下载 SteamCMD，仍由网页任务安装。系统命令模拟测试覆盖原地安装、用户选择、重复安装、权限检查、下载校验与配置回退，真实终端启动用例验证配置与项目运行时共用。
 
-Linux 原生运行时，SteamCMD 默认位于数据目录的 `steamcmd/`；`steamcmd.js` 负责下载官方安装包、限制下载大小和执行时间、解压、自更新与就绪标记。网页通过已有 `/api/tasks` 提交 `install-steamcmd`，沿用管理员认证、CSRF、任务互斥、状态推送和安装日志。失败时不写入就绪标记，可以重试；关闭面板会中止下载并终止安装进程。自动安装使用数据目录内的 `steam-home/` 作为子进程主目录并准备 SDK 链接，不改变宿主用户的 Steam 配置。显式配置的 `PALBOX_STEAMCMD` 仅检测和使用，不由网页覆盖，Docker 沿用镜像预装路径。
+Linux 原生运行时，SteamCMD 默认位于数据目录的 `steamcmd/`；`steamcmd.js` 负责下载官方安装包、限制下载大小、解压、自更新与就绪标记。安装包下载和 SteamCMD 自更新不设时长上限，面板关闭时才会中止。网页通过已有 `/api/tasks` 提交 `install-steamcmd`，沿用管理员认证、CSRF、任务互斥、状态推送和安装日志。失败时不写入就绪标记，可以重试；关闭面板会中止下载并终止安装进程。自动安装使用数据目录内的 `steam-home/` 作为子进程主目录并准备 SDK 链接，不改变宿主用户的 Steam 配置。显式配置的 `PALBOX_STEAMCMD` 仅检测和使用，不由网页覆盖，Docker 沿用镜像预装路径。
 
 后端使用 `backend/management`。`files.js` 提供写入临时文件、fsync 和原子替换；`store.js` 在服务器保存工作空间并检查版本冲突；`auth.js` 管理管理员用户名与异步 scrypt 密码校验（限制并发哈希）、HttpOnly 会话、CSRF 验证、按客户端地址的失败冷却和登录审计；`api.js` 提供固定的 JSON API 与备份下载，不提供任意命令执行，JSON 请求体带大小上限和绝对读取超时；`save-imports.js` 负责世界存档和完整备份上传的流式落盘、tar 安全校验、类型与布局识别、全部内容校验及临时暂存。全新部署没有 `palbox/settings.json` 时进入首次初始化状态，由 `/api/setup` 创建管理员，仅接受回环或内网来源；旧版缺少用户名的配置会被拒绝启动。
 

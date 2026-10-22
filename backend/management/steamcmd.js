@@ -92,7 +92,7 @@ export async function installSteamcmd(runtime, { onProgress = () => {}, fetch: d
   if (runtime.game) throw failure('请先停止游戏服再安装 SteamCMD。', 409);
   const controller = new AbortController();
   runtime.steamcmdAbort = controller;
-  const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(300000)]);
+  const signal = controller.signal;
   const abortCommand = () => runtime.kill(runtime.command, 'SIGKILL');
   signal.addEventListener('abort', abortCommand, { once: true });
   let temporary;
@@ -148,8 +148,8 @@ export async function installSteamcmd(runtime, { onProgress = () => {}, fetch: d
     phase('steamcmd-initializing', '正在初始化并更新 SteamCMD，首次运行可能需要几分钟。');
     try {
       // Keep bootstrap descendants in the supervised process group so shutdown
-      // and timeouts can terminate the updater as well as its shell launcher.
-      await runtime.run(runtime.steamcmd, ['+quit'], 'steamcmd', { cwd: path.dirname(runtime.steamcmd), timeoutMs: 300000 });
+      // can terminate the updater as well as its shell launcher.
+      await runtime.run(runtime.steamcmd, ['+quit'], 'steamcmd', { cwd: path.dirname(runtime.steamcmd) });
       for (const file of ['linux32/steamcmd', 'linux64/steamclient.so']) await access(path.join(path.dirname(runtime.steamcmd), file), constants.R_OK);
     } catch (error) {
       throw failure(`SteamCMD 初始化失败。Ubuntu / Debian 请先执行 sudo apt-get update && sudo apt-get install -y lib32gcc-s1，再重试；网络错误请查看安装与更新日志。${error.message}`, 500);
@@ -158,7 +158,7 @@ export async function installSteamcmd(runtime, { onProgress = () => {}, fetch: d
     await writeFile(path.join(path.dirname(runtime.steamcmd), READY_FILE), 'ready\n', { mode: 0o600 });
     phase('steamcmd-ready', 'SteamCMD 安装完成，可以安装游戏服务端。');
   } catch (error) {
-    if (signal.aborted) throw failure(controller.signal.aborted ? '面板正在关闭，SteamCMD 安装已中止。' : 'SteamCMD 下载或初始化超时，请查看日志后重试。', controller.signal.aborted ? 503 : 504);
+    if (signal.aborted) throw failure('面板正在关闭，SteamCMD 安装已中止。', 503);
     if (['EACCES', 'EPERM'].includes(error.code)) throw failure(`SteamCMD 安装目录无权读写：${runtime.directory}。请让运行 PalBox 的系统用户拥有 data 目录的读写权限，并使用安装时配置的同一用户启动程序。`, 403);
     throw error;
   } finally {
