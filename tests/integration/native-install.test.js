@@ -217,6 +217,59 @@ async function freePort() {
   const port = server.address().port; await new Promise(resolve => server.close(resolve)); return port;
 }
 
+test('卸载停止并移除本项目服务，保留 data、配置和程序', linux, async t => {
+  const f = await fixture(t);
+  await f.invoke();
+  await writeFile(path.join(f.data, 'world.sav'), 'world-content');
+  const removed = await f.invoke('--uninstall');
+  assert.match(removed.stdout, /已停止并取消开机启动/);
+  assert.match(removed.stdout, /配置、存档、备份和程序仍在以上目录/);
+  assert.ok(removed.stdout.includes(`已移除：${path.join(f.systemd, 'palbox.service')}`));
+  await assert.rejects(access(path.join(f.systemd, 'palbox.service')), { code: 'ENOENT' });
+  await assert.rejects(access(path.join(f.directory, 'active')), { code: 'ENOENT' });
+  await assert.rejects(access(path.join(f.directory, 'enabled')), { code: 'ENOENT' });
+  assert.equal(await readFile(path.join(f.data, 'world.sav'), 'utf8'), 'world-content');
+  await access(f.config);
+  await access(path.join(f.app, '.runtime/node/bin/node'));
+  const commands = await readFile(path.join(f.directory, 'commands'), 'utf8');
+  assert.match(commands, /systemctl stop palbox\.service\n/);
+  assert.match(commands, /systemctl disable palbox\.service\n/);
+  assert.match(commands, /systemctl daemon-reload\n/);
+  assert.doesNotMatch(commands, /apt-get remove|userdel/);
+  const again = await f.invoke('--uninstall');
+  assert.match(again.stdout, /没有已注册的开机服务/);
+  assert.equal(await readFile(path.join(f.data, 'world.sav'), 'utf8'), 'world-content');
+  assert.match((await f.invoke()).stdout, /安装完成/);
+  assert.equal(await readFile(path.join(f.data, 'world.sav'), 'utf8'), 'world-content');
+  await access(path.join(f.systemd, 'palbox.service'));
+});
+
+test('卸载拒绝其他部署和其他选项，尚未注册时直接结束', linux, async t => {
+  const f = await fixture(t);
+  await assert.rejects(f.invoke('--uninstall', '--port', '9000'), /卸载不接受其他选项/);
+  const absent = await f.invoke('--uninstall');
+  assert.match(absent.stdout, /没有已注册的开机服务/);
+  await assert.rejects(access(f.data), { code: 'ENOENT' });
+  assert.doesNotMatch(await readFile(path.join(f.directory, 'commands'), 'utf8'), /apt-get|systemctl stop/);
+  const unit = path.join(f.systemd, 'palbox.service');
+  await mkdir(f.systemd);
+  await writeFile(unit, 'WorkingDirectory=/another/project\n');
+  await writeFile(path.join(f.directory, 'active'), '');
+  await assert.rejects(f.invoke('--uninstall'), /已有 palbox 服务运行在/);
+  await access(path.join(f.directory, 'active'));
+  assert.equal(await readFile(unit, 'utf8'), 'WorkingDirectory=/another/project\n');
+  await writeFile(unit, '# unmanaged\n');
+  await assert.rejects(f.invoke('--uninstall'), /无法确认 palbox 服务属于当前项目/);
+  assert.match(await readFile(unit, 'utf8'), /unmanaged/);
+  await access(path.join(f.directory, 'active'));
+  await writeFile(unit, `WorkingDirectory=${f.app}\n`);
+  await writeFile(path.join(f.directory, 'root-owner'), 'root');
+  const removed = await f.invoke('--uninstall');
+  assert.match(removed.stdout, /已停止并取消开机启动/);
+  await assert.rejects(access(unit), { code: 'ENOENT' });
+  await assert.rejects(access(path.join(f.directory, 'active')), { code: 'ENOENT' });
+});
+
 test('终端启动实际使用项目 Node 和相同配置，错误运行用户会被拒绝', linux, async t => {
   const f = await fixture(t);
   await f.invoke();

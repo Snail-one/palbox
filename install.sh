@@ -5,7 +5,7 @@ app_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 systemd_dir="${PALBOX_SYSTEMD_DIR:-/etc/systemd/system}"
 config_file="$app_dir/.palbox.env"
 requested_user='' requested_host='' requested_port='' requested_api_port=''
-temporary='' switched=false was_active=false was_enabled=false
+temporary='' switched=false was_active=false was_enabled=false uninstall=false
 
 usage() {
   cat <<'EOF'
@@ -19,10 +19,12 @@ SteamCMD 和游戏服务端在安装完成后通过网页安装。
   --host 地址       面板监听地址，默认 127.0.0.1
   --port 端口       面板端口，默认 8080
   --api-port 端口   后端本机端口，默认 8081
+  --uninstall       停止并取消开机启动，移除本项目的 palbox 服务
   -h, --help        查看帮助
 
 程序不搬迁、不创建系统用户，不递归修改已有数据属主。
 重复执行保留已有配置和 data/，重新注册并启动当前目录中的程序。
+卸载会停止服务、取消开机启动并移除 palbox.service。data/、.palbox.env 和程序保留在项目目录。
 EOF
 }
 die() { echo "安装失败：$*" >&2; exit 1; }
@@ -76,6 +78,7 @@ append_panel_urls() {
 while (( $# )); do
   case "$1" in
     -h|--help) usage; exit 0 ;;
+    --uninstall) uninstall=true; shift ;;
     --user|--host|--port|--api-port)
       (( $# >= 2 )) || die "$1 缺少参数。"
       case "$1" in
@@ -88,6 +91,9 @@ while (( $# )); do
     *) die "未知选项：$1。使用 --help 查看用法。" ;;
   esac
 done
+if [[ "$uninstall" == true && -n "${requested_user}${requested_host}${requested_port}${requested_api_port}" ]]; then
+  die '卸载不接受其他选项。'
+fi
 
 [[ "$(id -u)" == 0 ]] || die '请使用 sudo bash ./install.sh 执行。'
 [[ -r /etc/os-release ]] || die '无法识别系统。'
@@ -120,6 +126,64 @@ read_setting() {
   fi
   printf '%s' "$result"
 }
+if [[ -f "$unit_file" ]]; then
+  previous_app="$(sed -n 's/^WorkingDirectory=//p' "$unit_file")"
+  [[ -z "$previous_app" || "$(realpath -m -- "$previous_app")" == "$app_dir" ]] || die "已有 palbox 服务运行在 $previous_app。请先处理原部署，再为当前目录注册服务。"
+fi
+
+uninstall_service() {
+  if [[ ! -f "$unit_file" ]]; then
+    echo
+    print_card '卸载' \
+      "状态：当前项目没有已注册的开机服务" \
+      "程序目录：$app_dir" \
+      "数据目录：$data_dir"
+    exit 0
+  fi
+  local registered
+  registered="$(sed -n 's/^WorkingDirectory=//p' "$unit_file")"
+  [[ -n "$registered" && "$(realpath -m -- "$registered")" == "$app_dir" ]] || die '无法确认 palbox 服务属于当前项目，已中止卸载。'
+  if systemctl is-active --quiet palbox.service; then
+    step '正在停止服务。游戏停服可能需要几分钟。'
+    systemctl stop palbox.service
+  fi
+  if systemctl is-enabled --quiet palbox.service; then systemctl disable palbox.service; fi
+  rm -f -- "$unit_file"
+  systemctl daemon-reload
+  systemctl reset-failed palbox.service >/dev/null 2>&1 || true
+  echo
+  print_card '卸载' \
+    "状态：已停止并取消开机启动" \
+    "已移除：$unit_file" \
+    "程序目录：$app_dir" \
+    "部署配置：$config_file" \
+    "数据目录：$data_dir" \
+    "配置、存档、备份和程序仍在以上目录。" \
+    "再次启用：sudo bash ./install.sh"
+  exit 0
+}
+
+cleanup() {
+  local result=$?
+  trap - EXIT
+  set +e
+  if (( result != 0 )) && [[ "$switched" == true ]]; then
+    echo '[PalBox] 启动未完成，正在恢复原部署配置。' >&2
+    systemctl stop palbox.service >/dev/null 2>&1 || true
+    if [[ -f "$temporary/previous.env" ]]; then cp -p -- "$temporary/previous.env" "$config_file"; else rm -f -- "$config_file"; fi
+    if [[ -f "$temporary/previous.service" ]]; then cp -p -- "$temporary/previous.service" "$unit_file"; else rm -f -- "$unit_file"; fi
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    if [[ "$was_enabled" == false ]]; then systemctl disable palbox.service >/dev/null 2>&1 || true; fi
+    if [[ "$was_active" == true ]]; then systemctl start palbox.service >/dev/null 2>&1 || echo '[PalBox] 原服务未能重新启动，请执行 journalctl -u palbox 查看原因。' >&2; fi
+  fi
+  if [[ -n "$temporary" ]]; then rm -rf -- "$temporary"; fi
+  if (( result != 0 )); then echo '[PalBox] 未删除游戏、存档或备份，请排查错误后重试。' >&2; fi
+  exit "$result"
+}
+trap cleanup EXIT
+
+if [[ "$uninstall" == true ]]; then uninstall_service; fi
+
 service_user="${requested_user:-$(read_setting PALBOX_SERVICE_USER)}"
 if [[ -z "$service_user" ]]; then
   if [[ "$(stat -c '%u' "$app_dir")" != 0 ]]; then service_user="$(stat -c '%U' "$app_dir")";
@@ -146,29 +210,6 @@ api_port=$((10#$api_port))
 [[ "$listen_port" != "$api_port" ]] || die '面板和后端必须使用不同端口。'
 previous_data="$(read_setting PALBOX_DATA_DIR)"
 [[ -z "$previous_data" || "$(realpath -m -- "$previous_data")" == "$(realpath -m -- "$data_dir")" ]] || die "已有配置使用其他数据目录：$previous_data。请先停服、备份并迁移到项目的 data/，避免切换到空数据。"
-if [[ -f "$unit_file" ]]; then
-  previous_app="$(sed -n 's/^WorkingDirectory=//p' "$unit_file")"
-  [[ -z "$previous_app" || "$(realpath -m -- "$previous_app")" == "$app_dir" ]] || die "已有 palbox 服务运行在 $previous_app。请先处理原部署，再为当前目录注册服务。"
-fi
-
-cleanup() {
-  local result=$?
-  trap - EXIT
-  set +e
-  if (( result != 0 )) && [[ "$switched" == true ]]; then
-    echo '[PalBox] 启动未完成，正在恢复原部署配置。' >&2
-    systemctl stop palbox.service >/dev/null 2>&1 || true
-    if [[ -f "$temporary/previous.env" ]]; then cp -p -- "$temporary/previous.env" "$config_file"; else rm -f -- "$config_file"; fi
-    if [[ -f "$temporary/previous.service" ]]; then cp -p -- "$temporary/previous.service" "$unit_file"; else rm -f -- "$unit_file"; fi
-    systemctl daemon-reload >/dev/null 2>&1 || true
-    if [[ "$was_enabled" == false ]]; then systemctl disable palbox.service >/dev/null 2>&1 || true; fi
-    if [[ "$was_active" == true ]]; then systemctl start palbox.service >/dev/null 2>&1 || echo '[PalBox] 原服务未能重新启动，请执行 journalctl -u palbox 查看原因。' >&2; fi
-  fi
-  if [[ -n "$temporary" ]]; then rm -rf -- "$temporary"; fi
-  if (( result != 0 )); then echo '[PalBox] 未删除游戏、存档或备份，请排查错误后重试。' >&2; fi
-  exit "$result"
-}
-trap cleanup EXIT
 
 step '检查系统依赖。'
 missing=()

@@ -53,7 +53,7 @@ Ubuntu / Debian 的 **x86_64** 服务器可在完整项目的根目录一键安�
 sudo bash ./install.sh
 ```
 
-脚本原地准备系统依赖、项目独立 Node.js 和 `data/`，使用项目所属的已有普通用户注册 systemd 服务并设置开机启动，不搬迁程序、不另建系统用户。默认面板为 `http://127.0.0.1:8080`；远程服务器按安装输出建立 SSH 隧道后访问。SteamCMD 和游戏服务端继续通过网页安装。配置保存在项目的 `.palbox.env`，终端与后台启动共用同一入口。参数、用户规则和服务管理见 [Linux 原生部署](docs/native.md)。
+脚本原地准备系统依赖、项目独立 Node.js 和 `data/`，使用项目所属的已有普通用户注册 systemd 服务并设置开机启动，不搬迁程序、不另建系统用户。`sudo bash ./install.sh --uninstall` 停止并取消开机启动，保留 `data/`、配置和程序。默认面板为 `http://127.0.0.1:8080`；远程服务器按安装输出建立 SSH 隧道后访问。SteamCMD 和游戏服务端继续通过网页安装。配置保存在项目的 `.palbox.env`，终端与后台启动共用同一入口。参数、用户规则和服务管理见 [Linux 原生部署](docs/native.md)。
 
 也可以使用已有 Node.js 22 或以上版本直接运行源码，先准备系统依赖：
 
@@ -221,7 +221,7 @@ palbox/
 │   └── index.js        后端独立入口
 ├── shared/domain/      前后端共用的配置解析、参数目录、模板与编辑规则
 ├── scripts/start.js    本地双进程启动与退出协调
-├── install.sh          Ubuntu / Debian 一键安装、更新与 systemd 启动
+├── install.sh          Ubuntu / Debian 一键安装、卸载开机服务与 systemd 启动
 ├── docker/             后端容器入口脚本
 ├── .github/            CI、tag 镜像发布工作流和 Dependabot 配置
 ├── tests/              单元、集成与浏览器测试
