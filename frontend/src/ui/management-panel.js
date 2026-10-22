@@ -212,27 +212,21 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     }
   }
   async function action(name, payload = {}, confirm = true) {
-    if (confirm && ['stop', 'force-stop', 'restart', 'update', 'apply', 'backup', 'restore', 'restore-native', 'reset-save', 'kick'].includes(name)) {
+    if (['restore', 'restore-native'].includes(name)) { saveImport.open({ action: name, id: payload.id }); return; }
+    if (confirm && ['stop', 'force-stop', 'restart', 'update', 'apply', 'backup', 'reset-save', 'kick'].includes(name)) {
       const descriptions = {
         apply: '将当前配置写入游戏，不创建备份。游戏服正在运行时会先存档、停服，再应用并重启。',
         backup: '仅在游戏服停止时打包当前世界目录和 PalWorldSettings.ini，结构与官方备份下载相同，完成后保持停服。',
-        restore: '选择恢复范围。恢复前会先保存、停服，并创建“恢复前备份”；完成后恢复原运行状态。',
-        'restore-native': '将当前世界和玩家存档恢复到所选官方备份。会先存档、停服并创建世界备份，归入“恢复前备份”，保留当前配置及官方备份历史；原先运行的游戏服会重新启动。',
         'reset-save': '将先把当前世界目录和 PalWorldSettings.ini 打包到“重置前备份”，再清空 SaveGames/0 下的全部内容，包括世界、玩家存档和该目录中的官方备份历史。其他世界、日志和封禁名单不会进入这份备份。备份失败时中止重置；游戏配置和世界备份归档保留。必须先停止游戏服务器，完成后保持停服。',
         update: '仅在游戏服停止时使用 SteamCMD 更新服务端，不自动创建备份，更新完成后保持停服。',
         stop: '保存世界后停止游戏服，管理面板继续运行。',
         'force-stop': '立即强制停止游戏服，可能丢失最近一次未保存的进度。仅在正常停止失败时使用。',
         restart: '保存世界并重启游戏服。', kick: '将选中的玩家移出游戏服。'
       };
-      const confirmed = await ask({ title: `${names[name]}？`, description: descriptions[name], confirm: names[name], danger: ['restore', 'restore-native', 'reset-save', 'kick', 'force-stop'].includes(name), symbol: 'server',
-        ...(name === 'restore' ? { defaultChoice: 'full', choices: [
-          { value: 'world', label: '存档恢复', description: '清空并替换当前世界 ID 目录，恢复备份中的世界、玩家及备份历史等全部世界内容；其他世界和目录外的数据保留。备份里的 PalWorldSettings.ini 会按导入方式合并进「游戏默认配置」并写入游戏，以官方默认为底补全缺项。REST API 保持开启，管理员密码沿用「游戏默认配置」已有的随机密码。需要当前世界 ID 有效。' },
-          { value: 'full', label: '完整恢复', description: '新的世界备份会把 PalWorldSettings.ini 按导入方式合并进「游戏默认配置」并写入游戏，以官方默认为底补全缺项，并替换备份中的世界目录；其他世界、日志和封禁名单保留。旧的完整备份仍整体替换 Pal/Saved，备份里没有的内容全部移除；其中的配置同样合并进「游戏默认配置」。REST API 保持开启，管理员密码沿用「游戏默认配置」已有的随机密码。' }
-        ] } : {}),
+      const confirmed = await ask({ title: `${names[name]}？`, description: descriptions[name], confirm: names[name], danger: ['reset-save', 'kick', 'force-stop'].includes(name), symbol: 'server',
         ...(name === 'reset-save' ? { name: '', nameLabel: '输入 delete 确认删除', namePlaceholder: 'delete', nameMaxLength: 6, confirmation: 'delete' } : {}) });
       if (!confirmed) return;
       if (name === 'reset-save') payload = { ...payload, confirmation: confirmed };
-      if (name === 'restore') payload = { ...payload, mode: confirmed };
     }
     try {
       if (name === 'apply') payload = { ...payload, ...await getConfiguration() };
@@ -323,9 +317,9 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     notify('安装参数已保存，将在下次安装或更新服务端时生效');
   } });
   $('edit-install-args').addEventListener('click', () => installArgsDialog.open((settingsCache?.installArgs ?? []).join('\n')));
-  const saveImport = createSaveImportDialog({ dom, api, onImport: async id => {
+  const saveImport = createSaveImportDialog({ dom, api, onRestore: async payload => {
     error('');
-    const task = await api.request('tasks', { method: 'POST', body: { action: 'import-save', id } });
+    const task = await api.request('tasks', { method: 'POST', body: payload });
     trackTask(task);
     await refresh();
   } });

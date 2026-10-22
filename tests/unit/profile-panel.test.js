@@ -108,26 +108,26 @@ test('达到 10 套配置后禁用新建、导入和副本，删除后恢复', (
   for (const id of ['new-profile', 'copy-profile', 'import-button']) assert.equal(elements.get(id).disabled, false);
 });
 
-test('点击配置名称弹出可编辑源码，保存调用回调并关闭弹窗', async () => {
+test('点击配置名称弹出只读源码，不能直接保存源码', async () => {
   const { elements, rows, saves } = setup();
   await rows[0].children[0].fire('click');
   const dialog = elements.get('source-view-dialog');
   const text = elements.get('source-view-text');
   const saveButton = elements.get('source-view-save');
   assert.equal(dialog.open, true);
-  assert.equal(text.readOnly, false);
+  assert.equal(text.readOnly, true);
   assert.equal(text.value, 'OptionSettings=(ExpRate=2)');
-  assert.equal(saveButton.hidden, false);
-  assert.equal(saveButton.disabled, false);
-  assert.equal(elements.get('source-view-mode').textContent, 'UTF-8 · 可编辑');
-  assert.equal(elements.get('source-view-file').textContent, '输入源码 · PalWorldSettings.ini');
+  assert.equal(saveButton.hidden, true);
+  assert.equal(saveButton.disabled, true);
+  assert.equal(elements.get('source-view-mode').textContent, 'UTF-8 · 只读');
+  assert.equal(elements.get('source-view-file').textContent, '输入源码 · DefaultPalWorldSettings.ini');
   assert.match(elements.get('source-view-description').textContent, /来源：导入文件：world\.ini/);
+  assert.match(elements.get('source-view-description').textContent, /只读/);
 
   text.value = 'OptionSettings=(ExpRate=5)';
   await saveButton.fire('click');
-  assert.deepEqual(saves, [{ id: 'imported', source: 'OptionSettings=(ExpRate=5)' }]);
-  assert.equal(dialog.open, false);
-  assert.equal(saveButton.disabled, false);
+  assert.deepEqual(saves, []);
+  assert.equal(dialog.open, true);
 });
 
 test('官方默认配置来源的弹窗只读且不会调用保存回调', async () => {
@@ -178,13 +178,13 @@ test('导入配置覆盖当前条目，失败时保留弹窗', async () => {
   assert.deepEqual(failed.imports, []);
 });
 
-test('保存失败时保留弹窗并显示错误', async () => {
-  const { elements, rows } = setup({ failSave: true });
+test('只读源码不会因为保存失败写入配置', async () => {
+  const { elements, rows, saves } = setup({ failSave: true });
   await rows[0].children[0].fire('click');
   await elements.get('source-view-save').fire('click');
   assert.equal(elements.get('source-view-dialog').open, true);
-  assert.equal(elements.get('source-view-error').hidden, false);
-  assert.match(elements.get('source-view-error').textContent, /保存失败/);
+  assert.equal(elements.get('source-view-error').hidden, true);
+  assert.deepEqual(saves, []);
 });
 
 test('没有官方配置时只显示灰色禁用入口，保留新建和导入', () => {

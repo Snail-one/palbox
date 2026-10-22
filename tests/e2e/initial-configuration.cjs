@@ -54,26 +54,23 @@ const path = require('node:path');
         await page.locator('#dialog-name').fill('手动世界');
         await page.locator('#dialog-confirm').click();
         await page.waitForFunction(() => document.getElementById('profile-title').textContent === '手动世界' && document.getElementById('change-caption').textContent === '已保存');
-        assert.equal(await page.locator('#source-editor').isEditable(), true);
+        await page.locator('#editor-mode-advanced').click();
+        await page.locator('#mode-source').click();
+        assert.equal(await page.locator('#source-editor').isEditable(), false);
         assert.equal(f.manager.store.workspace.profiles.length, 1);
         manualId = f.manager.store.active().id;
-        // Keep a draft while detection occurs; automatic synchronization must preserve it.
-        await page.locator('#source-editor').fill('OptionSettings=(ServerName="Draft")');
         await fs.writeFile(path.join(f.directory, 'server/DefaultPalWorldSettings.ini'), official);
         const refreshed = page.waitForResponse(response => response.url().includes('/api/status?') && response.status() === 200);
         await page.locator('#refresh-status').click();
         await refreshed;
-        assert.equal(await page.locator('#source-editor').inputValue(), 'OptionSettings=(ServerName="Draft")');
-        await page.locator('#restore-source').click();
-        await page.locator('#dialog-confirm').click();
       } else {
         await fs.writeFile(path.join(f.directory, 'server/DefaultPalWorldSettings.ini'), official);
       }
-      // Detection refreshes the library without an explicit browser refresh.
+      // Detection reloads the page when the official file appears. The list is empty until scripts render.
       await page.locator('#nav-configuration-form').click();
       await page.locator('#nav-configuration-profiles').click();
-      await page.waitForFunction(() => !document.querySelector('#profile-list .unavailable'), null, { timeout: 15000 });
       const expectedCount = manual ? 2 : 1;
+      await page.waitForFunction(expected => document.querySelectorAll('#profile-list .profile-item:not(.unavailable)').length === expected, expectedCount, { timeout: 15000 });
       assert.equal(await page.locator('#profile-list .profile-item').count(), expectedCount);
       assert.equal(f.manager.store.workspace.profiles.length, expectedCount);
       assert.equal(f.manager.store.workspace.profiles.filter(profile => profile.locked).length, 1);

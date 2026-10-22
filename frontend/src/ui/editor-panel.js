@@ -20,17 +20,17 @@ export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged
     $('configuration-editor-content').hidden = !workspace.active;
     $('configuration-empty').hidden = Boolean(workspace.active);
     const origin = workspace.active?.origin || '已有配置';
-    const sourceLocked = workspace.active?.locked === true;
+    const hasOfficial = workspace.profiles.some(profile => profile.locked);
     $('source-origin').textContent = `来源：${origin}`;
     $('source-origin').title = origin;
-    $('source-file').textContent = workspace.active?.locked ? '输入源码 · DefaultPalWorldSettings.ini' : '输入源码 · PalWorldSettings.ini';
-    $('source-editor').readOnly = sourceLocked;
-    $('apply-source').disabled = sourceLocked;
-    $('restore-source').disabled = sourceLocked;
-    $('source-editor').title = sourceLocked ? '该条目以游戏默认文件为输入，源码只读；请使用可视化编辑或参数列表修改参数。' : '';
-    $('source-help').textContent = sourceLocked
-      ? '游戏默认配置的输入源码只读；请在「可视化编辑」或「参数列表」中修改参数，或在配置列表中点击该条目后选择「导入配置」。'
-      : '粘贴或编辑 INI 后点击「应用源码」，同步到表单和输出源码。';
+    $('source-file').textContent = hasOfficial ? '输入源码 · DefaultPalWorldSettings.ini' : '输入源码 · PalWorldSettings.ini';
+    $('source-editor').readOnly = true;
+    $('apply-source').disabled = true;
+    $('restore-source').disabled = true;
+    $('source-editor').title = '输入源码只读。底层为官方默认配置，请使用可视化编辑、参数列表或导入配置修改参数。';
+    $('source-help').textContent = hasOfficial
+      ? '所有配置的输入源码只读，底层读取官方默认配置 DefaultPalWorldSettings.ini。请在「可视化编辑」或「参数列表」中修改参数，或使用「导入配置」。'
+      : '输入源码只读。安装服务端后以官方默认配置为底，请在「可视化编辑」或「参数列表」中修改参数。';
     $('view-form').hidden = view.mode !== 'form';
     $('view-advanced').hidden = view.mode !== 'advanced';
     $('table-container').hidden = view.advanced !== 'table';

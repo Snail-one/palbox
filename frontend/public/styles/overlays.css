@@ -347,3 +347,9 @@ dialog>p,
   text-align: center;
   color: #686868;
 }
+
+.restore-details { display: grid; grid-template-columns: minmax(0, 110px) minmax(0, 1fr); gap: 10px 14px; margin: 16px 0; padding: 16px; border: 1px solid var(--line); border-radius: 10px; font-size: 12px; line-height: 1.7; }
+.restore-details dt { font-weight: 600; }
+.restore-details dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.restore-details[hidden] { display: none; }
+@media (max-width: 480px) { .restore-details { grid-template-columns: minmax(0, 1fr); gap: 4px; } .restore-details dd { margin-bottom: 8px; } }

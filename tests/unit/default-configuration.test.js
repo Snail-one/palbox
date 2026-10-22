@@ -120,8 +120,43 @@ test('未安装时允许手动新建，检测到官方配置后保留手动配�
   await store.syncDefaultProfile();
   assert.equal(store.workspace.profiles.length, 2);
   assert.equal(store.active().id, profile.id);
-  assert.equal(store.active().source, template.source);
+  const locked = store.workspace.profiles.find(entry => entry.locked);
+  const activeValues = values(store.active().source);
+  assert.equal(activeValues.get('ServerName'), '"Official World"');
+  assert.equal(activeValues.get('RESTAPIEnabled'), 'True');
+  assert.equal(decodeString(activeValues.get('AdminPassword')), decodeString(values(template.source).get('AdminPassword')));
+  assert.equal(store.active().initialSource, locked.initialSource);
+  assert.equal((await store.newConfigurationTemplate()).source, locked.initialSource);
   assert.equal((await store.newConfigurationTemplate()).origin, DERIVED_DEFAULT_ORIGIN);
+  assert.equal(await store.syncDefaultProfile(), false);
+});
+
+test('其他配置以官方默认为底，未修改的跟随文件，已修改的保留参数', async t => {
+  const { directory, file } = await fixture(t);
+  await writeFile(file, official);
+  const store = new ManagementStore(directory, 9000);
+  await store.initialize();
+  const managed = store.workspace.profiles.find(profile => profile.locked).initialSource;
+  const follower = createProfile('跟随文件', managed, { origin: DERIVED_DEFAULT_ORIGIN });
+  const edited = createProfile('已修改', managed.replace('ExpRate=2.500000', 'ExpRate=4.000000'), { origin: DERIVED_DEFAULT_ORIGIN });
+  const snapshot = store.snapshot();
+  snapshot.workspace.profiles.push(follower, edited);
+  await store.update(snapshot.workspace, snapshot.revision);
+  assert.equal(store.workspace.profiles.find(profile => profile.id === follower.id).initialSource, managed);
+  assert.equal(store.workspace.profiles.find(profile => profile.id === edited.id).initialSource, managed);
+  const changed = official.replace('ExpRate=2.500000', 'ExpRate=7.000000').replace('ServerName="Official World"', 'ServerName="Next World"');
+  await writeFile(file, changed);
+  await store.syncDefaultProfile();
+  const nextManaged = store.workspace.profiles.find(profile => profile.locked).initialSource;
+  const followed = store.workspace.profiles.find(profile => profile.id === follower.id);
+  const kept = store.workspace.profiles.find(profile => profile.id === edited.id);
+  assert.equal(followed.source, nextManaged);
+  assert.equal(followed.initialSource, nextManaged);
+  assert.equal(values(followed.source).get('ExpRate'), '7.000000');
+  assert.equal(values(kept.source).get('ExpRate'), '4.000000');
+  assert.equal(values(kept.source).get('ServerName'), '"Next World"');
+  assert.equal(kept.initialSource, nextManaged);
+  assert.equal(await store.syncDefaultProfile(), false);
 });
 
 test('已有游戏配置仍被保留，不被官方配置覆盖', async t => {
@@ -132,8 +167,13 @@ test('已有游戏配置仍被保留，不被官方配置覆盖', async t => {
   await writeFile(file, official);
   const store = new ManagementStore(directory);
   await store.initialize();
-  assert.equal(store.active().source, 'OptionSettings=(ServerName="Existing Server")');
+  const activeValues = values(store.active().source);
+  assert.equal(activeValues.get('ServerName'), '"Existing Server"');
+  assert.equal(activeValues.get('ExpRate'), '2.500000');
+  assert.equal(activeValues.get('RESTAPIEnabled'), 'True');
+  assert.equal(store.active().initialSource, store.workspace.profiles.find(entry => entry.locked).initialSource);
   assert.equal(store.workspace.profiles.length, 2);
+  assert.equal(await store.syncDefaultProfile(), false);
 });
 
 test('旧占位配置只在未编辑时移除，已编辑配置保留', async t => {

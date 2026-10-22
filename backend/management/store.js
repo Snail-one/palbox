@@ -20,6 +20,46 @@ function sourcePassword(source) {
   catch { return ''; }
 }
 
+// Parameters whose raw value differs from the previous official baseline.
+// Unchanged keys stay out so the next official file can replace them.
+function changedParameters(profileSource, previousManaged) {
+  try {
+    const previousValues = new Map(parse(previousManaged).entries.map(entry => [entry.key, entry.raw]));
+    const overrides = parse(profileSource).entries.filter(entry => previousValues.get(entry.key) !== entry.raw);
+    if (!overrides.length) return '';
+    return `OptionSettings=(${overrides.map(entry => `${entry.key}=${entry.raw}`).join(',')})`;
+  } catch {
+    return profileSource;
+  }
+}
+
+// Every profile rests on the official managed default. An unedited copy follows
+// the file; an edited copy keeps only the parameters it changed.
+function rebaseProfile(profile, managed, previousManaged) {
+  const followed = Boolean(previousManaged) && profile.source === previousManaged;
+  let nextSource = managed;
+  if (!followed && profile.source) {
+    const overlay = previousManaged ? changedParameters(profile.source, previousManaged) : profile.source;
+    if (overlay) nextSource = mergeConfiguration(managed, overlay);
+  }
+  const password = sourcePassword(managed);
+  if (password && !sourcePassword(nextSource)) nextSource = applyManagedAccess(nextSource, password);
+  if (profile.initialSource === managed && profile.source === nextSource) return false;
+  profile.initialSource = managed;
+  profile.source = nextSource;
+  profile.updatedAt = new Date().toISOString();
+  return true;
+}
+
+function mergedImportedSource(profile, importedSource) {
+  const password = sourcePassword(profile.source) || sourcePassword(profile.initialSource) || randomBytes(24).toString('hex');
+  const merged = applyManagedAccess(mergeConfiguration(profile.initialSource, importedSource), password);
+  if (merged.length > MAX_CONFIGURATION_SOURCE_LENGTH || profile.initialSource.length > MAX_CONFIGURATION_SOURCE_LENGTH) {
+    throw failure('合并后的配置内容过长，无法保存，请精简后重试。');
+  }
+  return merged;
+}
+
 export function validateConfigurationWorkspace(value, { maxProfiles = MAX_PROFILES } = {}) {
   try { validateWorkspace(value); } catch (error) { throw failure(error.message); }
   if (value.profiles.length > maxProfiles) throw failure(`最多保留 ${MAX_PROFILES} 套配置（含游戏默认配置），请先删除不需要的配置。`);
@@ -112,6 +152,7 @@ export class ManagementStore {
       }
     }
     if (source !== null) {
+      const previousManaged = locked?.initialSource;
       if (!locked) {
         const managed = managedTemplate(this.gamePort, source);
         locked = createProfile(GAME_DEFAULT_PROFILE_NAME, managed, { id: () => GAME_DEFAULT_PROFILE_ID, origin: OFFICIAL_DEFAULT_ORIGIN, locked: true });
@@ -134,6 +175,13 @@ export class ManagementStore {
             source: nextSource, initialSource: managed, updatedAt: new Date().toISOString()
           });
           changed = true;
+        }
+      }
+      const managed = locked.initialSource;
+      if (managed) {
+        for (const profile of workspace.profiles) {
+          if (profile === locked) continue;
+          if (rebaseProfile(profile, managed, previousManaged)) changed = true;
         }
       }
     } else if (locked && (locked.name !== GAME_DEFAULT_PROFILE_NAME || locked.origin !== OFFICIAL_DEFAULT_ORIGIN || locked.locked !== true)) {
@@ -162,6 +210,16 @@ export class ManagementStore {
    * game-default profile. REST API stays enabled and the admin password stays
    * the profile's existing random password, whatever the imported file says.
    */
+  async validateImportedConfig(importedSource) {
+    if (typeof importedSource !== 'string' || !importedSource.trim()) throw failure('导入的游戏配置为空。', 409);
+    try { parse(importedSource); } catch (error) { throw failure(error.message); }
+    const official = await this.readDefaultFile();
+    const workspace = structuredClone(this.workspace);
+    this.applyDefaultProfile(workspace, official);
+    const profile = workspace.profiles.find(entry => entry.locked === true);
+    if (!profile?.initialSource) throw failure('未找到游戏默认配置。', 409);
+    return mergedImportedSource(profile, importedSource);
+  }
   applyImportedConfig(importedSource) {
     const operation = this.writes.then(async () => {
       if (typeof importedSource !== 'string' || !importedSource.trim()) throw failure('导入的游戏配置为空。', 409);
@@ -170,11 +228,7 @@ export class ManagementStore {
       this.applyDefaultProfile(this.workspace, official);
       const profile = this.workspace.profiles.find(entry => entry.locked === true);
       if (!profile?.initialSource) throw failure('未找到游戏默认配置。', 409);
-      const password = sourcePassword(profile.source) || sourcePassword(profile.initialSource) || randomBytes(24).toString('hex');
-      const merged = applyManagedAccess(mergeConfiguration(profile.initialSource, importedSource), password);
-      if (merged.length > MAX_CONFIGURATION_SOURCE_LENGTH || profile.initialSource.length > MAX_CONFIGURATION_SOURCE_LENGTH) {
-        throw failure('合并后的配置内容过长，无法保存，请精简后重试。');
-      }
+      const merged = mergedImportedSource(profile, importedSource);
       profile.source = merged;
       profile.updatedAt = new Date().toISOString();
       this.workspace.activeId = profile.id;
@@ -185,11 +239,20 @@ export class ManagementStore {
     this.writes = operation.catch(() => {});
     return operation;
   }
+  async officialBaseline() {
+    await this.readDefaultFile();
+    const locked = this.workspace.profiles.find(profile => profile.locked === true);
+    if (locked?.initialSource) return locked.initialSource;
+    return this.defaultTemplate();
+  }
   async newConfigurationTemplate() {
-    const source = await this.defaultTemplate({ optional: true });
-    return source === null
-      ? { source: managedTemplate(this.gamePort, '[/Script/Pal.PalGameWorldSettings]\nOptionSettings=()\n'), origin: '手动创建的配置' }
-      : { source, origin: DERIVED_DEFAULT_ORIGIN };
+    const file = await this.readDefaultFile({ optional: true });
+    if (file === null) {
+      return { source: managedTemplate(this.gamePort, '[/Script/Pal.PalGameWorldSettings]\nOptionSettings=()\n'), origin: '手动创建的配置' };
+    }
+    const locked = this.workspace.profiles.find(profile => profile.locked === true);
+    if (locked?.initialSource) return { source: locked.initialSource, origin: DERIVED_DEFAULT_ORIGIN };
+    return { source: managedTemplate(this.gamePort, file), origin: DERIVED_DEFAULT_ORIGIN };
   }
   update(workspace, revision, { authorize = () => {} } = {}) {
     const operation = this.writes.then(async () => {
@@ -211,8 +274,8 @@ export class ManagementStore {
         }
         const previous = this.workspace.profiles.find(p => p.id === profile.id);
         delete profile.locked;
-        // A later edit cannot accidentally replace the original input baseline or origin.
-        profile.initialSource = previous?.initialSource ?? previous?.source ?? profile.initialSource ?? profile.source;
+        // The official managed default is the restore baseline for every profile.
+        profile.initialSource = locked?.initialSource || previous?.initialSource || previous?.source || profile.initialSource || profile.source;
         if (previous?.origin) profile.origin = previous.origin;
         if (profile.origin === OFFICIAL_DEFAULT_ORIGIN) profile.origin = DERIVED_DEFAULT_ORIGIN;
       }

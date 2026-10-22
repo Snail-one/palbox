@@ -282,7 +282,7 @@ test('玩家封禁、踢人理由、强制停止与更新检查', { skip: proces
   assert.equal(update.updateAvailable, true);
 });
 
-test('尚未运行的新服务端可整体恢复 Saved 和世界 ID 配置，并正常启动', { skip: process.platform !== 'linux' }, async t => {
+test('世界目录缺失时可恢复到配置指定的当前世界，并正常启动', { skip: process.platform !== 'linux' }, async t => {
   const f = await managementFixture(); t.after(() => f.close()); await f.login();
   assert.equal((await f.task('install')).state, 'succeeded');
   const config = await readFile(f.runtime.config, 'utf8');
@@ -295,11 +295,14 @@ test('尚未运行的新服务端可整体恢复 Saved 和世界 ID 配置，并
   assert.equal(backup.state, 'succeeded', backup.message);
   await rm(f.runtime.saved, { recursive: true });
   assert.equal(f.runtime.startedAt, null);
-  const restored = await f.task('restore', { id: backup.backup, mode: 'full' });
+  await mkdir(path.join(f.runtime.saved, 'Config/LinuxServer'), { recursive: true });
+  await writeFile(path.join(f.runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'), 'DedicatedServerName=ARCHIVED\n');
+  const restored = await f.task('restore', { id: backup.backup });
   assert.equal(restored.state, 'succeeded', restored.message);
   assert.equal(f.runtime.game, null);
   assert.equal(await f.manager.native.configuredWorld(), 'ARCHIVED');
-  assert.equal(await readFile(f.runtime.config, 'utf8'), config);
+  assert.equal(await readFile(f.runtime.config, 'utf8'), f.manager.store.active().source);
+  assert.equal(value(await readFile(f.runtime.config, 'utf8'), 'ExpRate'), value(config, 'ExpRate'));
   assert.equal(await readFile(path.join(world, 'Level.sav'), 'utf8'), 'archived-world');
   assert.equal(await readFile(path.join(world, 'Players/player.sav'), 'utf8'), 'archived-player');
   const started = await f.task('start');

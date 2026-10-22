@@ -108,7 +108,11 @@ export function createManagementApi(manager, options = {}) {
         json(200, await manager.store.newConfigurationTemplate()); return;
       }
       if (pathname === '/api/default-configuration' && request.method === 'GET') {
-        json(200, { source: await manager.store.defaultTemplate() }); return;
+        json(200, { source: await manager.store.officialBaseline() }); return;
+      }
+      if (pathname === '/api/restore-preview' && request.method === 'POST') {
+        const input = await body(request, 4096);
+        json(200, await manager.previewRestore(input.action, input.id)); return;
       }
       if (pathname === '/api/save-import' && request.method === 'POST') {
         if (manager.closing) throw failure('管理服务正在关闭。', 503);

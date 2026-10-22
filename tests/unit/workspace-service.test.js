@@ -300,6 +300,23 @@ test('旧配置首次保存前捕获输入基准，保存失败与重试不会�
   assert.equal(loaded.initialSource, old.profiles[0].source);
 });
 
+test('有官方默认配置时，保存参数仍以该默认文件为恢复基准', () => {
+  const official = 'OptionSettings=(ServerName="Default",ExpRate=1,RESTAPIEnabled=True,AdminPassword="managed")';
+  const custom = official.replace('ExpRate=1', 'ExpRate=4');
+  const { service } = setup({
+    version: 1,
+    activeId: 'editable',
+    profiles: [
+      { id: 'editable', name: '我的世界', source: custom, initialSource: custom, updatedAt: '2026-01-01' },
+      { id: 'locked', name: '游戏默认配置', source: official, initialSource: official, updatedAt: '2026-01-01', origin: OFFICIAL_DEFAULT_ORIGIN, locked: true }
+    ]
+  });
+  assert.equal(service.updateSource('editable', custom.replace('ExpRate=4', 'ExpRate=6')), true);
+  assert.equal(service.profiles.find(profile => profile.id === 'editable').initialSource, official);
+  assert.match(service.profiles.find(profile => profile.id === 'editable').source, /ExpRate=6/);
+  assert.equal(service.profiles.find(profile => profile.id === 'locked').initialSource, official);
+});
+
 test('游戏默认配置可选择并修改参数，但不能重命名或删除', () => {
   const lockedSource = 'OptionSettings=(ExpRate=1)';
   const initial = {

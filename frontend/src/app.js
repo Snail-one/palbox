@@ -32,7 +32,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
   async function beforeLeave() {
     await repository.flush?.();
     if (!isDirty()) return true;
-    return Boolean(await ask({ title: '离开当前配置？', description: '当前有未应用的源码、无效输入或保存失败的修改，继续将放弃这些编辑。可取消并先应用源码、修正错误或复制备份。', confirm: '放弃更改', danger: true, symbol: 'edit' }));
+    return Boolean(await ask({ title: '离开当前配置？', description: '当前有未应用的源码、无效输入或保存失败的修改，继续将放弃这些编辑。可取消并先修正错误或复制备份。', confirm: '放弃更改', danger: true, symbol: 'edit' }));
   }
   function reportPersistence(success) {
     notifications.storage(workspace.message);
@@ -102,22 +102,21 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
     async select(id) {
       if (id === workspace.active?.id) {
         navigation.closeSidebar();
-        if (workspace.active.locked) { navigation.openEditor('form'); return; }
-        navigation.openEditor('advanced');
-        panel?.showSource();
+        navigation.openEditor('form');
         return;
       }
       if (!(await beforeLeave())) { navigation.openEditor(); return; }
-      const profile = workspace.profiles.find(candidate => candidate.id === id);
       workspace.select(id);
-      // The default entry opens the parameter form; its raw source stays read-only.
-      changedProfile(undefined, { source: profile?.locked !== true });
+      // Source is read-only for every profile; parameter edits stay in the form.
+      changedProfile();
     },
     async create(name) {
       try {
         const { source, origin } = await management.request('configuration-template');
-        workspace.add(name, source, { origin });
-        changedProfile('已创建配置', { source: origin === '手动创建的配置' });
+        const created = workspace.add(name, source, { origin });
+        const baseline = workspace.profiles.find(item => item.locked)?.initialSource;
+        if (baseline) created.initialSource = baseline;
+        changedProfile('已创建配置');
       } catch (error) { notifications.toast(error.message, true); }
     },
     async duplicate(name, id = workspace.active?.id, { fromList = false } = {}) {
@@ -130,7 +129,11 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
       } else {
         source = id === workspace.active?.id ? editor.source() : sourceProfile.source;
       }
-      try { workspace.add(name, source, { select: !fromList, origin: `复制自「${sourceProfile.name}」` }); }
+      try {
+        const created = workspace.add(name, source, { select: !fromList, origin: `复制自「${sourceProfile.name}」` });
+        const baseline = workspace.profiles.find(item => item.locked)?.initialSource;
+        if (baseline) created.initialSource = baseline;
+      }
       catch (error) { notifications.toast(error.message, true); return; }
       if (!fromList) { changedProfile('已创建独立副本'); return; }
       const success = persist();
@@ -165,7 +168,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
   } });
   dom.$('restore-input-button').addEventListener('click', async () => {
     if (!workspace.active) return;
-    const restore = await ask({ title: '恢复输入配置？', description: '将当前配置的全部参数恢复为初始基准，放弃已有修改和未应用的源码。新导入配置的基准为导入时的游戏默认配置。恢复后会自动保存；其他配置不受影响。', confirm: '恢复输入配置', danger: true, symbol: 'file' });
+    const restore = await ask({ title: '恢复输入配置？', description: '将当前配置恢复为初始基准并自动保存。已检测到官方默认配置时，基准就是这份官方默认；尚未安装时恢复为创建时的内容。其他配置不受影响。', confirm: '恢复输入配置', danger: true, symbol: 'file' });
     if (!restore) return;
     editor.reset(workspace.initialSource);
     let saved = save({ automatic: true });

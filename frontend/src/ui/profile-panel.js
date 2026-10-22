@@ -1,4 +1,4 @@
-import { OFFICIAL_DEFAULT_ORIGIN, MAX_PROFILES, GAME_DEFAULT_PROFILE_NAME } from '../../../shared/domain/workspace.js';
+import { MAX_PROFILES, GAME_DEFAULT_PROFILE_NAME } from '../../../shared/domain/workspace.js';
 
 export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, isDirty, clipboard, notify, onSaveSource, onImportSource, readFile, validate, actions }) {
   const { $, el, icon, empty } = dom;
@@ -31,24 +31,24 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
   }
   function openSourceDialog(profile = workspace.active, mode = 'source') {
     if (!profile) return;
-    const active = profile.id === workspace.active?.id;
     const origin = profile.origin || '已有配置';
-    // Only the server-owned game-default entry (and legacy official-origin data)
-    // is protected; an imported file with the same name is an editable copy.
-    sourceReadOnly = profile.locked === true || origin === OFFICIAL_DEFAULT_ORIGIN;
+    const hasOfficial = workspace.profiles.some(entry => entry.locked);
+    sourceReadOnly = true;
     editingProfile = profile;
     sourceText.value = profile.source;
-    sourceText.readOnly = sourceReadOnly;
-    $('source-view-file').textContent = profile.locked ? '输入源码 · DefaultPalWorldSettings.ini' : '输入源码 · PalWorldSettings.ini';
-    $('source-view-mode').textContent = sourceReadOnly ? 'UTF-8 · 只读' : 'UTF-8 · 可编辑';
-    $('source-view-save').hidden = sourceReadOnly;
-    $('source-view-save').disabled = sourceReadOnly;
+    sourceText.readOnly = true;
+    $('source-view-file').textContent = hasOfficial ? '输入源码 · DefaultPalWorldSettings.ini' : '输入源码 · PalWorldSettings.ini';
+    $('source-view-mode').textContent = 'UTF-8 · 只读';
+    $('source-view-save').hidden = true;
+    $('source-view-save').disabled = true;
     $('source-view-error').hidden = true;
     $('profile-import-text').value = '';
     $('profile-import-file').value = '';
     $('profile-import-error').hidden = true;
-    $('source-view-import-description').textContent = `把导入内容中的同名参数覆盖到「${profile.name}」，未包含的参数保持当前值。REST API 保持开启，管理员密码沿用这套配置已有的密码；没有密码时会新生成一个。不采用导入内容中的这两项，也不会切换当前选择。`;
-    sourceDescription.textContent = `「${profile.name}」的输入源码。来源：${origin}。${sourceReadOnly ? `该条目以游戏目录中的 DefaultPalWorldSettings.ini 作为输入来源，输入源码只读；${active ? '请在可视化编辑或参数列表中修改参数并应用。' : '选择后可在可视化编辑或参数列表中修改参数并应用。'}` : active ? '保存后会替换当前配置的输入源码，当前未应用或无效的编辑将被覆盖。' : '保存后更新该配置，不会切换当前配置。'}`;
+    $('source-view-import-description').textContent = `把导入内容中的同名参数覆盖到「${profile.name}」，未包含的参数保持当前值。底层为官方默认配置。REST API 保持开启，管理员密码沿用这套配置已有的密码；没有密码时会新生成一个。不采用导入内容中的这两项，也不会切换当前选择。`;
+    sourceDescription.textContent = hasOfficial
+      ? `「${profile.name}」的输入源码只读。来源：${origin}。底层读取官方默认配置 DefaultPalWorldSettings.ini，不能直接修改源码；请在可视化编辑或参数列表中修改参数，或使用「导入配置」。`
+      : `「${profile.name}」的输入源码只读。来源：${origin}。安装服务端并检测到官方默认配置后，这套配置会以该文件为底。请在可视化编辑或参数列表中修改参数。`;
     showDialogMode(mode);
     sourceDialog.showModal();
     sourceText.scrollTop = 0;
@@ -136,7 +136,7 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
   $('new-profile').addEventListener('click', async () => {
     if (!hasCapacity()) return;
     if (!(await beforeLeave())) return;
-    const name = await ask({ title: '创建一个新的世界', description: '创建一套独立配置；检测到官方默认文件时使用其参数，否则由你自行编辑或粘贴配置。', name: '新的帕鲁世界', confirm: '创建配置', symbol: 'plus' });
+    const name = await ask({ title: '创建一个新的世界', description: '创建一套独立配置。检测到官方默认文件时使用该文件的参数，输入源码只读，可在参数表单中修改；尚未安装时只包含管理模式必需项。', name: '新的帕鲁世界', confirm: '创建配置', symbol: 'plus' });
     if (name) actions.create(name);
   });
   async function rename(profile) {
@@ -146,8 +146,9 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
   async function duplicate(profile, fromList = false) {
     if (!profile || !hasCapacity()) return;
     if (profile.id === workspace.active?.id && !ready()) return;
-    const description = profile.locked && profile.source === profile.initialSource
-      ? '副本读取当前官方默认配置并补入管理模式必需的 REST API 参数，作为自己的恢复基准；后续编辑与原条目相互独立。'
+    const hasOfficial = workspace.profiles.some(entry => entry.locked);
+    const description = hasOfficial
+      ? `副本包含「${profile.name}」的当前参数。恢复基准与「${GAME_DEFAULT_PROFILE_NAME}」相同，都是官方默认配置；后续编辑与原配置相互独立。`
       : `副本包含「${profile.name}」的所有有效参数，并将这些参数作为自己的恢复基准；后续编辑与原配置相互独立。`;
     const name = await ask({ title: '复制这套配置', description, name: profile.name + ' · 副本', confirm: '复制配置', symbol: 'copy' });
     if (name) actions.duplicate(name, profile.id, { fromList });
@@ -214,7 +215,8 @@ export function createProfilePanel({ dom, workspace, ask, beforeLeave, ready, is
         const origin = profile.origin || '已有配置';
         const originText = el('small', 'profile-origin', `来源：${origin}`);
         originText.title = origin;
-        text.append(el('strong', '', profile.name), el('small', '', `${selected ? '当前配置 · ' : ''}${profile.locked ? '游戏默认来源 · 可导入修改' : 'PalWorldSettings.ini'}`), originText);
+        const baseLabel = workspace.profiles.some(entry => entry.locked) ? '官方默认 · 源码只读' : '源码只读';
+        text.append(el('strong', '', profile.name), el('small', '', `${selected ? '当前配置 · ' : ''}${profile.locked ? '游戏默认来源 · 可导入修改' : baseLabel}`), originText);
         button.append(icon('file'), text);
         if (selected) button.append(icon('arrow'));
         button.addEventListener('click', () => openSourceDialog(profile));

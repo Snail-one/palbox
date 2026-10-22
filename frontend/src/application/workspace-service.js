@@ -126,8 +126,10 @@ export class WorkspaceService {
     const profile = this.profiles.find(candidate => candidate.id === id);
     if (!profile) throw new Error('配置不存在。');
     parse(source);
-    // Capture legacy profiles before their first edit; later saves keep this baseline.
-    profile.initialSource ??= profile.source;
+    const official = this.profiles.find(entry => entry.locked && entry.id !== profile.id)?.initialSource;
+    // Capture legacy profiles before their first edit; an official file replaces that baseline.
+    if (official) profile.initialSource = official;
+    else profile.initialSource ??= profile.source;
     const previous = { ...profile };
     profile.source = source;
     profile.updatedAt = this.#identity.now?.() ?? new Date().toISOString();
