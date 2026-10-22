@@ -225,9 +225,9 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
         restart: '保存世界并重启游戏服。', kick: '将选中的玩家移出游戏服。'
       };
       const confirmed = await ask({ title: `${names[name]}？`, description: descriptions[name], confirm: names[name], danger: ['restore', 'restore-native', 'reset-save', 'kick', 'force-stop'].includes(name), symbol: 'server',
-        ...(name === 'restore' ? { choices: [
-          { value: 'world', label: '存档备份', description: '清空并替换当前世界 ID 目录，恢复备份中的世界、玩家及备份历史等全部世界内容；保留服务器配置、其他世界和目录外的数据。需要当前世界 ID 有效。' },
-          { value: 'full', label: '完整备份', description: '整体替换 Pal/Saved，恢复备份中的配置、世界 ID、所有世界、玩家、备份历史、日志和封禁名单；旧目录中备份里没有的内容全部移除。' }
+        ...(name === 'restore' ? { defaultChoice: 'full', choices: [
+          { value: 'world', label: '存档恢复', description: '清空并替换当前世界 ID 目录，恢复备份中的世界、玩家及备份历史等全部世界内容；保留服务器配置、其他世界和目录外的数据。需要当前世界 ID 有效。' },
+          { value: 'full', label: '完整恢复', description: '整体替换 Pal/Saved，恢复备份中的配置、世界 ID、所有世界、玩家、备份历史、日志和封禁名单；旧目录中备份里没有的内容全部移除。' }
         ] } : {}),
         ...(name === 'reset-save' ? { name: '', nameLabel: '输入 delete 确认删除', namePlaceholder: 'delete', nameMaxLength: 6, confirmation: 'delete' } : {}) });
       if (!confirmed) return;

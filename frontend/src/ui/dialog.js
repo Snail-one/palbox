@@ -44,7 +44,7 @@ export function createDialog({ $, icon }) {
   });
   $('action-dialog').addEventListener('cancel', event => { event.preventDefault(); finish(null); });
 
-  return ({ title, description, name, nameLabel = '配置名称', namePlaceholder = '例如：和朋友的冒险', nameMaxLength = 60, required = true, confirmation: expected = null, choices = [], confirm = '确认', danger = false, symbol = 'file' }) => new Promise(resolve => {
+  return ({ title, description, name, nameLabel = '配置名称', namePlaceholder = '例如：和朋友的冒险', nameMaxLength = 60, required = true, confirmation: expected = null, choices = [], defaultChoice = null, confirm = '确认', danger = false, symbol = 'file' }) => new Promise(resolve => {
     pending = resolve;
     nameRequired = required;
     confirmation = expected;
@@ -61,7 +61,7 @@ export function createDialog({ $, icon }) {
       button.addEventListener('click', () => selectChoice(choice.value));
       return button;
     }));
-    selectChoice(choices[0]?.value ?? null);
+    selectChoice(choices.some(item => item.value === defaultChoice) ? defaultChoice : choices[0]?.value ?? null);
     $('dialog-icon').replaceChildren(icon(symbol));
     $('dialog-name-text').textContent = nameLabel;
     $('dialog-name').placeholder = namePlaceholder;
@@ -75,7 +75,7 @@ export function createDialog({ $, icon }) {
     $('dialog-confirm').style.backgroundColor = danger ? 'var(--red)' : '';
     $('action-dialog').showModal();
     if (name !== undefined) { $('dialog-name').focus(); $('dialog-name').select(); }
-    else if (choices.length) $('dialog-choice').querySelector('button').focus();
+    else if (choices.length) ($('dialog-choice').querySelector('button.selected') || $('dialog-choice').querySelector('button')).focus();
     else $('dialog-cancel').focus();
   });
 }

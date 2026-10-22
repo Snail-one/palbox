@@ -94,7 +94,7 @@ test('备份整个 Saved，存在当前世界时仅恢复世界内容并保留�
   await writeFile(path.join(world, 'new-file.sav'), 'remove-on-restore');
   await writeFile(runtime.config, config + '\n; current configuration\n');
   await writeFile(banlist, 'current-banlist');
-  await manager.restore(task.backup);
+  await manager.restore(task.backup, { mode: 'world' });
   assert.equal(await readFile(path.join(world, 'Level.sav'), 'utf8'), 'world-data');
   assert.equal(await readFile(path.join(world, 'Players/player.sav'), 'utf8'), 'player-data');
   assert.equal(await readFile(path.join(world, 'WorldOption.sav'), 'utf8'), 'world-options');

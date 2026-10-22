@@ -60,11 +60,14 @@ test('拒绝无效恢复方式；存档模式缺少当前世界 ID 时拒绝恢�
   }
   assert.equal(f.manager.tasks.length, count);
   await rm(path.join(f.runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'));
-  for (const payload of [{ id, mode: 'world' }, { id }]) {
-    const task = await f.task('restore', payload);
-    assert.equal(task.state, 'failed');
-    assert.match(task.message, /GameUserSettings.ini/);
-    assert.equal(f.runtime.game.pid, pid);
-  }
+  const world = await f.task('restore', { id, mode: 'world' });
+  assert.equal(world.state, 'failed');
+  assert.match(world.message, /GameUserSettings.ini/);
+  assert.equal(f.runtime.game.pid, pid);
   assert.equal((await f.manager.backups()).filter(backup => backup.category === 'before-restore').length, 0);
+  const full = await f.task('restore', { id });
+  assert.equal(full.state, 'succeeded', full.message);
+  assert.equal(await f.manager.targetWorld(), 'SAVED_WORLD');
+  assert.notEqual(f.runtime.game.pid, pid);
+  assert.equal((await f.manager.backups()).filter(backup => backup.category === 'before-restore').length, 1);
 });
