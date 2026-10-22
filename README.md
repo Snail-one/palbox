@@ -45,6 +45,25 @@ HOST=127.0.0.1 PORT=8090 API_PORT=8091 npm start
 
 `npm start` 同时启动前端（默认 `127.0.0.1:8080`）和后端（默认 `127.0.0.1:8081`），通过 `API_HOST` / `API_PORT` 调整后端监听。配置保存在项目的 `data/` 目录；默认不自动下载或启动游戏。请通过 HTTP 访问页面。
 
+### Linux 宿主机安装游戏服务端
+
+Ubuntu / Debian 的 **x86_64** 服务器可以直接运行完整游戏管理功能。安装 Node.js 22 或以上版本后，先准备系统依赖：
+
+```sh
+sudo apt-get update
+sudo apt-get install -y lib32gcc-s1 lib32stdc++6 libstdc++6 libatomic1 ca-certificates tar xdg-user-dirs
+```
+
+以普通用户运行 `npm start`，在网页初始化并登录管理员账号，进入「游戏管理」：
+
+1. 点击「安装 SteamCMD」，自动从 Valve 下载、解压并初始化，进度见「运行日志 → 安装与更新」。失败后可查看日志并再次点击重试。
+2. SteamCMD 就绪后，点击「安装服务端」。
+3. 游戏安装完成后，点击「启动」。
+
+SteamCMD 保存在数据目录下的 `steamcmd/`，其独立运行主目录保存在 `steam-home/`，不会修改当前用户的 Steam 配置；游戏、存档、备份和面板数据继续保存在同一数据目录内。通过 `PALBOX_DATA_DIR` 可指定其他数据目录。已有 SteamCMD 可通过 `PALBOX_STEAMCMD=/绝对路径/steamcmd.sh` 指定；自定义路径只检测和使用，不会自动覆盖。Docker 沿用镜像中的 SteamCMD，已就绪时不显示安装按钮。
+
+`npm start` 前台运行，退出时会停止服务；长期后台运行和开机启动需另行配置系统服务。需要远程访问时配置前端监听地址，并只开放所需的面板端口与游戏 UDP 端口，后端管理 API 和游戏 REST API 不应对公网开放。
+
 ### 编辑配置
 
 1. 新建配置、导入 `.ini` 文件，或粘贴 `OptionSettings=(...)`。
@@ -161,6 +180,7 @@ npx playwright install chromium
 ```sh
 npm run test:e2e
 npm run test:e2e:managed
+npm run test:e2e:steamcmd
 npm run test:e2e:logs
 npm run test:e2e:on-demand
 npm run test:e2e:running

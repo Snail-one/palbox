@@ -1,0 +1,42 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { managementFixture } from '../helpers/management-fixture.js';
+import { steamcmdArchive } from '../helpers/steamcmd-fixture.js';
+import { defaultSteamcmd, installSteamcmd } from '../../backend/management/steamcmd.js';
+
+test('网页 SteamCMD 安装任务沿用登录、CSRF、任务互斥和日志，并可继续安装游戏', { skip: process.platform !== 'linux' || process.arch !== 'x64', timeout: 15000 }, async t => {
+  const f = await managementFixture(); t.after(() => f.close());
+  const archive = await steamcmdArchive(f.directory, { gameInstaller: f.runtime.steamcmd });
+  f.runtime.steamcmd = defaultSteamcmd(f.directory);
+  let release;
+  const download = new Promise(resolve => { release = resolve; });
+  t.after(() => release());
+  f.runtime.installSteamcmd = options => installSteamcmd(f.runtime, { ...options, fetch: async () => {
+    await download;
+    return new Response(archive);
+  } });
+  assert.equal((await f.request('/api/tasks', { method: 'POST', body: { action: 'install-steamcmd' } })).status, 401);
+  const { cookie } = await f.login();
+  const noCsrf = await fetch(f.base + '/api/tasks', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'install-steamcmd' }) });
+  assert.equal(noCsrf.status, 403);
+  let status = await (await f.request('/api/status')).json();
+  assert.equal(status.steamcmd.installed, false);
+  assert.equal(status.steamcmd.canInstall, true);
+  assert.match((await f.task('install')).message, /请先点击“安装 SteamCMD”/);
+  const accepted = await f.request('/api/tasks', { method: 'POST', body: { action: 'install-steamcmd' } });
+  assert.equal(accepted.status, 202);
+  assert.equal((await f.request('/api/tasks', { method: 'POST', body: { action: 'install-steamcmd' } })).status, 409);
+  release();
+  await f.manager.operation;
+  status = await (await f.request('/api/status')).json();
+  assert.equal(status.task, null);
+  assert.equal(status.tasks[0].action, 'install-steamcmd');
+  assert.equal(status.tasks[0].state, 'succeeded', status.tasks[0].message);
+  assert.equal(status.steamcmd.installed, true);
+  assert.match(await (await f.request('/api/logs?channel=steamcmd')).text(), /SteamCMD 安装完成/);
+  assert.equal((await f.task('install')).state, 'succeeded');
+  assert.equal((await f.task('start')).state, 'succeeded');
+  const whileRunning = await f.request('/api/tasks', { method: 'POST', body: { action: 'install-steamcmd' } });
+  assert.equal(whileRunning.status, 409);
+  assert.match((await whileRunning.json()).error, /请先停止游戏服/);
+});

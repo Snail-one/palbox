@@ -44,7 +44,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     <div class="management-actions server-heading-actions"><label class="auto-start-switch" title="启用后，面板或容器重启并完成初始化时会自动创建启动任务；服务端未安装或尚未初始化时跳过"><input type="checkbox" role="switch" class="sr-only" id="auto-start" disabled><span class="toggle" aria-hidden="true"></span><span>自动启动</span></label></div>
     <div class="server-primary-actions" role="group" aria-label="游戏服务操作">
         <span id="game-state" class="save-status" data-state="pending" role="status" title="正在连接面板，读取游戏服务状态。">连接中</span>
-        <button class="button primary" data-action="install" hidden>安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop" hidden>停止</button><button class="button secondary" data-action="restart" hidden>重启</button>
+        <button class="button primary" data-action="install-steamcmd" hidden>安装 SteamCMD</button><button class="button primary" data-action="install" hidden>安装服务端</button><button class="button primary" data-action="start">启动</button><button class="button secondary" data-action="stop" hidden>停止</button><button class="button secondary" data-action="restart" hidden>重启</button>
         <button class="button secondary" data-action="force-stop" title="仅在正常停止无效时使用，可能丢失最近一次未保存的进度。">强制停止</button><button class="button secondary" data-action="update" title="请先停止游戏服再更新；更新后保持停服。">更新服务端</button><button class="button secondary" id="show-running-config" disabled>运行参数</button><button class="button secondary" id="edit-game-args" disabled>启动参数</button><button class="button secondary" id="edit-install-args" disabled>安装参数</button><button class="button secondary" id="edit-shutdown-wait" title="设置关服倒计时和游戏内提示文字" disabled>关服设置</button>
     </div>
     <button type="button" id="refresh-status" class="button secondary" title="读取当前页面所需的最新状态">刷新状态</button>
@@ -149,7 +149,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   document.querySelector('.bottom-note > span:last-child').textContent = '配置自动保存 · 应用后在游戏中生效';
   const actionButtons = [...section.querySelectorAll('[data-action]'), ...nativeSaves.querySelectorAll('[data-action]'), ...saves.querySelectorAll('[data-action]'), ...configurationApply.querySelectorAll('[data-action]')];
   actionButtons.forEach(button => { button.disabled = true; });
-  const names = { install: '安装服务端', start: '启动', stop: '停止', 'force-stop': '强制停止', restart: '重启', update: '更新服务端', apply: '应用配置', backup: '创建备份', 'delete-backup': '删除备份', restore: '恢复备份', 'restore-native': '恢复官方备份', 'import-save': '导入存档', 'reset-save': '重置存档', 'save-world': '保存世界', announce: '发送广播', kick: '移出玩家', ban: '封禁玩家', unban: '解封玩家' };
+  const names = { 'install-steamcmd': '安装 SteamCMD', install: '安装服务端', start: '启动', stop: '停止', 'force-stop': '强制停止', restart: '重启', update: '更新服务端', apply: '应用配置', backup: '创建备份', 'delete-backup': '删除备份', restore: '恢复备份', 'restore-native': '恢复官方备份', 'import-save': '导入存档', 'reset-save': '重置存档', 'save-world': '保存世界', announce: '发送广播', kick: '移出玩家', ban: '封禁玩家', unban: '解封玩家' };
   let refreshing = false;
   let pendingRefresh = null;
   let closeStatus = null;
@@ -869,10 +869,21 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     $('game-port').textContent = value.port;
     for (const button of actionButtons) {
       const name = button.dataset.action;
+      if (name === 'install-steamcmd') {
+        button.hidden = !value.steamcmd || value.steamcmd.installed;
+        button.textContent = value.task?.action === name ? '正在安装 SteamCMD…' : '安装 SteamCMD';
+        button.title = value.steamcmd?.reason || '下载并初始化 SteamCMD，进度见“安装与更新”日志。';
+      }
       if (name === 'install') button.hidden = value.installed;
       if (name === 'start') button.hidden = !value.installed || value.running;
       if (name === 'stop' || name === 'restart') button.hidden = !value.running;
       button.disabled = Boolean(value.task) || (name === 'install' && value.installed) || (['start', 'update', 'restart', 'import-save'].includes(name) && !value.installed) || (['start', 'update'].includes(name) && value.running) || (['stop', 'force-stop', 'restart', 'save-world'].includes(name) && !value.running);
+      if (name === 'install-steamcmd') button.disabled ||= !value.steamcmd?.canInstall || value.steamcmd.installed || value.running;
+      if (['install', 'update'].includes(name) && value.steamcmd?.installed === false) {
+        button.disabled = true;
+        button.title = value.steamcmd.reason || '请先安装 SteamCMD。';
+      } else if (name === 'install') button.title = '';
+      else if (name === 'update') button.title = '请先停止游戏服再更新；更新后保持停服。';
       if (name === 'reset-save') button.disabled ||= value.running;
       if (name === 'backup') {
         const noSave = !value.hasWorldSave;

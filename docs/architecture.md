@@ -71,6 +71,8 @@ flowchart TD
 
 ## 管理模式
 
+Linux 原生运行时，SteamCMD 默认位于数据目录的 `steamcmd/`；`steamcmd.js` 负责下载官方安装包、限制下载大小和执行时间、解压、自更新与就绪标记。网页通过已有 `/api/tasks` 提交 `install-steamcmd`，沿用管理员认证、CSRF、任务互斥、状态推送和安装日志。失败时不写入就绪标记，可以重试；关闭面板会中止下载并终止安装进程。自动安装使用数据目录内的 `steam-home/` 作为子进程主目录并准备 SDK 链接，不改变宿主用户的 Steam 配置。显式配置的 `PALBOX_STEAMCMD` 仅检测和使用，不由网页覆盖，Docker 沿用镜像预装路径。
+
 后端使用 `backend/management`。`files.js` 提供写入临时文件、fsync 和原子替换；`store.js` 在服务器保存工作空间并检查版本冲突；`auth.js` 管理管理员用户名与异步 scrypt 密码校验（限制并发哈希）、HttpOnly 会话、CSRF 验证、按客户端地址的失败冷却和登录审计；`api.js` 提供固定的 JSON API 与备份下载，不提供任意命令执行，JSON 请求体带大小上限和绝对读取超时；`save-imports.js` 负责世界存档和完整备份上传的流式落盘、tar 安全校验、类型与布局识别、全部内容校验及临时暂存。全新部署没有 `palbox/settings.json` 时进入首次初始化状态，由 `/api/setup` 创建管理员，仅接受回环或内网来源；旧版缺少用户名的配置会被拒绝启动。
 
 `runtime.js` 管理 SteamCMD 和游戏进程组，使用参数数组启动子进程，处理 REST API、日志轮换、就绪等待和停服。游戏启动参数保存在 `settings.json` 的 `gameArgs`，由 `manager.js` 在初始化和设置更新时同步到 `runtime.args`，所有启动与自动重启路径共用同一份参数。世界存档和完整备份通过 `/api/save-import` 流式上传并暂存到 `palbox/imports`，校验通过后由 `import-save` 任务停服、创建导入前备份；完整备份整体替换 `Pal/Saved`，世界包整体替换当前世界 ID 目录，包内的全部文件和子目录均保留。`replace-directory.js` 先准备新目录，再移走旧目录并安装新目录，失败时回滚，回滚失败则保留原数据并保持停服。导入后恢复原运行状态。`manager.js` 串行执行后台任务，处理应用配置、停服备份、归档路径校验、临时目录恢复；应用配置不创建备份，恢复、导入和重置前的世界备份分别写入 `before-restore`、`before-import`、`before-reset`，与 `manual` 手动备份独立保留和展示；分类数量保存在 `settings.json` 的 `backupRetentions` 中，按分类清理，旧的 `backupRetention` 数字作为初始回退值；后端监听端口后会按 `settings.json` 的 `autoStart` 设置自动提交一次启动任务（未安装、未初始化、已在运行或正在关闭时跳过）。`native-backups.js` 识别官方世界快照、验证文件与路径、在线导出并在停服后恢复对应世界；面板不再运行自动备份定时器。面板进程与游戏进程分开管理，游戏停服不会关闭网页。

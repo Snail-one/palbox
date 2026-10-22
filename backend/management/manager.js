@@ -251,12 +251,13 @@ export class Manager extends EventEmitter {
   saveTasks() { return jsonWrite(this.tasksFile, this.tasks.slice(0, 40)); }
   async submit(action, payload = {}, { authorize = () => {} } = {}) {
     authorize();
-    const allowed = ['install', 'update', 'start', 'stop', 'force-stop', 'restart', 'apply', 'backup', 'delete-backup', 'restore', 'restore-native', 'import-save', 'reset-save', 'save-world', 'announce', 'kick', 'ban', 'unban'];
+    const allowed = ['install-steamcmd', 'install', 'update', 'start', 'stop', 'force-stop', 'restart', 'apply', 'backup', 'delete-backup', 'restore', 'restore-native', 'import-save', 'reset-save', 'save-world', 'announce', 'kick', 'ban', 'unban'];
     if (!allowed.includes(action)) throw failure('管理操作不存在。', 404);
     if (action === 'backup' && payload.category && payload.category !== 'manual') throw failure('定时备份已交由游戏官方机制，面板仅支持手动创建世界备份。');
     if (action === 'restore' && !['world', 'full'].includes(payload.mode === undefined ? 'world' : payload.mode)) throw failure('请选择存档备份或完整备份恢复方式。');
     if (this.closing) throw failure('管理服务正在关闭。', 503);
     if (this.busy) throw failure('已有任务正在执行，请稍后再试。', 409);
+    if (action === 'install-steamcmd' && this.runtime.game) throw failure('请先停止游戏服再安装 SteamCMD。', 409);
     if (action === 'update' && this.runtime.game) throw failure('请先停止游戏服再更新服务端。', 409);
     if (action === 'backup' && this.runtime.game) throw failure('请先停止游戏服再创建世界备份。', 409);
     if (action === 'reset-save') this.requireResetAllowed(payload);
@@ -318,6 +319,9 @@ export class Manager extends EventEmitter {
   }
   async execute(action, payload, task) {
     switch (action) {
+      case 'install-steamcmd':
+        await this.runtime.installSteamcmd({ onProgress: (phase, message) => this.servicePhase(phase, message) });
+        break;
       case 'install':
         await this.installGame();
         task.defaultsImported = await this.store.syncDefaultProfile();
@@ -694,6 +698,7 @@ export class Manager extends EventEmitter {
     const stateRevision = this.stateRevision;
     await this.store.syncDefaultProfile();
     const installed = await this.runtime.installed();
+    const steamcmd = await this.runtime.steamcmdStatus();
     const installedBuild = installed ? await this.installedBuild() : null;
     if (!installed || this.versionCache?.build !== installedBuild) this.versionCache = null;
     let disk = null;
@@ -703,7 +708,7 @@ export class Manager extends EventEmitter {
     let configuration = disk && output(disk) === desired ? 'applied' : 'pending';
     if (this.runtime.game && (!this.runtime.runningSource || output(this.runtime.runningSource) !== desired)) configuration = 'pending';
     const game = this.runtime.game;
-    const status = { stateInstance: this.stateInstance, stateRevision, installed, installedBuild, version: this.versionCache?.version || null, hasWorldSave: await this.hasWorldSave(), running: Boolean(game), ready: this.runtime.ready, configuration, hasConfiguration: Boolean(active), startedAt: this.runtime.startedAt, lastExit: this.runtime.lastExit, task: this.busy, tasks: this.tasks, revision: this.store.revision, port: this.runtime.port };
+    const status = { stateInstance: this.stateInstance, stateRevision, installed, steamcmd, installedBuild, version: this.versionCache?.version || null, hasWorldSave: await this.hasWorldSave(), running: Boolean(game), ready: this.runtime.ready, configuration, hasConfiguration: Boolean(active), startedAt: this.runtime.startedAt, lastExit: this.runtime.lastExit, task: this.busy, tasks: this.tasks, revision: this.store.revision, port: this.runtime.port };
     status.playerHistoryRevision = this.playerHistoryRecorder.revision;
     const endpoints = scope === 'overview' ? ['info', 'metrics', 'players'] : scope === 'players' ? ['players'] : [];
     for (const endpoint of endpoints) status[endpoint] = endpoint === 'players' ? [] : null;

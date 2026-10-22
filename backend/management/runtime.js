@@ -10,6 +10,7 @@ import { failure } from './files.js';
 import { appendCombinedLog, initializeCombinedLog, initializeLoginLog, readCombinedLog, readLogTail, timestampLogChunk, withoutLoginLogs } from './logs.js';
 import { appendLog, cleanupLogs, LOG_FILES, logPolicy } from './log-retention.js';
 import { readLogPage } from './log-pages.js';
+import { defaultSteamcmd, managedSteamcmd, steamcmdStatus, installSteamcmd } from './steamcmd.js';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 // SteamCMD block-buffers stdout when it is a pipe. A pseudo-terminal keeps its
@@ -19,7 +20,7 @@ const ptyAvailable = process.platform === 'linux' && existsSync('/usr/bin/script
 export const DEFAULT_SHUTDOWN_MESSAGE = 'Palbox 正在维护服务器';
 
 export class Runtime extends EventEmitter {
-  constructor(directory, { steamcmd = '/opt/steamcmd/steamcmd.sh', port = 8211, readyTimeout = 180000, stopTimeout = 60000, shutdownWait = 5, shutdownMessage = DEFAULT_SHUTDOWN_MESSAGE, args = [], installArgs = null, logs = {} } = {}) {
+  constructor(directory, { steamcmd = defaultSteamcmd(directory), port = 8211, readyTimeout = 180000, stopTimeout = 60000, shutdownWait = 5, shutdownMessage = DEFAULT_SHUTDOWN_MESSAGE, args = [], installArgs = null, logs = {} } = {}) {
     super();
     this.directory = directory;
     this.server = path.join(directory, 'server');
@@ -99,11 +100,13 @@ export class Runtime extends EventEmitter {
       return true;
     } catch { return false; }
   }
+  steamcmdStatus() { return steamcmdStatus(this); }
+  installSteamcmd(options) { return installSteamcmd(this, options); }
   kill(child, signal) {
     if (!child?.pid) return;
     try { process.kill(-child.pid, signal); } catch (error) { if (error.code !== 'ESRCH') throw error; }
   }
-  run(command, args, channel = 'palbox', { captureLimit = 65536, pty = false, onOutput, ...options } = {}) {
+  run(command, args, channel = 'palbox', { captureLimit = 65536, pty = false, onOutput, timeoutMs = 0, ...options } = {}) {
     if (this.closing) return Promise.reject(failure('面板正在关闭。', 503));
     return new Promise((resolve, reject) => {
       const usePty = pty && ptyAvailable;
@@ -111,26 +114,32 @@ export class Runtime extends EventEmitter {
       const argv = usePty ? ['-qefc', [command, ...args].map(shellQuote).join(' '), '/dev/null'] : args;
       const child = spawn(executable, argv, { shell: false, detached: true, env: this.childEnvironment(), stdio: ['ignore', 'pipe', 'pipe'], ...options });
       this.command = child;
+      let timedOut = false;
+      const timer = timeoutMs ? setTimeout(() => { timedOut = true; this.kill(child, 'SIGKILL'); }, timeoutMs) : null;
       child.stdout.setEncoding('utf8');
       child.stderr.setEncoding('utf8');
       let output = '';
       const collect = data => { output = (output + data.toString()).slice(-captureLimit); this.log(channel, data); onOutput?.(data); };
       child.stdout.on('data', collect); child.stderr.on('data', collect);
-      child.once('error', error => { if (this.command === child) this.command = null; reject(error); });
+      child.once('error', error => { clearTimeout(timer); if (this.command === child) this.command = null; reject(error); });
       child.once('close', (code, signal) => {
+        clearTimeout(timer);
         if (this.command === child) this.command = null;
-        code === 0 ? resolve(output) : reject(failure(`${path.basename(command)} 执行失败（${signal || code}），请查看日志。`, 500));
+        if (timedOut) reject(failure(`${path.basename(command)} 执行超时，请查看日志后重试。`, 504));
+        else code === 0 ? resolve(output) : reject(failure(`${path.basename(command)} 执行失败（${signal || code}），请查看日志。`, 500));
       });
     });
   }
   childEnvironment() {
     const env = { ...process.env, TZ: 'UTC' };
+    if (managedSteamcmd(this)) env.HOME = path.resolve(this.directory, 'steam-home');
     delete env.PALBOX_ADMIN_PASSWORD;
     delete env.PALBOX_ADMIN_PASSWORD_FILE;
     return env;
   }
   async install({ onProgress } = {}) {
     if (this.game) throw failure('请先停止游戏服再安装或更新。', 409);
+    if (!(await this.steamcmdStatus()).installed) throw failure('SteamCMD 尚未就绪，请先点击“安装 SteamCMD”，并检查安装与更新日志。', 409);
     await mkdir(this.server, { recursive: true });
     const args = this.installArgs || ['+force_install_dir', this.server, '+login', 'anonymous', '+app_update', '2394010', 'validate', '+quit'];
     let progressText = '';
@@ -239,6 +248,7 @@ export class Runtime extends EventEmitter {
   }
   async close() {
     this.closing = true;
+    this.steamcmdAbort?.abort();
     clearInterval(this.logCleanupTimer);
     this.logCleanupTimer = null;
     this.kill(this.command, 'SIGTERM');

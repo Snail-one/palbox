@@ -15,6 +15,7 @@ test('状态显示游戏版本与本地 Build，停服保留版本，更新后�
     server: path.join(directory, 'server'), saved: path.join(directory, 'server/Pal/Saved'),
     config: path.join(directory, 'settings.ini'), game: {}, ready: true,
     installed: async () => installed,
+    steamcmdStatus: async () => ({ installed: true, canInstall: false, reason: '' }),
     rest: async endpoint => {
       if (!apiAvailable) throw new Error('API unavailable');
       return endpoint === 'info' ? { version: 'v0.7.0' } : endpoint === 'players' ? { players: [] } : {};
@@ -81,6 +82,7 @@ test('缺少 Steam 清单时仍能读取运行中的游戏版本', async t => {
     server: path.join(directory, 'server'), saved: path.join(directory, 'server/Pal/Saved'),
     config: path.join(directory, 'settings.ini'), game: {},
     installed: async () => true,
+    steamcmdStatus: async () => ({ installed: true, canInstall: false, reason: '' }),
     rest: async endpoint => endpoint === 'info' ? { version: 'v0.7.1' } : {}
   };
   const manager = new Manager({ directory, runtime });

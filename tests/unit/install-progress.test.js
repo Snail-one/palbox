@@ -6,6 +6,7 @@ import { Manager } from '../../backend/management/manager.js';
 test('SteamCMD 分块输出驱动真实下载、校验、安装阶段', async () => {
   const runtime = new Runtime('/tmp/palbox-progress-test');
   runtime.installed = async () => true;
+  runtime.steamcmdStatus = async () => ({ installed: true });
   runtime.run = async (_command, _args, channel, options) => {
     assert.equal(channel, 'steamcmd');
     for (const chunk of [

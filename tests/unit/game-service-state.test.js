@@ -22,6 +22,16 @@ test('安装、下载、校验和更新任务优先于静态安装状态', () =>
   ]) assert.equal(taskState(action, phase, { installed: false }).label, expected);
 });
 
+test('SteamCMD 安装阶段、失败和缺失引导与游戏安装区分', () => {
+  for (const [phase, label] of [['steamcmd-downloading', '下载 SteamCMD 中'], ['steamcmd-installing', '安装 SteamCMD 中'], ['steamcmd-initializing', '初始化 SteamCMD 中']]) {
+    assert.equal(taskState('install-steamcmd', phase).label, label);
+  }
+  assert.match(gameServiceState({ ...idle, installed: false, steamcmd: { installed: false } }).description, /请先点击“安装 SteamCMD”/);
+  const failed = gameServiceState({ ...idle, tasks: [{ action: 'install-steamcmd', state: 'failed', message: '下载失败' }] });
+  assert.equal(failed.label, 'SteamCMD 安装失败');
+  assert.equal(failed.description, '下载失败');
+});
+
 test('重启和更新准确区分停服、启动、等待接口就绪与运行完成', () => {
   assert.equal(taskState('restart', 'stopping', { running: true }).label, '停止中');
   for (const action of ['start', 'restart', 'update', 'install', 'backup', 'restore', 'apply']) {

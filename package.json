@@ -22,6 +22,7 @@
     "test:e2e:username": "node tests/e2e/username.cjs",
     "test:e2e:initial": "node tests/e2e/initial-configuration.cjs",
     "test:e2e:managed": "node tests/e2e/management.cjs",
+    "test:e2e:steamcmd": "node tests/e2e/steamcmd.cjs",
     "test:e2e:backups": "node tests/e2e/backups.cjs",
     "test:e2e:logs": "node tests/e2e/logs.cjs",
     "test:e2e:on-demand": "node tests/e2e/on-demand.cjs",
