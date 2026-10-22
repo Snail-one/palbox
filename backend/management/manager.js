@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { readFile, mkdir, mkdtemp, open, readdir, stat, rename, rm, rmdir, lstat, unlink } from 'node:fs/promises';
+import { readFile, mkdir, mkdtemp, open, readdir, stat, rename, rm, rmdir, lstat, unlink, cp } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
@@ -509,25 +509,51 @@ export class Manager extends EventEmitter {
     }
     return populated;
   }
+  async backupWorldId() {
+    const configured = await this.native.configuredWorld();
+    const readable = async id => {
+      try {
+        const level = await lstat(path.join(this.runtime.saved, 'SaveGames', '0', id, 'Level.sav'));
+        return level.isFile() && level.size > 0;
+      } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+    };
+    if (configured && await readable(configured)) return configured;
+    const worlds = [];
+    for (const id of await this.native.worlds()) if (await readable(id)) worlds.push(id);
+    if (worlds.length > 1) throw failure('无法确定当前世界，不能创建世界备份。', 409);
+    return worlds[0] ?? null;
+  }
   async backup(category, protectedId = null) {
     const directory = await backupDirectory(this.directory, category);
-    this.servicePhase('backing', '正在备份整个 Pal/Saved 目录。');
+    this.servicePhase('backing', '正在备份当前世界和游戏配置。');
     // Stop the process before archiving so world/player files belong to one save.
     if (this.runtime.game) throw failure('创建备份前需要停止游戏服。', 409);
     try { await this.native.safeDirectory([]); }
     catch (error) { if (error.code === 'ENOENT') return null; throw error; }
     if (!(await this.checkBackupFiles(this.runtime.saved))) return null;
-    const worlds = await this.native.worlds();
-    const worldId = await this.native.configuredWorld() || (worlds.length === 1 ? worlds[0] : null);
+    const worldId = await this.backupWorldId();
+    const worldDir = worldId ? path.join(this.runtime.saved, 'SaveGames', '0', worldId) : null;
+    if (!worldDir) {
+      if (category === 'manual') throw failure('尚无可备份的世界存档，请先启动游戏并生成存档。', 409);
+      try { await lstat(this.runtime.config); }
+      catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+    }
     const id = `${category}/${Date.now()}-${randomUUID()}.tar.gz`;
     const file = path.join(this.directory, 'backups', id);
     const stage = await mkdtemp(path.join(directory, '.creating-'));
     const temporary = path.join(stage, 'archive.tar.gz');
     try {
-      await this.runtime.run('tar', ['-czf', temporary, '--hard-dereference', '-C', this.runtime.server, '--', 'Pal/Saved'], 'palbox');
+      const packedDir = path.join(stage, 'packed');
+      await mkdir(packedDir, { mode: 0o700 });
+      if (worldDir) {
+        if (!(await this.checkBackupFiles(worldDir))) throw failure('尚无可备份的世界存档，请先启动游戏并生成存档。', 409);
+        await cp(worldDir, path.join(packedDir, worldId), { recursive: true });
+      }
+      await this.native.copyLiveConfig(path.join(packedDir, 'Config/LinuxServer'));
+      await this.runtime.run('tar', ['-czf', temporary, '-C', packedDir, '--', ...(worldDir ? [worldId, 'Config'] : ['Config'])], 'palbox');
       await backupDirectory(this.directory, category);
       await rename(temporary, file);
-      await recordBackupWorld(file, worldId);
+      await recordBackupWorld(file, worldDir ? worldId : null);
     } finally { await rm(stage, { recursive: true, force: true }); }
     const list = (await this.backups()).filter(b => b.category === category);
     for (const old of list.slice(this.backupRetentions[category])) if (old.id !== protectedId) await this.deleteBackup(old.id);
@@ -585,10 +611,11 @@ export class Manager extends EventEmitter {
     const captureLimit = 32 * 1024 * 1024;
     const listing = await this.runtime.run('tar', ['-tzf', file], 'palbox', { captureLimit });
     if (listing.length >= captureLimit) throw failure('备份目录清单过长，无法安全校验。');
-    const names = listing.trim().split('\n');
-    for (const name of names) if (!/^Pal\/Saved(?:\/|$)/.test(name) || name.split('/').some(p => p === '..') || name.includes('\\')) throw failure('备份包含不允许的路径。');
+    const names = listing.trim().split('\n').map(name => name.replace(/\/+$/, '')).filter(Boolean);
+    for (const name of names) if (name.split('/').some(part => !part || part === '..') || name.includes('\\')) throw failure('备份包含不允许的路径。');
     const types = await this.runtime.run('tar', ['-tvzf', file], 'palbox', { captureLimit });
     if (types.length >= captureLimit || types.trim().split('\n').some(line => !['-', 'd'].includes(line[0]))) throw failure('备份包含链接或不支持的文件类型。');
+    if (!names.every(name => /^Pal\/Saved(?:\/|$)/.test(name))) return this.restorePacked(id, file, names, wholeSaved);
     const worlds = [...new Set(names.map(name => /^Pal\/Saved\/SaveGames\/0\/([A-Za-z0-9_-]{1,128})\/Level\.sav$/.exec(name)?.[1]).filter(Boolean))];
     const currentWorld = wholeSaved ? null : await this.targetWorld();
     const stage = path.join(this.runtime.server, `.restore-${randomUUID()}`);
@@ -631,6 +658,60 @@ export class Manager extends EventEmitter {
         throw error;
       }
       if (moved) await rm(previous, { recursive: true });
+    } finally { await rm(stage, { recursive: true, force: true }); }
+    if (running) await this.startGame();
+  }
+  async restorePacked(id, file, names, wholeSaved) {
+    const worlds = [...new Set(names.map(name => /^([A-Za-z0-9_-]{1,128})\/Level\.sav$/.exec(name)?.[1]).filter(Boolean))];
+    const hasConfig = names.includes('Config/LinuxServer/PalWorldSettings.ini');
+    if ((worlds.length !== 1 && worlds.length !== 0) || !hasConfig) throw failure('备份不是可恢复的世界备份。', 409);
+    const worldId = worlds[0] ?? null;
+    for (const name of names) {
+      const inWorld = worldId && (name === worldId || name.startsWith(`${worldId}/`));
+      const inConfig = name === 'Config' || name === 'Config/LinuxServer' || name === 'Config/LinuxServer/PalWorldSettings.ini';
+      if (!inWorld && !inConfig) throw failure('备份包含不允许的路径。');
+    }
+    if (!worldId && !wholeSaved) throw failure('无法确定备份中的来源世界，不能按存档恢复。', 409);
+    const stage = path.join(this.runtime.server, `.restore-${randomUUID()}`);
+    const previous = path.join(this.runtime.server, `.saved-${randomUUID()}`);
+    await mkdir(stage, { recursive: true });
+    const running = Boolean(this.runtime.game);
+    try {
+      await this.runtime.run('tar', ['-xzf', file, '--no-same-owner', '--no-same-permissions', '-C', stage], 'palbox');
+      const source = worldId ? path.join(stage, worldId) : null;
+      if (source) {
+        if (!(await this.checkBackupFiles(source))) throw failure('备份中没有可恢复的文件。');
+        const level = await lstat(path.join(source, 'Level.sav'));
+        if (!level.isFile() || !level.size) throw failure('备份中的世界存档为空或无效。');
+      }
+      let configText = null;
+      if (wholeSaved) {
+        configText = await readFile(path.join(stage, 'Config/LinuxServer/PalWorldSettings.ini'), 'utf8');
+        parse(configText);
+      }
+      const currentWorld = wholeSaved ? worldId : await this.targetWorld();
+      if (running) await this.stopGame({ requireSave: true });
+      if (!wholeSaved && currentWorld !== await this.targetWorld()) throw failure('当前世界已改变，请刷新后重试。', 409);
+      await this.backup('before-restore', id);
+      await this.checkedBackupFile(id);
+      this.servicePhase('restoring', wholeSaved ? '正在恢复备份中的世界和 PalWorldSettings.ini。' : '正在恢复当前世界的存档，保留当前服务器配置。');
+      if (source) {
+        const target = (await this.native.ensureWorld(currentWorld)).directory;
+        await mkdir(path.dirname(target), { recursive: true });
+        let moved = false;
+        try { await rename(target, previous); moved = true; }
+        catch (error) { if (error.code !== 'ENOENT') throw error; }
+        try { await rename(source, target); }
+        catch (error) {
+          if (moved) {
+            try { await rename(previous, target); }
+            catch { throw failure(`恢复回滚失败，原数据已保留在 ${previous}，请检查服务器。`, 500); }
+          }
+          throw error;
+        }
+        if (moved) await rm(previous, { recursive: true, force: true });
+      }
+      if (wholeSaved) await atomicWrite(this.runtime.config, configText);
     } finally { await rm(stage, { recursive: true, force: true }); }
     if (running) await this.startGame();
   }

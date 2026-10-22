@@ -83,12 +83,13 @@ const path = require('node:path');
     assert.equal(f.manager.tasks.filter(task => task.action === 'restore').length, 1);
     assert.equal(await fs.readFile(f.runtime.config, 'utf8'), currentConfig);
     await confirmMode('full');
-    assert.equal(await f.manager.targetWorld(), 'SAVED_WORLD');
+    assert.equal(await f.manager.targetWorld(), 'CURRENT_WORLD');
     assert.equal(await fs.readFile(f.runtime.config, 'utf8'), originalConfig);
-    assert.deepEqual(await fs.readdir(path.join(f.runtime.saved, 'SaveGames/0')), ['SAVED_WORLD']);
-    await assert.rejects(fs.access(path.join(f.runtime.saved, 'outside-world.txt')), { code: 'ENOENT' });
+    assert.deepEqual((await fs.readdir(path.join(f.runtime.saved, 'SaveGames/0'))).sort(), ['CURRENT_WORLD', 'SAVED_WORLD']);
+    assert.equal(await fs.readFile(path.join(f.runtime.saved, 'outside-world.txt'), 'utf8'), 'keep-until-full');
+    assert.equal(await fs.readFile(path.join(f.runtime.saved, 'SaveGames/0/SAVED_WORLD/Level.sav'), 'utf8'), 'current-world');
     assert.equal((await f.manager.backups()).filter(backup => backup.category === 'before-restore').length, 2);
-    console.log('PASS 默认完整恢复，即使当前世界有效也整体恢复 Saved 和备份配置');
+    console.log('PASS 默认完整恢复写入备份配置并替换包内世界，保留其他世界和目录外文件');
 
     await page.waitForFunction(() => !document.querySelector('[data-backup-category="manual"] .backup-row button').disabled);
     await restore().click();

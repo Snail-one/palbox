@@ -5,7 +5,7 @@ import path from 'node:path';
 import { managementFixture } from '../helpers/management-fixture.js';
 import { nativeBackupFixture } from '../helpers/native-backup-fixture.js';
 
-test('世界备份按选择恢复当前世界或完整 Saved，均保留恢复前备份及原运行状态', async t => {
+test('世界备份按选择恢复当前世界，或写入配置并替换包内世界，均保留恢复前备份及原运行状态', async t => {
   for (const running of [false, true]) await t.test(running ? '运行中恢复后重新启动' : '停服恢复后保持停止', async t => {
     const f = await managementFixture(); t.after(() => f.close()); await f.login();
     assert.equal((await f.task('install')).state, 'succeeded');
@@ -36,10 +36,11 @@ test('世界备份按选择恢复当前世界或完整 Saved，均保留恢复�
 
     const full = await f.task('restore', { id, mode: 'full' });
     assert.equal(full.state, 'succeeded', full.message);
-    assert.equal(await f.manager.targetWorld(), 'SAVED_WORLD');
+    assert.equal(await f.manager.targetWorld(), 'CURRENT_WORLD');
     assert.equal(await readFile(f.runtime.config, 'utf8'), originalConfig);
-    assert.deepEqual(await readdir(path.join(f.runtime.saved, 'SaveGames/0')), ['SAVED_WORLD']);
-    await assert.rejects(access(path.join(f.runtime.saved, 'outside-world.txt')), { code: 'ENOENT' });
+    assert.deepEqual((await readdir(path.join(f.runtime.saved, 'SaveGames/0'))).sort(), ['CURRENT_WORLD', 'SAVED_WORLD']);
+    assert.equal(await readFile(path.join(f.runtime.saved, 'outside-world.txt'), 'utf8'), 'keep-until-full');
+    assert.equal(await readFile(path.join(f.runtime.saved, 'SaveGames/0/SAVED_WORLD/Level.sav'), 'utf8'), 'current-world');
     assert.equal((await f.manager.backups()).filter(backup => backup.category === 'before-restore').length, 2);
     assert.equal(Boolean(f.runtime.game), running);
     if (running) assert.notEqual(f.runtime.game.pid, worldPid);
@@ -67,7 +68,8 @@ test('拒绝无效恢复方式；存档模式缺少当前世界 ID 时拒绝恢�
   assert.equal((await f.manager.backups()).filter(backup => backup.category === 'before-restore').length, 0);
   const full = await f.task('restore', { id });
   assert.equal(full.state, 'succeeded', full.message);
-  assert.equal(await f.manager.targetWorld(), 'SAVED_WORLD');
+  await assert.rejects(f.manager.targetWorld(), /GameUserSettings\.ini/);
+  assert.equal(await readFile(path.join(f.runtime.saved, 'SaveGames/0/SAVED_WORLD/Level.sav'), 'utf8'), 'current-world');
   assert.notEqual(f.runtime.game.pid, pid);
   assert.equal((await f.manager.backups()).filter(backup => backup.category === 'before-restore').length, 1);
 });

@@ -35,12 +35,13 @@ test('重置必须登录、通过 CSRF 且准确输入 delete，只清空 0 目�
   const resetBackup = f.manager.tasks[0].backup;
   assert.match(resetBackup, /^before-reset\//);
   assert.equal((await f.manager.backups()).filter(backup => backup.category === 'before-reset').length, 1);
-  const archivedWorld = await f.runtime.run('tar', ['-xOzf', f.manager.backupFile(resetBackup), '--', 'Pal/Saved/SaveGames/0/WORLD1/Level.sav']);
+  const archivedWorld = await f.runtime.run('tar', ['-xOzf', f.manager.backupFile(resetBackup), '--', 'WORLD1/Level.sav']);
   assert.equal(archivedWorld, 'WORLD1/Level.sav');
-  const archivedPlayer = await f.runtime.run('tar', ['-xOzf', f.manager.backupFile(resetBackup), '--', 'Pal/Saved/SaveGames/0/WORLD1/Players/player.sav']);
+  const archivedPlayer = await f.runtime.run('tar', ['-xOzf', f.manager.backupFile(resetBackup), '--', 'WORLD1/Players/player.sav']);
   assert.equal(archivedPlayer, 'WORLD1/Players/player.sav');
-  const archivedHistory = await f.runtime.run('tar', ['-xOzf', f.manager.backupFile(resetBackup), '--', 'Pal/Saved/SaveGames/0/WORLD1/backup/world/history/Level.sav']);
+  const archivedHistory = await f.runtime.run('tar', ['-xOzf', f.manager.backupFile(resetBackup), '--', 'WORLD1/backup/world/history/Level.sav']);
   assert.equal(archivedHistory, 'WORLD1/backup/world/history/Level.sav');
+  assert.doesNotMatch(await f.runtime.run('tar', ['-tzf', f.manager.backupFile(resetBackup)]), /WORLD2|GameUserSettings|banlist|Pal\/Saved/);
   assert.equal((await stat(root)).isDirectory(), true);
   assert.deepEqual(await readdir(root), []);
   assert.equal(await readFile(config, 'utf8'), 'DedicatedServerName=WORLD1\n');
@@ -60,6 +61,7 @@ test('重置必须登录、通过 CSRF 且准确输入 delete，只清空 0 目�
 
 test('重置前世界备份失败时保留所有存档，不开始清空', async t => {
   const f = await managementFixture(); t.after(() => f.close()); await f.login();
+  await f.manager.ensureConfig();
   const file = path.join(f.runtime.saved, 'SaveGames/0/WORLD/Level.sav');
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, 'must-keep');

@@ -100,8 +100,8 @@ test('官方备份恢复先备份停服，替换世界与玩家，保留配置�
   assert.equal(archives.length, 1);
   assert.equal(archives[0].category, 'before-restore');
   const original = path.join(f.directory, 'original-world.sav');
-  await f.runtime.run('tar', ['-xzf', f.manager.backupFile(archives[0].id), '-C', f.directory, '--', `Pal/Saved/SaveGames/0/${backup.worldId}/Level.sav`]);
-  await copyFile(path.join(f.directory, `Pal/Saved/SaveGames/0/${backup.worldId}/Level.sav`), original);
+  await f.runtime.run('tar', ['-xzf', f.manager.backupFile(archives[0].id), '-C', f.directory, '--', `${backup.worldId}/Level.sav`]);
+  await copyFile(path.join(f.directory, `${backup.worldId}/Level.sav`), original);
   assert.equal(await readFile(original, 'utf8'), 'current-world');
   await f.task('stop');
   assert.equal((await f.task('restore-native', { id: backup.id })).state, 'succeeded');

@@ -47,7 +47,7 @@ test('缺失、空目录、配置文件、空存档和链接不能冒充可备�
   await rejected();
 });
 
-test('备份整个 Saved，存在当前世界时仅恢复世界内容并保留当前配置', async t => {
+test('打包当前世界和配置，存在当前世界时仅恢复世界内容并保留当前配置', async t => {
   const { manager, runtime, directory } = await fixture(t);
   const world = path.join(runtime.saved, 'SaveGames/0/WORLD1');
   await mkdir(path.join(world, 'Players'), { recursive: true });
@@ -74,13 +74,13 @@ test('备份整个 Saved，存在当前世界时仅恢复世界内容并保留�
   assert.equal(task.state, 'succeeded', task.message);
   assert.ok(task.backup);
   const list = await runtime.run('tar', ['-tzf', manager.backupFile(task.backup)]);
-  assert.match(list, /Pal\/Saved\/SaveGames\/0\/WORLD1\/Level\.sav/);
-  assert.ok(list.trim().split('\n').every(name => name.startsWith('Pal/Saved/')));
-  assert.match(list, /Config\/LinuxServer\/GameUserSettings\.ini/);
-  assert.match(list, /Config\/LinuxServer\/PalWorldSettings\.ini/);
-  assert.match(list, /SaveGames\/banlist\.txt/);
-  assert.match(list, /\/OLD\/Level\.sav/);
-  assert.match(list, /Logs\/Pal\.log/);
+  assert.match(list, /^WORLD1\/Level\.sav$/m);
+  assert.match(list, /^WORLD1\/Players\/player\.sav$/m);
+  assert.match(list, /^WORLD1\/WorldOption\.sav$/m);
+  assert.match(list, /^WORLD1\/backup\/world\/history\/Level\.sav$/m);
+  assert.match(list, /^Config\/LinuxServer\/PalWorldSettings\.ini$/m);
+  assert.ok(list.trim().split('\n').every(name => name === 'WORLD1' || name.startsWith('WORLD1/') || name === 'Config' || name.startsWith('Config/')));
+  assert.doesNotMatch(list, /GameUserSettings|banlist|Logs|\/OLD\/|Pal\/Saved/);
   assert.equal(runtime.game, null);
   assert.equal((await manager.backups()).length, 1);
   assert.equal((await readdir(path.join(directory, 'backups/manual'))).some(name => name.endsWith('.partial')), false);
@@ -133,7 +133,7 @@ test('仅含世界的旧备份需要有效的当前世界，存在时可恢复�
   assert.equal(await readFile(runtime.config, 'utf8'), config);
   assert.equal(await readFile(path.join(runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'), 'utf8'), 'DedicatedServerName=ACTIVE_WORLD\n');
   const protection = (await manager.backups()).find(backup => backup.category === 'before-restore');
-  assert.equal(await runtime.run('tar', ['-xOzf', manager.backupFile(protection.id), '--', 'Pal/Saved/SaveGames/0/ACTIVE_WORLD/Level.sav']), 'current-world');
+  assert.equal(await runtime.run('tar', ['-xOzf', manager.backupFile(protection.id), '--', 'ACTIVE_WORLD/Level.sav']), 'current-world');
 });
 
 test('全新服务端或当前世界目录缺失时，整体还原 Saved 与世界 ID 配置', async t => {
@@ -167,7 +167,10 @@ test('全新服务端或当前世界目录缺失时，整体还原 Saved 与世�
   await assert.rejects(readFile(path.join(runtime.saved, 'new-file')), { code: 'ENOENT' });
   const protection = (await manager.backups()).find(backup => backup.category === 'before-restore');
   assert.ok(protection);
-  assert.equal(await runtime.run('tar', ['-xOzf', manager.backupFile(protection.id), '--', 'Pal/Saved/Config/LinuxServer/GameUserSettings.ini']), 'DedicatedServerName=MISSING\n');
+  const protectionList = await runtime.run('tar', ['-tzf', manager.backupFile(protection.id)]);
+  assert.equal(await runtime.run('tar', ['-xOzf', manager.backupFile(protection.id), '--', 'ARCHIVED/Level.sav']), 'archived-world');
+  assert.match(protectionList, /^Config\/LinuxServer\/PalWorldSettings\.ini$/m);
+  assert.doesNotMatch(protectionList, /GameUserSettings|banlist|Logs|new-file|Pal\/Saved/);
   assert.equal(runtime.game, null);
 });
 
@@ -253,6 +256,7 @@ test('不同分类按各自保留数量清理，互不占用名额', async t => 
   const world = path.join(runtime.saved, 'SaveGames/0/WORLD1');
   await mkdir(world, { recursive: true });
   await writeFile(path.join(world, 'Level.sav'), 'world-data');
+  await manager.ensureConfig();
   await manager.setupAdmin('admin', 'test-backup-password');
   const counts = { manual: 1, 'before-restore': 2, 'before-import': 3, 'before-reset': 4 };
   await manager.updateSettings({ backupRetentions: counts });

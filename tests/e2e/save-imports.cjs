@@ -12,7 +12,8 @@ const path = require('node:path');
     await f.login();
     assert.equal((await f.task('install')).state, 'succeeded');
     const original = await nativeBackupFixture(f.runtime.saved, { worldId: 'ARCHIVED' });
-    const fullId = await f.manager.backup('manual');
+    const fullArchive = path.join(f.directory, 'full-saved.tar.gz');
+    await f.runtime.run('tar', ['-czf', fullArchive, '-C', f.runtime.server, '--', 'Pal/Saved']);
     await nativeBackupFixture(f.runtime.saved, { worldId: 'CURRENT' });
     await fs.writeFile(path.join(f.runtime.saved, 'remove-from-saved.txt'), 'old');
     browser = await chromium.launch({ headless: true });
@@ -42,7 +43,7 @@ const path = require('node:path');
       await page.locator('#save-import-dialog').waitFor({ state: 'hidden' });
     }
 
-    await importArchive(f.manager.backupFile(fullId));
+    await importArchive(fullArchive);
     assert.deepEqual(await fs.readdir(path.join(f.runtime.saved, 'SaveGames/0')), ['ARCHIVED']);
     await assert.rejects(fs.access(path.join(f.runtime.saved, 'remove-from-saved.txt')), { code: 'ENOENT' });
     assert.equal(await f.manager.targetWorld(), 'ARCHIVED');

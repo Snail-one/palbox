@@ -29,7 +29,13 @@ export async function readBackupWorld(file, info) {
   if (!worldId) {
     try {
       const { stdout } = await run('tar', ['-tzf', file], { ...options, maxBuffer: 8 * 1024 * 1024 });
-      const worlds = new Set(stdout.split('\n').map(name => /^Pal\/Saved\/SaveGames\/0\/([A-Za-z0-9_-]{1,128})\/Level\.sav$/.exec(name)?.[1]).filter(Boolean));
+      const worlds = new Set();
+      for (const name of stdout.split('\n')) {
+        const saved = /^Pal\/Saved\/SaveGames\/0\/([A-Za-z0-9_-]{1,128})\/Level\.sav$/.exec(name)?.[1];
+        const packed = /^([A-Za-z0-9_-]{1,128})\/Level\.sav$/.exec(name)?.[1];
+        if (saved) worlds.add(saved);
+        else if (packed) worlds.add(packed);
+      }
       if (worlds.size === 1) worldId = [...worlds][0];
     } catch { /* Keep unreadable archives listed, with an unknown world ID. */ }
   }

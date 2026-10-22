@@ -169,7 +169,7 @@ test('完整备份整体替换 Saved，恢复多个世界和配置，保持原�
     assert.equal(await readFile(path.join(saved(f), 'Logs/previous.log'), 'utf8'), 'archived-log');
     assert.equal(await readFile(path.join(saved(f), 'SaveGames/banlist.txt'), 'utf8'), 'steam_archived\n');
     assert.equal(await readFile(path.join(saved(f), 'extra/empty.txt'), 'utf8'), '');
-    const before = await f.runtime.run('tar', ['-xOzf', f.manager.backupFile(task.backup), '--', 'Pal/Saved/SaveGames/0/OLD/Level.sav']);
+    const before = await f.runtime.run('tar', ['-xOzf', f.manager.backupFile(task.backup), '--', 'OLD/Level.sav']);
     assert.equal(before, 'old-world');
     assert.equal(Boolean(f.runtime.game), running);
     if (running) { assert.notEqual(f.runtime.game.pid, oldPid); assert.equal(f.runtime.ready, true); }

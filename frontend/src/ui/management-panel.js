@@ -16,9 +16,9 @@ const BACKUP_GROUPS = {
 };
 const BACKUP_GROUP_DETAILS = {
   manual: ['file', '手动创建，用于日常留档', '停止游戏后，可创建第一份世界备份。'],
-  'before-restore': ['restore', '恢复备份前自动保存存档和配置', '恢复备份时，会先在这里保留整个 Saved 目录。'],
-  'before-import': ['upload', '导入外部存档前自动保存存档和配置', '导入存档时，会先在这里保留整个 Saved 目录。'],
-  'before-reset': ['shield', '清空世界存档前自动保存存档和配置', '重置存档时，会先在这里保留整个 Saved 目录。']
+  'before-restore': ['restore', '恢复备份前自动保存当前世界和配置', '恢复备份时，会先在这里保留当前世界目录和 PalWorldSettings.ini。'],
+  'before-import': ['upload', '导入外部存档前自动保存当前世界和配置', '导入存档时，会先在这里保留当前世界目录和 PalWorldSettings.ini。'],
+  'before-reset': ['shield', '清空世界存档前自动保存当前世界和配置', '重置存档时，会先在这里保留当前世界目录和 PalWorldSettings.ini。']
 };
 
 function uptimeLabel(seconds) {
@@ -140,7 +140,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   saves.className = 'management-panel save-management';
   saves.setAttribute('aria-labelledby', 'save-management-title');
   saves.innerHTML = `
-    <div class="management-heading backup-page-heading"><div><h2 id="save-management-title">世界备份</h2><p class="management-note">备份整个 Pal/Saved 目录，包含世界、玩家存档、游戏配置、官方备份历史、日志和封禁名单；时间按本地时区显示（${timeFormat.timeZone}）。</p></div><div class="management-actions"><button class="button primary" data-action="backup" disabled><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>创建世界备份</button></div></div>
+    <div class="management-heading backup-page-heading"><div><h2 id="save-management-title">世界备份</h2><p class="management-note">手动、恢复前、导入前和重置前备份都打包当前世界目录和 PalWorldSettings.ini，结构与官方备份下载相同。没有可读世界时，自动保护备份只保存这份配置。时间按本地时区显示（${timeFormat.timeZone}）。</p></div><div class="management-actions"><button class="button primary" data-action="backup" disabled><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>创建世界备份</button></div></div>
     <div class="backup-overview"><div class="backup-stat"><span>全部归档</span><strong id="save-backup-summary" role="status">正在读取…</strong></div><div class="backup-stat"><span>最近备份</span><span id="save-backup-latest">正在读取…</span></div><div class="backup-stat"><span>保留策略</span><span>各分类单独设置 · 每类最多 20 份</span></div></div>
     <p id="complete-backup-note" class="backup-status-note management-note"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><span id="complete-backup-status">创建手动备份前，请先停止游戏服务。</span></p>
     <div id="manager-backups">正在读取世界备份…</div>`;
@@ -215,10 +215,10 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     if (confirm && ['stop', 'force-stop', 'restart', 'update', 'apply', 'backup', 'restore', 'restore-native', 'reset-save', 'kick'].includes(name)) {
       const descriptions = {
         apply: '将当前配置写入游戏，不创建备份。游戏服正在运行时会先存档、停服，再应用并重启。',
-        backup: '仅在游戏服停止时备份整个 Pal/Saved 目录，包含所有存档、配置、官方备份历史、日志和封禁名单，完成后保持停服。',
+        backup: '仅在游戏服停止时打包当前世界目录和 PalWorldSettings.ini，结构与官方备份下载相同，完成后保持停服。',
         restore: '选择恢复范围。恢复前会先保存、停服，并创建“恢复前备份”；完成后恢复原运行状态。',
         'restore-native': '将当前世界和玩家存档恢复到所选官方备份。会先存档、停服并创建世界备份，归入“恢复前备份”，保留当前配置及官方备份历史；原先运行的游戏服会重新启动。',
-        'reset-save': '将先备份整个 Pal/Saved 目录，单独保存在“重置前备份”中，再清空 SaveGames/0 下的全部内容，包括世界、玩家存档和该目录中的官方备份历史。备份失败时中止重置；游戏配置和世界备份归档保留。必须先停止游戏服务器，完成后保持停服。',
+        'reset-save': '将先把当前世界目录和 PalWorldSettings.ini 打包到“重置前备份”，再清空 SaveGames/0 下的全部内容，包括世界、玩家存档和该目录中的官方备份历史。其他世界、日志和封禁名单不会进入这份备份。备份失败时中止重置；游戏配置和世界备份归档保留。必须先停止游戏服务器，完成后保持停服。',
         update: '仅在游戏服停止时使用 SteamCMD 更新服务端，不自动创建备份，更新完成后保持停服。',
         stop: '保存世界后停止游戏服，管理面板继续运行。',
         'force-stop': '立即强制停止游戏服，可能丢失最近一次未保存的进度。仅在正常停止失败时使用。',
@@ -227,7 +227,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       const confirmed = await ask({ title: `${names[name]}？`, description: descriptions[name], confirm: names[name], danger: ['restore', 'restore-native', 'reset-save', 'kick', 'force-stop'].includes(name), symbol: 'server',
         ...(name === 'restore' ? { defaultChoice: 'full', choices: [
           { value: 'world', label: '存档恢复', description: '清空并替换当前世界 ID 目录，恢复备份中的世界、玩家及备份历史等全部世界内容；保留服务器配置、其他世界和目录外的数据。需要当前世界 ID 有效。' },
-          { value: 'full', label: '完整恢复', description: '整体替换 Pal/Saved，恢复备份中的配置、世界 ID、所有世界、玩家、备份历史、日志和封禁名单；旧目录中备份里没有的内容全部移除。' }
+          { value: 'full', label: '完整恢复', description: '新的世界备份会写入 PalWorldSettings.ini，并替换备份中的世界目录；其他世界、日志和封禁名单保留。旧的完整备份仍整体替换 Pal/Saved，备份里没有的内容全部移除。' }
         ] } : {}),
         ...(name === 'reset-save' ? { name: '', nameLabel: '输入 delete 确认删除', namePlaceholder: 'delete', nameMaxLength: 6, confirmation: 'delete' } : {}) });
       if (!confirmed) return;
