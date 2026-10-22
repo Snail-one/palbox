@@ -76,15 +76,6 @@ sudo bash ./install.sh --host 0.0.0.0 --port 8090 --api-port 8091
 
 配置保存在项目的 `.palbox.env`，仅运行用户可读写，不提交到 Git。`dev.sh` 优先使用 `.runtime/node/` 中的 Node.js，并通过 Node.js 的 `--env-file` 加载配置；环境变量可覆盖文件中的对应值。后台服务也调用 `dev.sh --no-watch`，因此后台和终端启动共用入口、运行时与配置。
 
-服务器不能直连 Valve 时，在 `.palbox.env` 写入 HTTP 代理后重启服务。面板下载 SteamCMD 安装包和查询版本时会使用它，SteamCMD 子进程也会继承：
-
-```sh
-HTTPS_PROXY=http://127.0.0.1:7890
-NO_PROXY=localhost,127.0.0.1
-```
-
-只支持 `http://主机:端口` 这种 HTTP 代理，不支持 SOCKS。未配置时代码仍直接连接。
-
 首次管理员初始化只接受本机或可信内网来源；只有公网 IP 时先用 SSH 隧道初始化。公网长期访问使用 HTTPS 反向代理，并在 `.palbox.env` 设置 `PALBOX_SECURE_COOKIE=true` 和相应的可信代理地址。
 
 ## 服务管理、调试和更新

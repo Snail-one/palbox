@@ -57,9 +57,6 @@ test('SteamCMD.net API 优先提供最新构建号', async t => {
   };
   const manager = new Manager({ directory, runtime });
   const originalFetch = globalThis.fetch;
-  const proxyEnv = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy'];
-  const previousProxy = Object.fromEntries(proxyEnv.map(key => [key, process.env[key]]));
-  for (const key of proxyEnv) delete process.env[key];
   const requests = [];
   globalThis.fetch = async (url, options) => {
     requests.push({ url, timeout: options?.signal instanceof AbortSignal });
@@ -68,13 +65,7 @@ test('SteamCMD.net API 优先提供最新构建号', async t => {
       json: async () => ({ status: 'success', data: { '2394010': { depots: { branches: { public: { buildid: '25247047' } } } } } })
     };
   };
-  t.after(() => {
-    globalThis.fetch = originalFetch;
-    for (const [key, value] of Object.entries(previousProxy)) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
-  });
+  t.after(() => { globalThis.fetch = originalFetch; });
   assert.equal(await manager.latestBuild(), '25247047');
   assert.deepEqual(requests.map(request => request.url), ['https://api.steamcmd.net/v1/info/2394010']);
   assert.equal(requests[0].timeout, true);
