@@ -1,6 +1,9 @@
 import { createWriteStream } from 'node:fs';
 import { access, mkdir, mkdtemp, rm, symlink, lstat, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
+import { lookup } from 'node:dns/promises';
+import diagnostics_channel from 'node:diagnostics_channel';
+import { isIP } from 'node:net';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
@@ -12,6 +15,58 @@ const MAX_DOWNLOAD = 64 * 1024 * 1024;
 const READY_FILE = '.palbox-ready';
 export const defaultSteamcmd = directory => path.resolve(directory, 'steamcmd/steamcmd.sh');
 export const managedSteamcmd = runtime => path.resolve(runtime.steamcmd) === defaultSteamcmd(runtime.directory);
+
+const ipFamily = address => isIP(address) === 6 ? 'IPv6' : isIP(address) === 4 ? 'IPv4' : '';
+const socketFamily = family => family === 'IPv6' ? 'IPv6' : family === 'IPv4' ? 'IPv4' : '未知';
+
+export function formatLookup(hostname, records) {
+  const list = records.map(record => `${record.family === 6 ? 'IPv6' : 'IPv4'} ${record.address}`).join('，');
+  return `DNS ${hostname}：${list || '没有地址'}`;
+}
+
+export function connectionLog(message) {
+  const socket = message.socket;
+  const host = message.connectParams?.hostname || message.connectParams?.host || '';
+  const remotePort = socket?.remotePort ? `:${socket.remotePort}` : '';
+  const local = socket?.localAddress ? `本机 ${socketFamily(socket.localFamily)} ${socket.localAddress}${socket.localPort ? `:${socket.localPort}` : ''} -> ` : '';
+  return `已连接 ${host}：${local}远端 ${socketFamily(socket?.remoteFamily)} ${socket?.remoteAddress || '未知地址'}${remotePort}`;
+}
+
+export function networkFailureText(error) {
+  const details = [];
+  const seen = new Set();
+  const visit = current => {
+    if (!current || typeof current !== 'object' || seen.has(current)) return;
+    seen.add(current);
+    if (Array.isArray(current.errors)) for (const item of current.errors) visit(item);
+    const family = current.address ? ipFamily(current.address) : '';
+    const address = current.address ? `${current.address}${current.port ? `:${current.port}` : ''}` : '';
+    const piece = [current.syscall, current.code, family, address].filter(Boolean).join(' ');
+    if (piece) details.push(piece);
+    visit(current.cause);
+  };
+  visit(error?.cause);
+  const detail = [...new Set(details)].join('；');
+  return detail ? `${error.message}（${detail}）` : error.message;
+}
+
+async function dnsLog(hostname) {
+  try { return formatLookup(hostname, await lookup(hostname, { all: true, verbatim: true })); }
+  catch (error) { return `DNS ${hostname}：解析失败 ${error.code || error.message}`; }
+}
+
+function watchConnections(log) {
+  const connected = diagnostics_channel.channel('undici:client:connected');
+  const failed = diagnostics_channel.channel('undici:client:connectError');
+  const onConnected = message => log(connectionLog(message));
+  const onFailed = ({ connectParams, error }) => {
+    const family = error?.address ? ipFamily(error.address) : '';
+    log(`连接失败 ${connectParams?.hostname || connectParams?.host || ''}：${[error?.code, family, error?.address].filter(Boolean).join(' ') || error?.message || '未知错误'}`);
+  };
+  connected.subscribe(onConnected);
+  failed.subscribe(onFailed);
+  return () => { connected.unsubscribe(onConnected); failed.unsubscribe(onFailed); };
+}
 
 export async function steamcmdStatus(runtime) {
   const managed = managedSteamcmd(runtime);
@@ -50,7 +105,13 @@ export async function installSteamcmd(runtime, { onProgress = () => {}, fetch: d
     const unpacked = path.join(temporary, 'installation');
     await mkdir(unpacked);
     phase('steamcmd-downloading', '正在从 Valve 下载 SteamCMD。');
+    let stopWatch = () => {};
     try {
+      if (download === globalThis.fetch) {
+        const target = new URL(DOWNLOAD_URL);
+        runtime.log('steamcmd', `下载地址：${DOWNLOAD_URL}\n${await dnsLog(target.hostname)}\n`);
+        stopWatch = watchConnections(line => runtime.log('steamcmd', `${line}\n`));
+      }
       const response = await download(DOWNLOAD_URL, { signal });
       if (!response.ok || !response.body) {
         await response.body?.cancel();
@@ -64,8 +125,8 @@ export async function installSteamcmd(runtime, { onProgress = () => {}, fetch: d
       await pipeline(Readable.fromWeb(response.body), limit, createWriteStream(archive, { flags: 'wx', mode: 0o600 }), { signal });
     } catch (error) {
       if (error.status) throw error;
-      throw failure(`SteamCMD 下载失败，请检查服务器访问 Valve 的网络后重试：${error.message}`, 502);
-    }
+      throw failure(`SteamCMD 下载失败，请检查服务器访问 Valve 的网络后重试：${networkFailureText(error)}`, 502);
+    } finally { stopWatch(); }
     phase('steamcmd-installing', '正在解压 SteamCMD。');
     try {
       await runtime.run('tar', ['-xzf', archive, '--no-same-owner', '--no-same-permissions', '-C', unpacked], 'steamcmd', { timeoutMs: 60000 });

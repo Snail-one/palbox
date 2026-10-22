@@ -4,7 +4,7 @@ import { mkdtemp, rm, readFile, readdir, readlink, writeFile, chmod } from 'node
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Runtime } from '../../backend/management/runtime.js';
-import { installSteamcmd, defaultSteamcmd } from '../../backend/management/steamcmd.js';
+import { installSteamcmd, defaultSteamcmd, formatLookup, connectionLog, networkFailureText } from '../../backend/management/steamcmd.js';
 import { steamcmdArchive } from '../helpers/steamcmd-fixture.js';
 
 const linux = { skip: process.platform !== 'linux' || process.arch !== 'x64' };
@@ -113,6 +113,22 @@ test('自定义路径只检测和使用，不自动覆盖；缺失时给出修�
   assert.equal((await runtime.steamcmdStatus()).installed, true);
   assert.equal(runtime.childEnvironment().HOME, process.env.HOME);
   await installSteamcmd(runtime, { fetch() { throw new Error('不得下载或覆盖'); } });
+});
+
+test('下载日志会写明解析结果、实际连接的地址族和底层错误', () => {
+  assert.equal(formatLookup('client-update.steamstatic.com', [
+    { family: 6, address: '2606:4700::1' },
+    { family: 4, address: '203.0.113.10' }
+  ]), 'DNS client-update.steamstatic.com：IPv6 2606:4700::1，IPv4 203.0.113.10');
+  assert.equal(connectionLog({
+    connectParams: { hostname: 'client-update.steamstatic.com' },
+    socket: { localFamily: 'IPv4', localAddress: '192.0.2.8', localPort: 54000, remoteFamily: 'IPv6', remoteAddress: '2606:4700::1', remotePort: 443 }
+  }), '已连接 client-update.steamstatic.com：本机 IPv4 192.0.2.8:54000 -> 远端 IPv6 2606:4700::1:443');
+  const cause = new AggregateError([
+    Object.assign(new Error('connect ENETUNREACH'), { syscall: 'connect', code: 'ENETUNREACH', address: '2606:4700::1', port: 443 })
+  ]);
+  assert.equal(networkFailureText(Object.assign(new Error('fetch failed'), { cause })), 'fetch failed（connect ENETUNREACH IPv6 2606:4700::1:443）');
+  assert.equal(networkFailureText(new Error('connection reset')), 'connection reset');
 });
 
 test('安装子进程超时终止整个进程组，不遗留后台任务', linux, async t => {
