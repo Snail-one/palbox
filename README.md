@@ -2,9 +2,9 @@
 
 中文帕鲁（Palworld）服务管理面板与 `PalWorldSettings.ini` 配置编辑器。
 
-支持在浏览器中编辑配置，也可通过 Docker 部署，管理游戏服务端的安装、启停、更新和备份。
+支持在浏览器中编辑配置，可在 Linux 宿主机一键安装或通过 Docker 部署，管理游戏服务端的安装、启停、更新和备份。
 
-[快速开始](#快速开始) · [Docker 部署](#docker-部署) · [使用指南](docs/usage.md) · [开发与测试](#开发与测试) · [文档](#文档)
+[快速开始](#快速开始) · [Linux 一键安装](#linux-宿主机安装游戏服务端) · [Docker 部署](#docker-部署) · [使用指南](docs/usage.md) · [开发与测试](#开发与测试) · [文档](#文档)
 
 ## 功能
 
@@ -47,7 +47,15 @@ HOST=127.0.0.1 PORT=8090 API_PORT=8091 npm start
 
 ### Linux 宿主机安装游戏服务端
 
-Ubuntu / Debian 的 **x86_64** 服务器可以直接运行完整游戏管理功能。安装 Node.js 22 或以上版本后，先准备系统依赖：
+Ubuntu / Debian 的 **x86_64** 服务器可在完整项目的根目录一键安装并启动：
+
+```sh
+sudo bash ./install.sh
+```
+
+脚本原地准备系统依赖、项目独立 Node.js 和 `data/`，使用项目所属的已有普通用户注册 systemd 服务并设置开机启动，不搬迁程序、不另建系统用户。默认面板为 `http://127.0.0.1:8080`；远程服务器按安装输出建立 SSH 隧道后访问。SteamCMD 和游戏服务端继续通过网页安装。配置保存在项目的 `.palbox.env`，终端与后台启动共用同一入口。参数、用户规则和服务管理见 [Linux 原生部署](docs/native.md)。
+
+也可以使用已有 Node.js 22 或以上版本直接运行源码，先准备系统依赖：
 
 ```sh
 sudo apt-get update
@@ -62,7 +70,11 @@ sudo apt-get install -y lib32gcc-s1 lib32stdc++6 libstdc++6 libatomic1 ca-certif
 
 SteamCMD 保存在数据目录下的 `steamcmd/`，其独立运行主目录保存在 `steam-home/`，不会修改当前用户的 Steam 配置；游戏、存档、备份和面板数据继续保存在同一数据目录内。通过 `PALBOX_DATA_DIR` 可指定其他数据目录。已有 SteamCMD 可通过 `PALBOX_STEAMCMD=/绝对路径/steamcmd.sh` 指定；自定义路径只检测和使用，不会自动覆盖。Docker 沿用镜像中的 SteamCMD，已就绪时不显示安装按钮。
 
-`npm start` 前台运行，退出时会停止服务；长期后台运行和开机启动需另行配置系统服务。需要远程访问时配置前端监听地址，并只开放所需的面板端口与游戏 UDP 端口，后端管理 API 和游戏 REST API 不应对公网开放。
+两种启动方式使用同一个项目目录和其中的 `data/`，SteamCMD 位于 `data/steamcmd/steamcmd.sh`，游戏服务端位于 `data/server/`。例如项目在 `/home/ubuntu/palbox` 且属于 `ubuntu`，后台服务和终端启动都使用 `ubuntu`，数据都在 `/home/ubuntu/palbox/data/`。新数据目录自动设置运行用户权限；已有目录权限不匹配会提示。项目归 root 且无法推断普通用户时，通过 `--user` 指定已有普通用户。
+
+`npm start` 前台运行，退出时会停止服务；需要后台运行和开机启动时使用上述安装脚本。需要远程访问时配置前端监听地址，并只开放所需的面板端口与游戏 UDP 端口，后端管理 API 和游戏 REST API 不应对公网开放。
+
+安装完成后也可用 `bash ./dev.sh --no-watch` 在终端启动，脚本会使用项目独立的 Node.js 和 `.palbox.env`。调试前先停止 systemd 服务，并使用配置中的同一个普通用户，避免两个实例操作同一数据目录。
 
 ### 编辑配置
 
@@ -207,6 +219,7 @@ palbox/
 │   └── index.js        后端独立入口
 ├── shared/domain/      前后端共用的配置解析、参数目录、模板与编辑规则
 ├── scripts/start.js    本地双进程启动与退出协调
+├── install.sh          Ubuntu / Debian 一键安装、更新与 systemd 启动
 ├── docker/             后端容器入口脚本
 ├── .github/            CI、tag 镜像发布工作流和 Dependabot 配置
 ├── tests/              单元、集成与浏览器测试
@@ -221,6 +234,7 @@ palbox/
 ## 文档
 
 - [使用指南](docs/usage.md)：配置编辑、保存与恢复、快捷键和游戏配置路径。
+- [Linux 原生部署](docs/native.md)：一键安装、目录、系统用户、开机启动、更新和远程访问。
 - [Docker 部署](docs/docker.md)：安装部署、环境变量、游戏服务管理和备份恢复。
 - [GitHub CI/CD](docs/ci-cd.md)：tag 发布镜像、手动运行、CI 检查和依赖更新机器人。
 - [参数明细](docs/parameters.md)：参数用途、说明来源和验证状态。

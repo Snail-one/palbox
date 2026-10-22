@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile, readdir, readlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, readdir, readlink, writeFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Runtime } from '../../backend/management/runtime.js';
@@ -59,6 +59,19 @@ test('HTTP 下载失败和无效压缩包不会留下就绪状态', linux, async
   await assert.rejects(installSteamcmd(runtime, { fetch: async () => new Response('invalid tar') }), /解压失败/);
   assert.equal((await runtime.steamcmdStatus()).installed, false);
   assert.equal((await readdir(directory)).some(name => name.startsWith('.steamcmd-')), false);
+});
+
+test('data 没有写权限时在下载前明确说明运行用户权限问题', { ...linux, skip: linux.skip || process.getuid?.() === 0 }, async t => {
+  const { directory, runtime } = await fixture(t);
+  await chmod(directory, 0o500);
+  try {
+    await assert.rejects(installSteamcmd(runtime, { fetch() { throw new Error('不得开始下载'); } }), error => {
+      assert.equal(error.status, 403);
+      assert.match(error.message, /系统用户.*data 目录.*读写权限/);
+      return true;
+    });
+    assert.equal((await readdir(directory)).some(name => name.startsWith('.steamcmd-')), false);
+  } finally { await chmod(directory, 0o700); }
 });
 
 test('SteamCMD 下载流超出容量限制时中止并清理，不执行下载内容', linux, async t => {

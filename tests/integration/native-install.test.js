@@ -1,0 +1,232 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, symlink, access, cp } from 'node:fs/promises';
+import { tmpdir, userInfo } from 'node:os';
+import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import { createServer } from 'node:net';
+import { once } from 'node:events';
+import path from 'node:path';
+
+const run = promisify(execFile);
+const root = fileURLToPath(new URL('../../', import.meta.url));
+const linux = { skip: process.platform !== 'linux', timeout: 15000 };
+const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
+
+async function fixture(t) {
+  const directory = await mkdtemp(path.join(tmpdir(), 'palbox-native-installer-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const app = path.join(directory, 'project');
+  const bin = path.join(directory, 'bin');
+  await mkdir(app);
+  await mkdir(bin);
+  await Promise.all(['backend', 'frontend', 'shared', 'scripts', 'package.json', 'dev.sh', 'install.sh'].map(entry => cp(path.join(root, entry), path.join(app, entry), { recursive: true })));
+  const nodeArchive = 'node-v24.0.0-linux-x64.tar.xz';
+  const nodeSource = path.join(directory, 'node-v24.0.0-linux-x64/bin');
+  await mkdir(nodeSource, { recursive: true });
+  // Simulate administrative commands and service activation. Real files,
+  // checksums, extraction and the actual terminal launcher remain in use.
+  await writeFile(path.join(nodeSource, 'node'), `#!/bin/bash
+if [[ "$*" == *'const [frontend, backend]'* ]]; then
+  if [[ -f "$PALBOX_NATIVE_TEST_DIR/fail-start" ]]; then
+    rm -f "$PALBOX_NATIVE_TEST_DIR/active"
+    exit 1
+  fi
+  test -f "$PALBOX_NATIVE_TEST_DIR/active"
+  exit $?
+fi
+exec ${quote(process.execPath)} "$@"
+`, { mode: 0o755 });
+  await run('tar', ['-cJf', path.join(directory, nodeArchive), '-C', directory, 'node-v24.0.0-linux-x64']);
+  const archive = await readFile(path.join(directory, nodeArchive));
+  await writeFile(path.join(directory, 'SHASUMS256.txt'), `${createHash('sha256').update(archive).digest('hex')}  ${nodeArchive}\n`);
+  const mock = path.join(bin, 'mock');
+  await writeFile(mock, `#!/usr/bin/python3
+import os, sys, pathlib, shutil, subprocess
+root = pathlib.Path(os.environ['PALBOX_NATIVE_TEST_DIR'])
+name, args = pathlib.Path(sys.argv[0]).name, sys.argv[1:]
+with (root / 'commands').open('a') as log:
+    log.write(name + ' ' + ' '.join(args) + '\\n')
+if name == 'id':
+    if args == ['-u']: print('0')
+    elif args == ['-u', 'deployer']: print('1000')
+    elif args == ['-u', 'root']: print('0')
+    elif args == ['-gn', 'deployer']: print('deployer')
+    else: sys.exit(1)
+elif name == 'stat' and args[-1] == str(root / 'project'):
+    if (root / 'root-owner').exists(): print('0' if args[1] == '%u' else 'root')
+    else: print('1000' if args[1] == '%u' else 'deployer')
+elif name == 'apt-get' or name == 'chown': pass
+elif name == 'useradd': raise RuntimeError('Installer must not create users')
+elif name == 'install':
+    filtered, i = [], 0
+    while i < len(args):
+        if args[i] in ['-o', '-g']: i += 2
+        else: filtered.append(args[i]); i += 1
+    sys.exit(subprocess.call(['/usr/bin/install'] + filtered))
+elif name == 'runuser':
+    if (root / 'deny-data').exists() and str(root / 'project/data') in args: sys.exit(1)
+    sys.exit(subprocess.call(args[args.index('--') + 1:]))
+elif name == 'curl':
+    dest = pathlib.Path(args[args.index('-o') + 1])
+    url = next(arg for arg in args if arg.startswith('https://'))
+    shutil.copyfile(root / url.rsplit('/', 1)[1], dest)
+elif name == 'systemctl':
+    action = args[0]
+    active, enabled = root / 'active', root / 'enabled'
+    if action == 'is-active': sys.exit(0 if active.exists() else 1)
+    elif action == 'is-enabled': sys.exit(0 if enabled.exists() else 1)
+    elif action == 'start': active.touch()
+    elif action == 'stop': active.unlink(missing_ok=True)
+    elif action == 'enable': enabled.touch()
+    elif action == 'disable': enabled.unlink(missing_ok=True)
+elif name == 'journalctl': print('fixture: service failed to start')
+else: raise RuntimeError('Unexpected mock command: ' + name)
+`, { mode: 0o755 });
+  for (const name of ['id', 'stat', 'useradd', 'apt-get', 'chown', 'install', 'runuser', 'curl', 'systemctl', 'journalctl']) await symlink(mock, path.join(bin, name));
+  const systemd = path.join(directory, 'systemd');
+  const config = path.join(app, '.palbox.env');
+  const data = path.join(app, 'data');
+  const env = { ...process.env, PATH: `${bin}:/usr/bin:/bin`, SUDO_USER: '', PALBOX_NATIVE_TEST_DIR: directory, PALBOX_SYSTEMD_DIR: systemd };
+  const invoke = (...args) => run('/bin/bash', [path.join(app, 'install.sh'), ...args], { env, timeout: 10000 });
+  return { directory, app, config, systemd, data, env, invoke };
+}
+
+test('就地安装使用项目属主和 data，不创建用户或搬迁程序，SteamCMD 由网页安装', linux, async t => {
+  const f = await fixture(t);
+  const result = await f.invoke();
+  assert.match(result.stdout, /安装完成.*开机启动/);
+  assert.ok(result.stdout.includes(`运行用户：deployer`));
+  assert.ok(result.stdout.includes(`游戏目录：${f.data}/server`));
+  await access(path.join(f.app, '.runtime/node/bin/node'));
+  const config = await readFile(f.config, 'utf8');
+  assert.match(config, /HOST=127\.0\.0\.1\n/);
+  assert.ok(config.includes(`PALBOX_DATA_DIR=${f.data}\n`));
+  assert.match(config, /PALBOX_SERVICE_USER=deployer/);
+  const unit = path.join(f.systemd, 'palbox.service');
+  const service = await readFile(unit, 'utf8');
+  assert.match(service, /User=deployer\nGroup=deployer/);
+  assert.ok(service.includes(`WorkingDirectory=${f.app}\n`));
+  assert.ok(service.includes(`ExecStart=/bin/bash ${f.app}/dev.sh --no-watch`));
+  assert.match(service, /KillMode=mixed\nTimeoutStopSec=420/);
+  await run('systemd-analyze', ['verify', unit]);
+  assert.deepEqual(await readdir(f.data), []);
+  await assert.rejects(access(path.join(f.app, 'current')), { code: 'ENOENT' });
+  await assert.rejects(access(path.join(f.app, 'releases')), { code: 'ENOENT' });
+  const commands = await readFile(path.join(f.directory, 'commands'), 'utf8');
+  assert.match(commands, /apt-get install.*lib32gcc-s1/);
+  assert.ok(commands.includes(`install -d -o deployer -g deployer -m 0700 ${f.data}`));
+  assert.doesNotMatch(commands, /useradd|steamstatic|chown -R.*data/);
+});
+
+test('重新安装保留同一 data、配置和程序目录，不重复下载兼容 Node', linux, async t => {
+  const f = await fixture(t);
+  await f.invoke('--host', '0.0.0.0', '--port', '9000', '--api-port', '9001');
+  await writeFile(path.join(f.data, 'world.sav'), 'world-content');
+  await writeFile(f.config, `${await readFile(f.config, 'utf8')}PALBOX_GAME_PORT=8888\nPALBOX_SECURE_COOKIE=true\n`);
+  await f.invoke();
+  let config = await readFile(f.config, 'utf8');
+  for (const line of ['HOST=0.0.0.0', 'PORT=9000', 'API_PORT=9001', 'PALBOX_GAME_PORT=8888', 'PALBOX_SECURE_COOKIE=true']) assert.ok(config.split('\n').includes(line), line);
+  assert.equal(await readFile(path.join(f.data, 'world.sav'), 'utf8'), 'world-content');
+  await f.invoke('--port', '9100');
+  config = await readFile(f.config, 'utf8');
+  assert.match(config, /\nPORT=9100\n/);
+  const commands = await readFile(path.join(f.directory, 'commands'), 'utf8');
+  assert.equal(commands.match(/https:\/\/nodejs.org\/dist\/latest-v24.x\/SHASUMS256.txt/g).length, 1);
+});
+
+test('项目归 root 时要求明确普通用户，拒绝 root 和不存在的用户', linux, async t => {
+  const f = await fixture(t);
+  await writeFile(path.join(f.directory, 'root-owner'), 'root');
+  await assert.rejects(f.invoke(), /无法推断普通运行用户/);
+  await assert.rejects(f.invoke('--user', 'root'), /无法推断普通运行用户|root 用户/);
+  await assert.rejects(f.invoke('--user', 'missing'), /不存在/);
+  assert.doesNotMatch(await readFile(path.join(f.directory, 'commands'), 'utf8'), /apt-get|useradd|systemctl start/);
+  assert.match((await f.invoke('--user', 'deployer')).stdout, /运行用户：deployer/);
+});
+
+test('已有 data 权限不匹配时停止安装，不接管或删除数据', linux, async t => {
+  const f = await fixture(t);
+  await mkdir(f.data);
+  await writeFile(path.join(f.data, 'world.sav'), 'preserved');
+  await writeFile(path.join(f.directory, 'deny-data'), 'denied');
+  await assert.rejects(f.invoke(), /deployer 无权读写 data/);
+  assert.equal(await readFile(path.join(f.data, 'world.sav'), 'utf8'), 'preserved');
+  assert.doesNotMatch(await readFile(path.join(f.directory, 'commands'), 'utf8'), /chown -R|systemctl start/);
+});
+
+test('启动失败恢复原配置和服务，不修改代码或数据', linux, async t => {
+  const f = await fixture(t);
+  await f.invoke();
+  const unitFile = path.join(f.systemd, 'palbox.service');
+  const oldConfig = await readFile(f.config, 'utf8');
+  const oldUnit = await readFile(unitFile, 'utf8');
+  const oldCode = await readFile(path.join(f.app, 'backend/index.js'), 'utf8');
+  await writeFile(path.join(f.data, 'world.sav'), 'world-content');
+  await writeFile(path.join(f.directory, 'fail-start'), 'fail');
+  await assert.rejects(f.invoke('--port', '9100'), /恢复原部署配置/);
+  assert.equal(await readFile(f.config, 'utf8'), oldConfig);
+  assert.equal(await readFile(unitFile, 'utf8'), oldUnit);
+  assert.equal(await readFile(path.join(f.app, 'backend/index.js'), 'utf8'), oldCode);
+  assert.equal(await readFile(path.join(f.data, 'world.sav'), 'utf8'), 'world-content');
+  await access(path.join(f.directory, 'active'));
+});
+
+test('校验失败、端口冲突和其他部署目录均不会被激活或覆盖', linux, async t => {
+  const f = await fixture(t);
+  await assert.rejects(f.invoke('--port', '8081'), /不同端口/);
+  await writeFile(path.join(f.directory, 'SHASUMS256.txt'), `${'0'.repeat(64)}  node-v24.0.0-linux-x64.tar.xz\n`);
+  await assert.rejects(f.invoke(), /Node.js 校验失败/);
+  await assert.rejects(access(f.config), { code: 'ENOENT' });
+  await writeFile(path.join(f.systemd, 'palbox.service'), 'WorkingDirectory=/another/project\n');
+  await assert.rejects(f.invoke(), /已有 palbox 服务运行在/);
+  assert.equal(await readFile(path.join(f.systemd, 'palbox.service'), 'utf8'), 'WorkingDirectory=/another/project\n');
+});
+
+test('首次启动失败可重新安装，其他数据目录配置不会被静默替换', linux, async t => {
+  const f = await fixture(t);
+  await writeFile(path.join(f.directory, 'fail-start'), 'fail');
+  await assert.rejects(f.invoke(), /启动检查/);
+  await assert.rejects(access(f.config), { code: 'ENOENT' });
+  await assert.rejects(access(path.join(f.systemd, 'palbox.service')), { code: 'ENOENT' });
+  await assert.rejects(access(path.join(f.directory, 'enabled')), { code: 'ENOENT' });
+  await access(f.data);
+  await rm(path.join(f.directory, 'fail-start'));
+  await writeFile(f.config, 'PALBOX_DATA_DIR=/existing-world\n');
+  await assert.rejects(f.invoke(), /已有配置使用其他数据目录/);
+  assert.equal(await readFile(f.config, 'utf8'), 'PALBOX_DATA_DIR=/existing-world\n');
+  await rm(f.config);
+  assert.match((await f.invoke()).stdout, /安装完成/);
+});
+
+async function freePort() {
+  const server = createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const port = server.address().port; await new Promise(resolve => server.close(resolve)); return port;
+}
+
+test('终端启动实际使用项目 Node 和相同配置，错误运行用户会被拒绝', linux, async t => {
+  const f = await fixture(t);
+  await f.invoke();
+  const port = await freePort();
+  let apiPort = await freePort(); while (apiPort === port) apiPort = await freePort();
+  const account = userInfo().username;
+  await writeFile(f.config, `PALBOX_SERVICE_USER=${account}\nHOST=127.0.0.1\nPORT=${port}\nAPI_PORT=${apiPort}\nPALBOX_DATA_DIR=${f.data}\n`);
+  const env = { ...f.env, USER: 'spoofed-user', HOST: '', PORT: '', API_PORT: '', PALBOX_SERVICE_USER: '', PALBOX_DATA_DIR: '' };
+  // Empty environment settings would take precedence over --env-file, so omit
+  // them just as a fresh systemd service or login shell would.
+  for (const key of ['HOST', 'PORT', 'API_PORT', 'PALBOX_SERVICE_USER', 'PALBOX_DATA_DIR', 'PALBOX_API_URL']) delete env[key];
+  const child = spawn('/bin/bash', [path.join(f.app, 'dev.sh'), '--no-watch'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const closed = once(child, 'close');
+  let output = ''; child.stdout.on('data', part => { output += part; }); child.stderr.on('data', part => { output += part; });
+  try {
+    const until = Date.now() + 5000;
+    while (!output.includes('前端已启动') && child.exitCode === null && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 20));
+    assert.match(output, new RegExp(`前端已启动：http://127.0.0.1:${port}`));
+    assert.equal((await (await fetch(`http://127.0.0.1:${port}/api/bootstrap`)).json()).mode, 'managed');
+    await access(path.join(f.data, 'palbox/workspace.json'));
+  } finally { child.kill('SIGTERM'); await closed; }
+  await writeFile(f.config, 'PALBOX_SERVICE_USER=some-other-account\n');
+  await assert.rejects(run('/bin/bash', [path.join(f.app, 'dev.sh'), '--no-watch'], { env }), /请使用配置的系统用户 some-other-account/);
+});

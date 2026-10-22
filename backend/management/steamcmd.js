@@ -43,7 +43,8 @@ export async function installSteamcmd(runtime, { onProgress = () => {}, fetch: d
   let temporary;
   const phase = (name, message) => { onProgress(name, message); runtime.log('steamcmd', `${message}\n`); };
   try {
-    await mkdir(runtime.directory, { recursive: true });
+    await mkdir(runtime.directory, { recursive: true, mode: 0o700 });
+    await access(runtime.directory, constants.R_OK | constants.W_OK | constants.X_OK);
     temporary = await mkdtemp(path.join(runtime.directory, '.steamcmd-'));
     const archive = path.join(temporary, 'steamcmd.tar.gz');
     const unpacked = path.join(temporary, 'installation');
@@ -97,6 +98,7 @@ export async function installSteamcmd(runtime, { onProgress = () => {}, fetch: d
     phase('steamcmd-ready', 'SteamCMD 安装完成，可以安装游戏服务端。');
   } catch (error) {
     if (signal.aborted) throw failure(controller.signal.aborted ? '面板正在关闭，SteamCMD 安装已中止。' : 'SteamCMD 下载或初始化超时，请查看日志后重试。', controller.signal.aborted ? 503 : 504);
+    if (['EACCES', 'EPERM'].includes(error.code)) throw failure(`SteamCMD 安装目录无权读写：${runtime.directory}。请让运行 PalBox 的系统用户拥有 data 目录的读写权限，并使用安装时配置的同一用户启动程序。`, 403);
     throw error;
   } finally {
     signal.removeEventListener('abort', abortCommand);

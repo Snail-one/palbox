@@ -7,3 +7,5 @@ playwright-report/
 .env
 .env.*
 data/
+.runtime/
+.palbox.env
