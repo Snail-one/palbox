@@ -104,6 +104,11 @@ else: raise RuntimeError('Unexpected mock command: ' + name)
 test('就地安装使用项目属主和 data，不创建用户或搬迁程序，SteamCMD 由网页安装', linux, async t => {
   const f = await fixture(t);
   const result = await f.invoke();
+  assert.match(result.stdout, /正在下载 node-v24\.0\.0-linux-x64\.tar\.xz/);
+  assert.match(result.stdout, /Node\.js .+ 已安装到 \.runtime\/node/);
+  assert.match(result.stdout, /当前没有正在运行的 PalBox 服务/);
+  assert.match(result.stdout, /启动检查通过（第 1\/30 次）/);
+  assert.match(result.stdout, /正在设置开机启动/);
   assert.match(result.stdout, /安装完成.*开机启动/);
   assert.ok(result.stdout.includes(`运行用户：deployer`));
   assert.ok(result.stdout.includes(`游戏目录：${f.data}/server`));
@@ -132,11 +137,15 @@ test('就地安装使用项目属主和 data，不创建用户或搬迁程序，
 test('重新安装保留同一 data、配置和程序目录，不重复下载兼容 Node', linux, async t => {
   const f = await fixture(t);
   const opened = await f.invoke('--host', '0.0.0.0', '--port', '9000', '--api-port', '9001');
+  assert.match(opened.stdout, /当前没有正在运行的 PalBox 服务/);
   assert.match(opened.stdout, /0\.0\.0\.0:9000（所有 IPv4 网卡）/);
   assert.doesNotMatch(opened.stdout, /面板地址：http:\/\/127\.0\.0\.1:9000/);
   await writeFile(path.join(f.data, 'world.sav'), 'world-content');
   await writeFile(f.config, `${await readFile(f.config, 'utf8')}PALBOX_GAME_PORT=8888\nPALBOX_SECURE_COOKIE=true\n`);
-  await f.invoke();
+  const repeated = await f.invoke();
+  assert.match(repeated.stdout, /项目 Node\.js .+ 已可用，跳过下载/);
+  assert.match(repeated.stdout, /正在停止已运行的 PalBox/);
+  assert.match(repeated.stdout, /原服务已停止/);
   let config = await readFile(f.config, 'utf8');
   for (const line of ['HOST=0.0.0.0', 'PORT=9000', 'API_PORT=9001', 'PALBOX_GAME_PORT=8888', 'PALBOX_SECURE_COOKIE=true']) assert.ok(config.split('\n').includes(line), line);
   assert.equal(await readFile(path.join(f.data, 'world.sav'), 'utf8'), 'world-content');

@@ -109,6 +109,20 @@ function serialize(doc, changes = new Map(), { download = false } = {}) {
   return source.endsWith('\n') ? source : source + updated.newline;
 }
 
+// Keep the default file's layout and order; imported-only parameters go last.
+export function mergeConfiguration(defaultSource, importedSource) {
+  const defaults = parse(defaultSource);
+  const imported = parse(importedSource);
+  const changes = new Map(imported.entries.map(({ key, raw }) => [key, raw]));
+  const source = serialize(defaults, changes);
+  const keys = new Set(defaults.entries.map(({ key }) => key));
+  const extra = imported.entries.filter(({ key }) => !keys.has(key));
+  if (!extra.length) return source;
+  const { end } = parse(source);
+  const suffix = extra.map(({ key, raw }) => `${key}=${raw}`).join(',');
+  return source.slice(0, end) + (defaults.entries.length ? ',' : '') + suffix + source.slice(end);
+}
+
 function decodeString(raw) {
   if (!raw.startsWith('"')) return raw;
   return raw.slice(1, -1).replace(/\\(["\\])/g, '$1');

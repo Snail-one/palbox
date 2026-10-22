@@ -220,7 +220,9 @@ if (( ${#missing[@]} == 0 )); then
   echo '[PalBox] curl、lib32gcc-s1 和 7zip 已可用，跳过安装。'
 else
   step "安装缺少的系统依赖：${missing[*]}。"
+  step '正在更新软件源。'
   apt-get update
+  step "正在安装：${missing[*]}。"
   DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends --no-upgrade "${missing[@]}"
 fi
 
@@ -231,8 +233,15 @@ if [[ ! -e "$data_dir" ]]; then install -d -o "$service_user" -g "$service_group
 runuser -u "$service_user" -- test -r "$data_dir" && runuser -u "$service_user" -- test -w "$data_dir" && runuser -u "$service_user" -- test -x "$data_dir" || die "$service_user 无权读写 data/。请使用该数据所属的用户，不要混用运行用户；安装器不会自动修改已有数据属主。"
 if [[ ! -e "$app_dir/.runtime" ]]; then install -d -o "$service_user" -g "$service_group" -m 0755 "$app_dir/.runtime"; fi
 node_bin="$app_dir/.runtime/node/bin/node"
-if [[ ! -x "$node_bin" ]] || ! runuser -u "$service_user" -- "$node_bin" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)'; then
+node_version=''
+if [[ -x "$node_bin" ]]; then
+  node_version="$(runuser -u "$service_user" -- "$node_bin" -e 'const major = Number(process.versions.node.split(".")[0]); if (!(major >= 22)) process.exit(1); process.stdout.write(process.versions.node)')" || node_version=''
+fi
+if [[ -n "$node_version" ]]; then
+  step "项目 Node.js ${node_version} 已可用，跳过下载。"
+else
   step '下载并校验项目独立的 Node.js 24 LTS。'
+  step '正在获取 Node.js 校验清单。'
   curl --fail --silent --show-error --location --retry 3 --connect-timeout 15 --max-time 300 \
     https://nodejs.org/dist/latest-v24.x/SHASUMS256.txt -o "$temporary/SHASUMS256.txt"
   checksum='' node_archive=''
@@ -243,8 +252,10 @@ if [[ ! -x "$node_bin" ]] || ! runuser -u "$service_user" -- "$node_bin" -e 'pro
     fi
   done < "$temporary/SHASUMS256.txt"
   [[ -n "$node_archive" ]] || die '无法从官方清单确定 Node.js 安装包。'
+  step "正在下载 ${node_archive}。"
   curl --fail --silent --show-error --location --retry 3 --connect-timeout 15 --max-time 600 \
     "https://nodejs.org/dist/latest-v24.x/$node_archive" -o "$temporary/$node_archive"
+  step '正在校验并解压 Node.js。'
   printf '%s  %s\n' "$checksum" "$temporary/$node_archive" > "$temporary/node.sha256"
   sha256sum -c "$temporary/node.sha256" || die 'Node.js 校验失败，已中止安装。'
   install -d -m 0755 "$temporary/node"
@@ -252,6 +263,8 @@ if [[ ! -x "$node_bin" ]] || ! runuser -u "$service_user" -- "$node_bin" -e 'pro
   chown -R "$service_user:$service_group" "$temporary/node"
   [[ ! -e "$app_dir/.runtime/node" ]] || mv -- "$app_dir/.runtime/node" "$app_dir/.runtime/node.previous-$(date +%s)-$$"
   mv -- "$temporary/node" "$app_dir/.runtime/node"
+  node_version="$(runuser -u "$service_user" -- "$node_bin" -e 'process.stdout.write(process.versions.node)')"
+  step "Node.js ${node_version} 已安装到 .runtime/node。"
 fi
 runuser -u "$service_user" -- "$node_bin" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' || die 'Node.js 运行检查失败。'
 runuser -u "$service_user" -- "$node_bin" --input-type=module -e 'import { isIP } from "node:net"; process.exit(isIP(process.argv[1]) || process.argv[1] === "localhost" ? 0 : 1);' "$listen_host" || die '请使用有效的 IPv4、IPv6 地址或 localhost。'
@@ -296,14 +309,23 @@ if [[ -f "$unit_file" ]]; then cp -p -- "$unit_file" "$temporary/previous.servic
 if systemctl is-active --quiet palbox.service; then was_active=true; fi
 if systemctl is-enabled --quiet palbox.service; then was_enabled=true; fi
 switched=true
-if [[ "$was_active" == true ]]; then systemctl stop palbox.service; fi
+if [[ "$was_active" == true ]]; then
+  step '正在停止已运行的 PalBox。游戏正在运行时，停服最多等待 7 分钟。'
+  systemctl stop palbox.service
+  step '原服务已停止。'
+else
+  step '当前没有正在运行的 PalBox 服务。'
+fi
+step '正在写入 .palbox.env、palbox.service，并重新加载 systemd。'
 install -o "$service_user" -g "$service_group" -m 0600 "$temporary/palbox.env" "$config_file"
 install -m 0644 "$temporary/palbox.service" "$unit_file"
 systemctl daemon-reload
+step '正在启动 PalBox。'
 systemctl start palbox.service
 health_host="$listen_host"
 case "$health_host" in 0.0.0.0) health_host=127.0.0.1 ;; ::) health_host=::1 ;; esac
 if [[ "$health_host" == *:* ]]; then health_host="[$health_host]"; fi
+step "正在检查面板 http://${health_host}:${listen_port} 与后端 http://127.0.0.1:${api_port}。"
 healthy=false
 for attempt in {1..30}; do
   if runuser -u "$service_user" -- "$node_bin" --input-type=module -e '
@@ -315,14 +337,23 @@ for attempt in {1..30}; do
       ]);
       process.exit(results.every(Boolean) ? 0 : 1);
     } catch { process.exit(1); }
-  ' "http://$health_host:$listen_port" "http://127.0.0.1:$api_port"; then healthy=true; break; fi
-  systemctl is-active --quiet palbox.service || break
+  ' "http://$health_host:$listen_port" "http://127.0.0.1:$api_port"; then
+    step "启动检查通过（第 ${attempt}/30 次）。"
+    healthy=true
+    break
+  fi
+  if ! systemctl is-active --quiet palbox.service; then
+    step 'PalBox 服务已退出，停止启动检查。'
+    break
+  fi
+  step "第 ${attempt}/30 次启动检查未通过，1 秒后重试。"
   sleep 1
 done
 if [[ "$healthy" != true ]]; then
   journalctl -u palbox.service -n 30 --no-pager >&2 || true
   die '服务未通过启动检查，请查看以上日志。'
 fi
+step '正在设置开机启动。'
 systemctl enable palbox.service
 switched=false
 

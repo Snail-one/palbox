@@ -35,6 +35,19 @@ const path = require('node:path');
       await page.waitForFunction(() => document.querySelector('#game-config-state').textContent === '暂无配置');
       assert.equal(await page.locator('[data-action="apply"]').isDisabled(), true);
       await page.locator('#nav-configuration-profiles').click();
+      // Without official defaults an import must fail without creating a partial profile.
+      await page.locator('#import-button').click();
+      await page.locator('#import-text').fill('OptionSettings=(ExpRate=3)');
+      await page.locator('#import-name').fill('等待默认配置');
+      await page.locator('#import-confirm').click();
+      await page.locator('#import-error').waitFor();
+      assert.match(await page.locator('#import-error').textContent(), /DefaultPalWorldSettings.ini.*安装服务端/);
+      assert.equal(await page.locator('#import-dialog').isVisible(), true);
+      assert.equal(await page.locator('#import-text').inputValue(), 'OptionSettings=(ExpRate=3)');
+      assert.equal(await page.locator('#import-name').inputValue(), '等待默认配置');
+      assert.equal(await page.locator('#import-confirm').isEnabled(), true);
+      assert.deepEqual(f.manager.store.workspace.profiles, []);
+      await page.locator('#import-cancel').click();
       let manualId;
       if (manual) {
         await page.locator('#new-profile').click();
@@ -47,7 +60,9 @@ const path = require('node:path');
         // Keep a draft while detection occurs; automatic synchronization must preserve it.
         await page.locator('#source-editor').fill('OptionSettings=(ServerName="Draft")');
         await fs.writeFile(path.join(f.directory, 'server/DefaultPalWorldSettings.ini'), official);
-        await page.waitForResponse(response => response.url().endsWith('/api/status') && response.status() === 200, { timeout: 12000 });
+        const refreshed = page.waitForResponse(response => response.url().includes('/api/status?') && response.status() === 200);
+        await page.locator('#refresh-status').click();
+        await refreshed;
         assert.equal(await page.locator('#source-editor').inputValue(), 'OptionSettings=(ServerName="Draft")');
         await page.locator('#restore-source').click();
         await page.locator('#dialog-confirm').click();
@@ -55,6 +70,7 @@ const path = require('node:path');
         await fs.writeFile(path.join(f.directory, 'server/DefaultPalWorldSettings.ini'), official);
       }
       // Detection refreshes the library without an explicit browser refresh.
+      await page.locator('#nav-configuration-form').click();
       await page.locator('#nav-configuration-profiles').click();
       await page.waitForFunction(() => !document.querySelector('#profile-list .unavailable'), null, { timeout: 15000 });
       const expectedCount = manual ? 2 : 1;

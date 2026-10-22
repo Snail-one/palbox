@@ -155,13 +155,14 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
       if (success) notifications.toast('配置已删除');
     }
   } });
-  createImportDialog({ dom, readFile: files.read, validate: files.validate, beforeOpen: beforeLeave, onOpened: navigation.closeSidebar, onImport(name, source, origin) {
-    workspace.add(name, source, { origin });
-    changedProfile('导入成功，所有原始参数均已保留');
+  createImportDialog({ dom, readFile: files.read, validate: files.validate, beforeOpen: beforeLeave, onOpened: navigation.closeSidebar, async onImport(name, source, origin) {
+    const { source: defaultSource } = await management.request('default-configuration');
+    workspace.importConfiguration(name, source, defaultSource, { origin });
+    changedProfile('已基于游戏默认配置导入，差异已标记为修改');
   } });
   dom.$('restore-input-button').addEventListener('click', async () => {
     if (!workspace.active) return;
-    const restore = await ask({ title: '恢复输入配置？', description: '将当前配置的全部参数恢复为最初输入或导入的内容，放弃后续编辑和未应用的源码。恢复后会自动保存；其他配置不受影响。', confirm: '恢复输入配置', danger: true, symbol: 'file' });
+    const restore = await ask({ title: '恢复输入配置？', description: '将当前配置的全部参数恢复为初始基准，放弃已有修改和未应用的源码。新导入配置的基准为导入时的游戏默认配置。恢复后会自动保存；其他配置不受影响。', confirm: '恢复输入配置', danger: true, symbol: 'file' });
     if (!restore) return;
     editor.reset(workspace.initialSource);
     let saved = save({ automatic: true });

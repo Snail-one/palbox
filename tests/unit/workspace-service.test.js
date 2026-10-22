@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { WorkspaceService } from '../../frontend/src/application/workspace-service.js';
 import { OFFICIAL_DEFAULT_ORIGIN } from '../../shared/domain/workspace.js';
 import template from '../../shared/domain/template.js';
+import { parse } from '../../shared/domain/config.js';
+import { EditorSession } from '../../shared/domain/editor-session.js';
 
 const KEY = 'workspace';
 const createRepository = getStorage => ({
@@ -88,6 +90,47 @@ test('新建配置可记录来源并在保存后保留', () => {
   assert.equal(service.persist(), true);
   const saved = JSON.parse(data.get(KEY));
   assert.equal(saved.profiles.find(candidate => candidate.id === profile.id).origin, '导入文件：world.ini');
+});
+
+test('导入以游戏默认为基准创建独立配置，差异标记和恢复基准跨保存与加载保留', () => {
+  const { service, storage } = setup();
+  const original = structuredClone(service.active);
+  const defaults = 'OptionSettings=(ServerName="Default",ExpRate=1,RESTAPIEnabled=True,AdminPassword="managed")';
+  const imported = service.importConfiguration('导入世界', 'OptionSettings=(ExpRate=3,Future=(X,Y))', defaults, { origin: '导入文件：world.ini' });
+  assert.equal(service.profiles.length, 2);
+  assert.deepEqual(service.profiles[0], original);
+  assert.equal(service.active.id, imported.id);
+  assert.equal(imported.locked, undefined);
+  assert.equal(imported.origin, '导入文件：world.ini');
+  const values = new Map(parse(imported.source).entries.map(({ key, raw }) => [key, raw]));
+  assert.equal(values.get('ExpRate'), '3');
+  assert.equal(values.get('AdminPassword'), '"managed"');
+  assert.equal(values.get('Future'), '(X,Y)');
+  assert.equal(imported.initialSource, defaults);
+  const editor = new EditorSession(imported.source, { baselineSource: imported.initialSource });
+  assert.deepEqual(editor.changedKeys(), ['ExpRate', 'Future']);
+  assert.equal(editor.restoreField('ExpRate'), true);
+  assert.equal(editor.raw('ExpRate'), '1');
+  service.persist();
+  const restored = new WorkspaceService({ repository: createRepository(() => storage), template });
+  assert.equal(restored.initialSource, defaults);
+  assert.equal(restored.active.source, imported.source);
+  restored.saveSource(restored.initialSource);
+  assert.equal(restored.active.source, defaults);
+  assert.deepEqual(restored.profiles[0], original);
+});
+
+test('导入语法错误或配置数量超限时不新增配置或改变当前选择', () => {
+  const { service } = setup();
+  assert.throws(() => service.importConfiguration('错误', 'OptionSettings=(A=1,A=2)', template));
+  assert.throws(() => service.importConfiguration('错误默认', 'OptionSettings=(A=1)', 'invalid'));
+  assert.equal(service.profiles.length, 1);
+  while (service.profiles.length < 10) service.add('其他配置', template, { select: false });
+  const before = structuredClone(service.profiles);
+  const activeId = service.active.id;
+  assert.throws(() => service.importConfiguration('超限', 'OptionSettings=(A=1)', template), /最多保留/);
+  assert.deepEqual(service.profiles, before);
+  assert.equal(service.active.id, activeId);
 });
 
 test('保存失败回滚已保存源文件，不影响可供复制的编辑结果', () => {

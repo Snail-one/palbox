@@ -1,4 +1,4 @@
-import { parse } from '../../../shared/domain/config.js';
+import { parse, mergeConfiguration } from '../../../shared/domain/config.js';
 import { createProfile, createWorkspace, validateWorkspace, MAX_PROFILES } from '../../../shared/domain/workspace.js';
 
 /** Coordinates persistence through an injected { load, save } repository. */
@@ -69,6 +69,13 @@ export class WorkspaceService {
     this.profiles.push(profile);
     if (select || !this.active) this.select(profile.id);
     this.#persisted = false;
+    return profile;
+  }
+
+  importConfiguration(name, source, defaultSource, { origin } = {}) {
+    const merged = mergeConfiguration(defaultSource, source);
+    const profile = this.add(name, merged, { origin });
+    profile.initialSource = defaultSource;
     return profile;
   }
 
