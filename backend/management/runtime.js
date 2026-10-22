@@ -10,6 +10,7 @@ import { failure } from './files.js';
 import { appendCombinedLog, initializeCombinedLog, initializeLoginLog, readCombinedLog, readLogTail, timestampLogChunk, withoutLoginLogs } from './logs.js';
 import { appendLog, cleanupLogs, LOG_FILES, logPolicy } from './log-retention.js';
 import { readLogPage } from './log-pages.js';
+import { withDownloadProxy } from './outbound-fetch.js';
 import { defaultSteamcmd, managedSteamcmd, steamcmdStatus, installSteamcmd } from './steamcmd.js';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -131,7 +132,7 @@ export class Runtime extends EventEmitter {
     });
   }
   childEnvironment() {
-    const env = { ...process.env, TZ: 'UTC' };
+    const env = withDownloadProxy({ ...process.env, TZ: 'UTC' });
     if (managedSteamcmd(this)) env.HOME = path.resolve(this.directory, 'steam-home');
     delete env.PALBOX_ADMIN_PASSWORD;
     delete env.PALBOX_ADMIN_PASSWORD_FILE;

@@ -5,6 +5,7 @@ import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 import { failure } from './files.js';
+import { outboundFetch } from './outbound-fetch.js';
 import { replaceDirectory } from './replace-directory.js';
 
 const DOWNLOAD_URL = 'https://client-update.steamstatic.com/installer/steamcmd_linux.tar.gz';
@@ -29,7 +30,7 @@ export async function steamcmdStatus(runtime) {
   return { installed, canInstall: supported && managed, reason };
 }
 
-export async function installSteamcmd(runtime, { onProgress = () => {}, fetch: download = globalThis.fetch } = {}) {
+export async function installSteamcmd(runtime, { onProgress = () => {}, fetch: download = outboundFetch } = {}) {
   const status = await steamcmdStatus(runtime);
   if (status.installed) return;
   if (!status.canInstall) throw failure(status.reason, 409);

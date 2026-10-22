@@ -13,6 +13,7 @@ import { readBanList } from './banned-players.js';
 import { PlayerHistory, PlayerHistoryRecorder } from './player-history.js';
 import { ManagementStore } from './store.js';
 import { atomicWrite, readJson, jsonWrite, failure } from './files.js';
+import { outboundFetch } from './outbound-fetch.js';
 import { normalizeUsername, passwordRecord, validUsername } from './auth.js';
 import { validTotpRecord } from './totp.js';
 import { backupDirectory, BACKUP_CATEGORIES as categories } from './backup-paths.js';
@@ -743,7 +744,7 @@ export class Manager extends EventEmitter {
     // SteamCMD.net is much faster than launching SteamCMD; use it first and
     // fall back to the local client when the API is unavailable.
     try {
-      const response = await fetch('https://api.steamcmd.net/v1/info/2394010', {
+      const response = await outboundFetch('https://api.steamcmd.net/v1/info/2394010', {
         headers: { accept: 'application/json' },
         signal: AbortSignal.timeout(10000)
       });
