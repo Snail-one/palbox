@@ -20,6 +20,31 @@ async function fixture(t) {
   return { directory, file };
 }
 
+test('导入的配置合并进游戏默认配置，缺项沿用官方默认，空密码保留管理密码', async t => {
+  const { directory, file } = await fixture(t);
+  await writeFile(file, official);
+  const store = new ManagementStore(directory, 9000);
+  await store.initialize();
+  const baseline = store.active().initialSource;
+  const password = values(baseline).get('AdminPassword');
+  const merged = await store.applyImportedConfig('[/Script/Pal.PalGameWorldSettings]\nOptionSettings=(ExpRate=9.000000,ExtraRate=3)\n');
+  const settings = values(merged);
+  assert.equal(settings.get('ExpRate'), '9.000000');
+  assert.equal(settings.get('ExtraRate'), '3');
+  assert.equal(settings.get('ServerName'), '"Official World"');
+  assert.equal(settings.get('RESTAPIEnabled'), 'True');
+  assert.equal(settings.get('PublicPort'), '9000');
+  assert.equal(settings.get('AdminPassword'), password);
+  assert.equal(store.active().locked, true);
+  assert.equal(store.active().source, merged);
+  assert.equal(store.active().initialSource, baseline);
+  const replaced = await store.applyImportedConfig('[/Script/Pal.PalGameWorldSettings]\nOptionSettings=(AdminPassword="imported-secret",ExpRate=4.000000)\n');
+  assert.equal(values(replaced).get('AdminPassword'), '"imported-secret"');
+  assert.equal(values(replaced).get('ExpRate'), '4.000000');
+  assert.equal(values(replaced).get('ServerName'), '"Official World"');
+  assert.equal(values(replaced).get('RESTAPIEnabled'), 'True');
+});
+
 test('初始默认配置读取游戏官方文件，保留注释、未知参数和数值，只设置管理必需项', async t => {
   const { directory, file } = await fixture(t);
   await writeFile(file, official);

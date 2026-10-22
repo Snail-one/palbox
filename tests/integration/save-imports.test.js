@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { execFile, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
+import { parse } from '../../shared/domain/config.js';
 import { managementFixture } from '../helpers/management-fixture.js';
 
 const run = promisify(execFile);
@@ -164,7 +165,14 @@ test('完整备份整体替换 Saved，恢复多个世界和配置，保持原�
     const task = await waitTask(f, 'import-save', { id: staged.id });
     assert.deepEqual(await readdir(path.join(saved(f), 'SaveGames/0')), ['IMPORTED', 'SECOND']);
     await assert.rejects(access(path.join(saved(f), 'old-only.txt')), { code: 'ENOENT' });
-    assert.equal(await readFile(f.runtime.config, 'utf8'), importedConfig);
+    const disk = await readFile(f.runtime.config, 'utf8');
+    const diskValues = new Map(parse(disk).entries.map(entry => [entry.key, entry.raw]));
+    const importedValues = new Map(parse(importedConfig).entries.map(entry => [entry.key, entry.raw]));
+    assert.equal(disk, f.manager.store.active().source);
+    assert.equal(f.manager.store.active().name, '游戏默认配置');
+    assert.equal(diskValues.get('ExpRate'), importedValues.get('ExpRate'));
+    assert.equal(diskValues.get('AdminPassword'), importedValues.get('AdminPassword'));
+    assert.equal(diskValues.get('RESTAPIEnabled'), 'True');
     assert.equal(await readFile(path.join(saved(f), 'SaveGames/0/IMPORTED/backup/world/history/Level.sav'), 'utf8'), 'imported-history');
     assert.equal(await readFile(path.join(saved(f), 'Logs/previous.log'), 'utf8'), 'archived-log');
     assert.equal(await readFile(path.join(saved(f), 'SaveGames/banlist.txt'), 'utf8'), 'steam_archived\n');
@@ -199,6 +207,43 @@ test('世界包不含 Players 时清除旧玩家，保留世界外的配置和�
   assert.equal(await readFile(path.join(saved(f), 'SaveGames/0/OTHER/Level.sav'), 'utf8'), 'other-world');
   assert.deepEqual(await readFile(f.runtime.config), config);
   assert.equal(await f.manager.targetWorld(), 'CURRENT');
+});
+
+test('世界包旁的配置按官方默认导入到游戏默认配置，存档仍只替换当前世界', async t => {
+  const f = await managementFixture(); t.after(() => f.close()); await f.login();
+  const tmp = await mkdtemp(path.join(tmpdir(), 'palbox-import-config-')); t.after(() => rm(tmp, { recursive: true, force: true }));
+  await waitTask(f, 'install');
+  const world = path.join(saved(f), 'SaveGames/0/CURRENT');
+  await mkdir(path.join(world, 'Players'), { recursive: true });
+  await writeFile(path.join(world, 'Level.sav'), 'old');
+  await writeFile(path.join(world, 'Players/old.sav'), 'old-player');
+  await mkdir(path.join(saved(f), 'SaveGames/0/OTHER'), { recursive: true });
+  await writeFile(path.join(saved(f), 'SaveGames/0/OTHER/Level.sav'), 'other-world');
+  await writeFile(path.join(saved(f), 'Config/LinuxServer/GameUserSettings.ini'), 'DedicatedServerName=CURRENT\n');
+  await writeFile(path.join(saved(f), 'outside.txt'), 'keep');
+  const bytes = await archive(tmp, {
+    'SOURCE/Level.sav': 'new',
+    'SOURCE/LevelMeta.sav': 'meta',
+    'Config/LinuxServer/PalWorldSettings.ini': '[/Script/Pal.PalGameWorldSettings]\nOptionSettings=(ExpRate=7.500000)\n'
+  });
+  const upload = await f.upload('/api/save-import', bytes);
+  assert.equal(upload.status, 201, await upload.clone().text());
+  const staged = await upload.json();
+  assert.equal(staged.kind, 'world');
+  assert.equal(staged.hasConfiguration, true);
+  await waitTask(f, 'import-save', { id: staged.id });
+  assert.equal(await readFile(path.join(world, 'Level.sav'), 'utf8'), 'new');
+  assert.equal(await readFile(path.join(saved(f), 'SaveGames/0/OTHER/Level.sav'), 'utf8'), 'other-world');
+  assert.equal(await readFile(path.join(saved(f), 'outside.txt'), 'utf8'), 'keep');
+  assert.equal(await readFile(path.join(saved(f), 'Config/LinuxServer/GameUserSettings.ini'), 'utf8'), 'DedicatedServerName=CURRENT\n');
+  const disk = await readFile(f.runtime.config, 'utf8');
+  const settings = new Map(parse(disk).entries.map(entry => [entry.key, entry.raw]));
+  assert.equal(f.manager.store.active().name, '游戏默认配置');
+  assert.equal(disk, f.manager.store.active().source);
+  assert.equal(settings.get('ExpRate'), '7.500000');
+  assert.equal(settings.get('RESTAPIEnabled'), 'True');
+  assert.equal(settings.get('DayTimeSpeedRate'), '1.000000');
+  assert.ok(settings.get('AdminPassword') && settings.get('AdminPassword') !== '""');
 });
 
 test('完整备份配置无效时上传失败，不停止游戏或替换现有内容', async t => {

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, readdir, lstat, rename, rm } from 'node:fs/promises';
+import { mkdir, open, readFile, writeFile, readdir, lstat, rename, rm } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { createGunzip } from 'node:zlib';
 import { Transform } from 'node:stream';
@@ -211,7 +211,11 @@ export class SaveImports {
     const inspected = await this.inspectSnapshot(snapshot, meta.kind || 'world');
     if (JSON.stringify(inspected.files) !== JSON.stringify(meta.files) || inspected.bytes !== meta.uncompressedBytes
       || (meta.directories && JSON.stringify(inspected.directories) !== JSON.stringify(meta.directories))) throw failure('导入存档已损坏，请重新上传。', 404);
-    return { ...meta, kind: meta.kind || 'world', snapshot };
+    let configurationSource = null;
+    try { configurationSource = await readFile(path.join(directory, 'configuration.ini'), 'utf8'); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (meta.hasConfiguration && configurationSource == null) throw failure('导入存档已损坏，请重新上传。', 404);
+    return { ...meta, kind: meta.kind || 'world', snapshot, configurationSource };
   }
 
   async remove(id) {
@@ -455,9 +459,23 @@ export class SaveImports {
         const info = await lstat(source).catch(error => { if (error.code === 'ENOENT') throw failure('压缩包中的世界目录不存在。', 400); throw error; });
         if (!info.isDirectory()) throw failure('压缩包中的世界目录无效。', 400);
       }
+      let configurationSource = null;
+      if (detected.kind === 'world') {
+        const prefix = detected.root ? `${detected.root}/` : '';
+        const matches = detected.entries
+          .filter(entry => entry.type === 'file' && /(^|\/)Config\/LinuxServer\/PalWorldSettings\.ini$/.test(entry.name) && (!prefix || !entry.name.startsWith(prefix)))
+          .map(entry => entry.name);
+        if (matches.length > 1) throw failure('压缩包包含多份 PalWorldSettings.ini，无法确定要导入的配置。', 400);
+        if (matches.length === 1) {
+          configurationSource = await readFile(path.join(extract, matches[0]), 'utf8');
+          if (!configurationSource.trim()) throw failure('PalWorldSettings.ini 为空。', 400);
+          try { parse(configurationSource); }
+          catch (error) { throw failure(error.message, 400); }
+        }
+      }
       await rename(source, snapshot);
       const verified = await this.verify(snapshot);
-      return { snapshot, verified };
+      return { snapshot, verified, configurationSource };
     } finally { await rm(extract, { recursive: true, force: true }); }
   }
 
@@ -515,6 +533,8 @@ export class SaveImports {
       const extracted = await this.extract(archive, detected, directory, { format, signal: controller.signal });
       const inspected = await this.inspectSnapshot(extracted.snapshot, detected.kind);
       if (extracted.verified.files.length !== detected.copy.length) throw failure('压缩包文件数量不一致，请重新打包。', 400);
+      const configurationBytes = extracted.configurationSource ? Buffer.byteLength(extracted.configurationSource) : 0;
+      if (extracted.configurationSource != null) await writeFile(path.join(directory, 'configuration.ini'), extracted.configurationSource, { mode: 0o600 });
       const meta = {
         id,
         createdAt: new Date().toISOString(),
@@ -525,10 +545,11 @@ export class SaveImports {
         uncompressedBytes: inspected.bytes,
         entries: detected.entries.length,
         files: inspected.files,
-        directories: inspected.directories
+        directories: inspected.directories,
+        hasConfiguration: extracted.configurationSource != null
       };
       const metaBytes = Buffer.byteLength(JSON.stringify(meta, null, 2) + '\n');
-      if (usage.bytes + bytes + inspected.bytes + metaBytes > this.limits.maxStagedBytes) throw failure('导入暂存总量超过限制。', 413);
+      if (usage.bytes + bytes + inspected.bytes + configurationBytes + metaBytes > this.limits.maxStagedBytes) throw failure('导入暂存总量超过限制。', 413);
       authorize();
       if (controller.signal.aborted) throw failure('存档处理超时，请重试。', 408);
       await jsonWrite(path.join(directory, 'meta.json'), meta, { beforeCommit: authorize });

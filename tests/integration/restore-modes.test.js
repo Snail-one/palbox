@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { access, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { parse } from '../../shared/domain/config.js';
 import path from 'node:path';
 import { managementFixture } from '../helpers/management-fixture.js';
 import { nativeBackupFixture } from '../helpers/native-backup-fixture.js';
@@ -27,7 +28,15 @@ test('世界备份按选择恢复当前世界，或写入配置并替换包内�
     assert.equal(await readFile(path.join(current.world, 'Level.sav'), 'utf8'), 'current-world');
     await assert.rejects(access(path.join(current.world, 'old-only.sav')), { code: 'ENOENT' });
     assert.equal(await readFile(path.join(current.world, 'backup/world', current.timestamp, 'Level.sav'), 'utf8'), 'official-world');
-    assert.equal(await readFile(f.runtime.config, 'utf8'), currentConfig);
+    const restoredConfig = await readFile(f.runtime.config, 'utf8');
+    assert.equal(restoredConfig, f.manager.store.active().source);
+    assert.equal(f.manager.store.active().name, '游戏默认配置');
+    assert.doesNotMatch(restoredConfig, /current-config/);
+    const wanted = new Map(parse(originalConfig).entries.map(entry => [entry.key, entry.raw]));
+    const actual = new Map(parse(restoredConfig).entries.map(entry => [entry.key, entry.raw]));
+    assert.equal(actual.get('ExpRate'), wanted.get('ExpRate'));
+    assert.equal(actual.get('AdminPassword'), wanted.get('AdminPassword'));
+    assert.equal(actual.get('RESTAPIEnabled'), 'True');
     assert.equal(await readFile(path.join(f.runtime.saved, 'outside-world.txt'), 'utf8'), 'keep-until-full');
     assert.deepEqual(await readdir(path.join(f.runtime.saved, 'SaveGames/0')), ['CURRENT_WORLD', 'SAVED_WORLD']);
     assert.equal(Boolean(f.runtime.game), running);
@@ -37,7 +46,7 @@ test('世界备份按选择恢复当前世界，或写入配置并替换包内�
     const full = await f.task('restore', { id, mode: 'full' });
     assert.equal(full.state, 'succeeded', full.message);
     assert.equal(await f.manager.targetWorld(), 'CURRENT_WORLD');
-    assert.equal(await readFile(f.runtime.config, 'utf8'), originalConfig);
+    assert.equal(await readFile(f.runtime.config, 'utf8'), restoredConfig);
     assert.deepEqual((await readdir(path.join(f.runtime.saved, 'SaveGames/0'))).sort(), ['CURRENT_WORLD', 'SAVED_WORLD']);
     assert.equal(await readFile(path.join(f.runtime.saved, 'outside-world.txt'), 'utf8'), 'keep-until-full');
     assert.equal(await readFile(path.join(f.runtime.saved, 'SaveGames/0/SAVED_WORLD/Level.sav'), 'utf8'), 'current-world');

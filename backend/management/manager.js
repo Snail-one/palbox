@@ -294,6 +294,17 @@ export class Manager extends EventEmitter {
     })();
     return { ...task };
   }
+  async requireImportableConfig(source) {
+    if (typeof source !== 'string' || !source.trim()) throw failure('导入的游戏配置为空。', 409);
+    try { parse(source); }
+    catch (error) { throw failure(error.message, 400); }
+    await this.store.readDefaultFile();
+  }
+  async adoptImportedConfig(source) {
+    if (source == null) return;
+    const merged = await this.store.applyImportedConfig(source);
+    await atomicWrite(this.runtime.config, merged);
+  }
   async ensureConfig() {
     try { await stat(this.runtime.config); }
     catch (error) {
@@ -444,6 +455,9 @@ export class Manager extends EventEmitter {
     let failureError = null;
     try {
       const wholeSaved = imported.kind === 'full';
+      let importedConfig = imported.configurationSource;
+      if (wholeSaved) importedConfig = await readFile(path.join(imported.snapshot, 'Config/LinuxServer/PalWorldSettings.ini'), 'utf8');
+      if (importedConfig != null) await this.requireImportableConfig(importedConfig);
       const worldId = wholeSaved ? null : await this.targetWorld();
       if (wasRunning) await this.stopGame({ requireSave: true });
       if (!wholeSaved && worldId !== await this.targetWorld()) throw failure('当前世界已改变，请刷新后重试。', 409);
@@ -464,6 +478,7 @@ export class Manager extends EventEmitter {
       this.servicePhase('restoring', wholeSaved ? '正在整体替换 Pal/Saved 中的全部存档和配置。' : '正在清空并替换当前世界目录中的全部内容。');
       await replaceDirectory(imported.snapshot, target);
       swapped = true;
+      if (importedConfig != null) await this.adoptImportedConfig(importedConfig);
     } catch (error) {
       failureError = error;
       rollbackFailed = Boolean(error.rollbackFailed);
@@ -639,11 +654,17 @@ export class Manager extends EventEmitter {
         const level = await lstat(path.join(source, 'Level.sav'));
         if (!level.isFile() || !level.size) throw failure('备份中的世界存档为空或无效。');
       }
+      let importedConfig = null;
+      try { importedConfig = await readFile(path.join(saved, 'Config/LinuxServer/PalWorldSettings.ini'), 'utf8'); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if (importedConfig != null) await this.requireImportableConfig(importedConfig);
       if (running) await this.stopGame({ requireSave: true });
       if (!wholeSaved && currentWorld !== await this.targetWorld()) throw failure('当前世界已改变，请刷新后重试。', 409);
       await this.backup('before-restore', id);
       await this.checkedBackupFile(id);
-      this.servicePhase('restoring', wholeSaved ? '正在整体还原 Pal/Saved 中的存档和配置。' : '正在恢复当前世界的存档，保留当前服务器配置。');
+      this.servicePhase('restoring', importedConfig != null
+        ? (wholeSaved ? '正在整体还原 Pal/Saved，并按导入方式更新游戏默认配置。' : '正在恢复当前世界的存档，并按导入方式更新游戏默认配置。')
+        : (wholeSaved ? '正在整体还原 Pal/Saved 中的存档和配置。' : '正在恢复当前世界的存档，保留当前服务器配置。'));
       const target = wholeSaved ? this.runtime.saved : (await this.native.ensureWorld(currentWorld)).directory;
       await mkdir(path.dirname(target), { recursive: true });
       let moved = false;
@@ -658,6 +679,7 @@ export class Manager extends EventEmitter {
         throw error;
       }
       if (moved) await rm(previous, { recursive: true });
+      if (importedConfig != null) await this.adoptImportedConfig(importedConfig);
     } finally { await rm(stage, { recursive: true, force: true }); }
     if (running) await this.startGame();
   }
@@ -684,17 +706,14 @@ export class Manager extends EventEmitter {
         const level = await lstat(path.join(source, 'Level.sav'));
         if (!level.isFile() || !level.size) throw failure('备份中的世界存档为空或无效。');
       }
-      let configText = null;
-      if (wholeSaved) {
-        configText = await readFile(path.join(stage, 'Config/LinuxServer/PalWorldSettings.ini'), 'utf8');
-        parse(configText);
-      }
+      const configText = await readFile(path.join(stage, 'Config/LinuxServer/PalWorldSettings.ini'), 'utf8');
+      await this.requireImportableConfig(configText);
       const currentWorld = wholeSaved ? worldId : await this.targetWorld();
       if (running) await this.stopGame({ requireSave: true });
       if (!wholeSaved && currentWorld !== await this.targetWorld()) throw failure('当前世界已改变，请刷新后重试。', 409);
       await this.backup('before-restore', id);
       await this.checkedBackupFile(id);
-      this.servicePhase('restoring', wholeSaved ? '正在恢复备份中的世界和 PalWorldSettings.ini。' : '正在恢复当前世界的存档，保留当前服务器配置。');
+      this.servicePhase('restoring', wholeSaved ? '正在恢复备份中的世界，并按导入方式更新游戏默认配置。' : '正在恢复当前世界的存档，并按导入方式更新游戏默认配置。');
       if (source) {
         const target = (await this.native.ensureWorld(currentWorld)).directory;
         await mkdir(path.dirname(target), { recursive: true });
@@ -711,7 +730,7 @@ export class Manager extends EventEmitter {
         }
         if (moved) await rm(previous, { recursive: true, force: true });
       }
-      if (wholeSaved) await atomicWrite(this.runtime.config, configText);
+      await this.adoptImportedConfig(configText);
     } finally { await rm(stage, { recursive: true, force: true }); }
     if (running) await this.startGame();
   }

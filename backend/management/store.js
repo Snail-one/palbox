@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
-import { parse, serialize, encodeString, decodeString, MAX_CONFIGURATION_SOURCE_LENGTH } from '../../shared/domain/config.js';
+import { parse, serialize, encodeString, decodeString, mergeConfiguration, MAX_CONFIGURATION_SOURCE_LENGTH } from '../../shared/domain/config.js';
 import {
   createProfile, createWorkspace, validateWorkspace, MAX_PROFILES,
   GAME_DEFAULT_PROFILE_ID, GAME_DEFAULT_PROFILE_NAME, OFFICIAL_DEFAULT_ORIGIN, DERIVED_DEFAULT_ORIGIN
@@ -161,6 +161,38 @@ export class ManagementStore {
     return operation;
   }
   persist() { return jsonWrite(this.file, this.snapshot()); }
+  /**
+   * Overlay an imported PalWorldSettings.ini onto the official default, fill
+   * missing parameters from that baseline, and store the result on the locked
+   * game-default profile. An empty imported admin password keeps the profile's
+   * existing managed password, REST API flag, and public port.
+   */
+  applyImportedConfig(importedSource) {
+    const operation = this.writes.then(async () => {
+      if (typeof importedSource !== 'string' || !importedSource.trim()) throw failure('导入的游戏配置为空。', 409);
+      parse(importedSource);
+      const official = await this.readDefaultFile();
+      this.applyDefaultProfile(this.workspace, official);
+      const profile = this.workspace.profiles.find(entry => entry.locked === true);
+      if (!profile?.initialSource) throw failure('未找到游戏默认配置。', 409);
+      let merged = mergeConfiguration(profile.initialSource, importedSource);
+      if (!sourcePassword(merged)) {
+        const password = sourcePassword(profile.initialSource) || sourcePassword(profile.source);
+        merged = managedTemplate(this.gamePort, merged, { password });
+      }
+      if (merged.length > MAX_CONFIGURATION_SOURCE_LENGTH || profile.initialSource.length > MAX_CONFIGURATION_SOURCE_LENGTH) {
+        throw failure('合并后的配置内容过长，无法保存，请精简后重试。');
+      }
+      profile.source = merged;
+      profile.updatedAt = new Date().toISOString();
+      this.workspace.activeId = profile.id;
+      this.revision += 1;
+      await this.persist();
+      return merged;
+    });
+    this.writes = operation.catch(() => {});
+    return operation;
+  }
   async newConfigurationTemplate() {
     const source = await this.defaultTemplate({ optional: true });
     return source === null

@@ -47,7 +47,7 @@ test('缺失、空目录、配置文件、空存档和链接不能冒充可备�
   await rejected();
 });
 
-test('打包当前世界和配置，存在当前世界时仅恢复世界内容并保留当前配置', async t => {
+test('打包当前世界和配置，存档恢复只替换当前世界，配置合并进游戏默认配置', async t => {
   const { manager, runtime, directory } = await fixture(t);
   const world = path.join(runtime.saved, 'SaveGames/0/WORLD1');
   await mkdir(path.join(world, 'Players'), { recursive: true });
@@ -100,7 +100,9 @@ test('打包当前世界和配置，存在当前世界时仅恢复世界内容�
   assert.equal(await readFile(path.join(world, 'WorldOption.sav'), 'utf8'), 'world-options');
   assert.equal(await readFile(path.join(world, 'backup/world/history/Level.sav'), 'utf8'), 'official-history');
   await assert.rejects(readFile(path.join(world, 'new-file.sav')), { code: 'ENOENT' });
-  assert.equal(await readFile(runtime.config, 'utf8'), config + '\n; current configuration\n');
+  assert.equal(await readFile(runtime.config, 'utf8'), manager.store.active().source);
+  assert.equal(manager.store.active().locked, true);
+  assert.doesNotMatch(await readFile(runtime.config, 'utf8'), /current configuration/);
   assert.equal(await readFile(selection, 'utf8'), 'DedicatedServerName=WORLD1\n');
   assert.equal(await readFile(oldWorld, 'utf8'), 'keep-old-world');
   assert.equal(await readFile(banlist, 'utf8'), 'current-banlist');
@@ -154,7 +156,11 @@ test('全新服务端或当前世界目录缺失时，整体还原 Saved 与世�
   await runtime.run('tar', ['-czf', manager.backupFile(id), '-C', path.join(directory, 'source'), '--', 'Pal/Saved']);
   await manager.restore(id, { mode: 'full' });
   assert.equal(await manager.native.configuredWorld(), 'ARCHIVED');
-  assert.equal(await readFile(runtime.config, 'utf8'), config);
+  assert.equal(await readFile(runtime.config, 'utf8'), manager.store.active().source);
+  assert.equal(manager.store.active().locked, true);
+  assert.match(await readFile(runtime.config, 'utf8'), /RESTAPIEnabled=True/);
+  assert.doesNotMatch(await readFile(runtime.config, 'utf8'), /AdminPassword=""/);
+  assert.match(await readFile(runtime.config, 'utf8'), /ExpRate=1\.000000/);
   assert.equal(await readFile(path.join(runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'), 'utf8'), selection);
   assert.equal(await readFile(path.join(runtime.saved, 'SaveGames/0/ARCHIVED/Players/player.sav'), 'utf8'), 'archived-player');
   assert.equal(await readFile(path.join(runtime.saved, 'SaveGames/banlist.txt'), 'utf8'), 'archived-banlist');
