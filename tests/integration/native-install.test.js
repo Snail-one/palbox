@@ -98,15 +98,54 @@ else: raise RuntimeError('Unexpected mock command: ' + name)
   const systemd = path.join(directory, 'systemd');
   const config = path.join(app, 'data/palbox/.env');
   const data = path.join(app, 'data');
-  const env = { ...process.env, PATH: `${bin}:/usr/bin:/bin`, SUDO_USER: '', PALBOX_NATIVE_TEST_DIR: directory, PALBOX_SYSTEMD_DIR: systemd };
-  const invoke = (...args) => run('/bin/bash', [path.join(app, 'install.sh'), ...args], { env, timeout: 10000 });
+  const env = {
+    ...process.env,
+    PATH: `${bin}:/usr/bin:/bin`,
+    HOME: directory,
+    FNM_DIR: path.join(directory, 'fnm'),
+    NVM_DIR: path.join(directory, 'nvm'),
+    XDG_DATA_HOME: path.join(directory, 'xdg'),
+    SUDO_USER: '',
+    PALBOX_NATIVE_TEST_DIR: directory,
+    PALBOX_SYSTEMD_DIR: systemd,
+  };
+  // execFile 的 input 不会写入子进程标准输入。安装确认必须由 spawn 送入并关闭。
+  const runInstall = (args = [], input = 'y\n') => new Promise((resolve, reject) => {
+    const child = spawn('/bin/bash', [path.join(app, 'install.sh'), ...args], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => child.kill('SIGTERM'), 10000);
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('error', reject);
+    child.stdin.end(input);
+    child.on('close', (code, signal) => {
+      clearTimeout(timer);
+      if (code === 0 && signal == null) resolve({ stdout, stderr });
+      else {
+        const error = new Error(`Command failed: install.sh\n${stderr}`);
+        error.stdout = stdout;
+        error.stderr = stderr;
+        error.code = code;
+        error.signal = signal;
+        reject(error);
+      }
+    });
+  });
+  const invoke = (...args) => runInstall(args, 'y\n');
   const uninstall = (...args) => run('/bin/bash', [path.join(app, 'uninstall.sh'), ...args], { env, timeout: 10000 });
-  return { directory, app, config, systemd, data, env, invoke, uninstall };
+  return { directory, app, config, systemd, data, env, invoke, runInstall, uninstall };
 }
 
 test('就地安装使用项目属主和 data，不创建用户或搬迁程序，SteamCMD 由网页安装', linux, async t => {
   const f = await fixture(t);
   const result = await f.invoke();
+  assert.match(result.stdout, /╭─ Node\.js /);
+  assert.match(result.stdout, /未检测到 Node\.js 22 或以上版本/);
+  assert.match(result.stdout, /只放在当前项目里使用，不会替换系统中已有的 Node\.js/);
+  assert.match(result.stdout, new RegExp(`安装位置：${f.data}/runtime/node`));
+  assert.match(result.stdout, /是否下载？直接回车为不下载 \[y\/N\]/);
+  assert.match(result.stdout, /╰─+/);
   assert.match(result.stdout, /正在下载 node-v24\.0\.0-linux-x64\.tar\.xz/);
   assert.match(result.stdout, /Node\.js .+ 已安装到 .*data\/runtime\/node/);
   assert.match(result.stdout, /当前没有正在运行的 PalBox 服务/);
@@ -138,6 +177,42 @@ test('就地安装使用项目属主和 data，不创建用户或搬迁程序，
   assert.ok(!commands.split('\n').some(line => line.startsWith('chown -R ') && line.endsWith(' ' + f.data)));
 });
 
+test('未检测到 Node.js 时直接回车或拒绝都不下载', linux, async t => {
+  const f = await fixture(t);
+  for (const input of ['\n', 'n\n', 'no\n', '']) {
+    await assert.rejects(f.runInstall([], input), error => {
+      assert.match(error.stderr, /已拒绝下载独立 Node\.js/);
+      assert.match(error.stderr, new RegExp(`安装位置：${f.data}/runtime/node`));
+      assert.match(error.stdout, /╭─ Node\.js /);
+      assert.match(error.stdout, /未检测到 Node\.js 22 或以上版本/);
+      assert.match(error.stdout, /直接回车为不下载/);
+      return true;
+    });
+  }
+  await assert.rejects(access(path.join(f.data, 'runtime/node/bin/node')), { code: 'ENOENT' });
+  const commands = await readFile(path.join(f.directory, 'commands'), 'utf8');
+  assert.doesNotMatch(commands, /nodejs\.org/);
+});
+
+test('已有可用 Node.js 时直接使用，不询问也不下载', linux, async t => {
+  const f = await fixture(t);
+  const node = path.join(f.directory, 'bin/node');
+  await writeFile(node, `#!/bin/bash
+if [[ "$*" == *'const [frontend, backend]'* ]]; then
+  test -f "$PALBOX_NATIVE_TEST_DIR/active"
+  exit $?
+fi
+exec ${quote(process.execPath)} "$@"
+`, { mode: 0o755 });
+  const result = await run('/bin/bash', [path.join(f.app, 'install.sh')], { env: f.env, timeout: 10000, input: 'n\n' });
+  assert.match(result.stdout, new RegExp(`检测到 Node\\.js .+：${node}`));
+  assert.match(result.stdout, /已有可用的 Node\.js，跳过下载/);
+  assert.doesNotMatch(result.stdout, /是否下载|nodejs\.org|未检测到 Node/);
+  await assert.rejects(access(path.join(f.data, 'runtime/node/bin/node')), { code: 'ENOENT' });
+  const commands = await readFile(path.join(f.directory, 'commands'), 'utf8');
+  assert.doesNotMatch(commands, /nodejs\.org/);
+});
+
 test('重新安装保留同一 data、配置和程序目录，不重复下载兼容 Node', linux, async t => {
   const f = await fixture(t);
   const opened = await f.invoke('--host', '0.0.0.0', '--port', '9000', '--api-port', '9001');
@@ -148,6 +223,7 @@ test('重新安装保留同一 data、配置和程序目录，不重复下载兼
   await writeFile(f.config, `${await readFile(f.config, 'utf8')}PALBOX_GAME_PORT=8888\nPALBOX_SECURE_COOKIE=true\n`);
   const repeated = await f.invoke();
   assert.match(repeated.stdout, /项目 Node\.js .+ 已可用，跳过下载/);
+  assert.doesNotMatch(repeated.stdout, /是否下载/);
   assert.match(repeated.stdout, /正在停止已运行的 PalBox/);
   assert.match(repeated.stdout, /原服务已停止/);
   let config = await readFile(f.config, 'utf8');

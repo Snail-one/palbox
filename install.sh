@@ -27,6 +27,8 @@ SteamCMD 和游戏服务端在安装完成后通过网页安装。
 
 程序不搬迁、不创建系统用户，不递归修改已有数据属主。
 重复执行保留已有配置和 data/，重新注册并启动当前目录中的程序。
+已有 Node.js 22 或以上版本时直接使用，不下载。都没有时会询问是否下载
+一份只给当前项目使用的独立 Node.js，并显示安装位置；直接回车为不下载。
 卸载请单独执行 sudo bash ./uninstall.sh。
 EOF
 }
@@ -218,31 +220,74 @@ fi
 if [[ -n "$node_version" ]]; then
   step "项目 Node.js ${node_version} 已可用，跳过下载。"
 else
-  step '下载并校验项目独立的 Node.js 24 LTS。'
-  step '正在获取 Node.js 校验清单。'
-  curl --fail --silent --show-error --location --retry 3 --connect-timeout 15 --max-time 300 \
-    https://nodejs.org/dist/latest-v24.x/SHASUMS256.txt -o "$temporary/SHASUMS256.txt"
-  checksum='' node_archive=''
-  while read -r sum name; do
-    if [[ "$name" =~ ^node-v24\.[0-9]+\.[0-9]+-linux-x64\.tar\.xz$ && "$sum" =~ ^[a-fA-F0-9]{64}$ ]]; then
-      [[ -z "$node_archive" ]] || die 'Node.js 清单包含多个匹配版本。'
-      checksum="$sum" node_archive="$name"
+  detected="$(runuser -u "$service_user" -- bash -c "$(cat <<'EOF'
+set -euo pipefail
+node_bin=""
+if command -v node >/dev/null 2>&1; then node_bin="$(command -v node)"; fi
+if [[ -z "$node_bin" ]]; then
+  shopt -s nullglob
+  for candidate in \
+    "${FNM_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/fnm}"/node-versions/*/installation/bin/node \
+    "${NVM_DIR:-$HOME/.nvm}"/versions/node/*/bin/node
+  do
+    [[ -x "$candidate" ]] || continue
+    if "$candidate" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)'; then
+      node_bin="$candidate"
+      break
     fi
-  done < "$temporary/SHASUMS256.txt"
-  [[ -n "$node_archive" ]] || die '无法从官方清单确定 Node.js 安装包。'
-  step "正在下载 ${node_archive}。"
-  curl --fail --silent --show-error --location --retry 3 --connect-timeout 15 --max-time 600 \
-    "https://nodejs.org/dist/latest-v24.x/$node_archive" -o "$temporary/$node_archive"
-  step '正在校验并解压 Node.js。'
-  printf '%s  %s\n' "$checksum" "$temporary/$node_archive" > "$temporary/node.sha256"
-  sha256sum -c "$temporary/node.sha256" || die 'Node.js 校验失败，已中止安装。'
-  install -d -m 0755 "$temporary/node"
-  tar --no-same-owner -xJf "$temporary/$node_archive" --strip-components=1 -C "$temporary/node"
-  chown -R "$service_user:$service_group" "$temporary/node"
-  [[ ! -e "$data_dir/runtime/node" ]] || mv -- "$data_dir/runtime/node" "$data_dir/runtime/node.previous-$(date +%s)-$$"
-  mv -- "$temporary/node" "$data_dir/runtime/node"
-  node_version="$(runuser -u "$service_user" -- "$node_bin" -e 'process.stdout.write(process.versions.node)')"
-  step "Node.js ${node_version} 已安装到 $data_dir/runtime/node。"
+  done
+fi
+if [[ -n "$node_bin" ]] && "$node_bin" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)'; then
+  printf '%s' "$node_bin"
+fi
+EOF
+)")" || detected=""
+  if [[ "$detected" == /* && -x "$detected" ]]; then
+    node_bin="$detected"
+    node_version="$(runuser -u "$service_user" -- "$node_bin" -e 'process.stdout.write(process.versions.node)')"
+    step "检测到 Node.js ${node_version}：$node_bin"
+    step "已有可用的 Node.js，跳过下载。"
+  else
+    echo
+    print_card 'Node.js' \
+      '未检测到 Node.js 22 或以上版本。' \
+      '可以下载一份独立的 Node.js 24 LTS，只放在当前项目里使用，不会替换系统中已有的 Node.js。' \
+      "安装位置：$data_dir/runtime/node" \
+      '是否下载？直接回车为不下载 [y/N]'
+    answer=""
+    if [[ -t 0 ]]; then IFS= read -r answer || true
+    else IFS= read -r -t 1 answer || true; fi
+    printf '\n'
+    case "$answer" in
+      y|Y|yes|YES) ;;
+      *) die "已拒绝下载独立 Node.js，安装已停止。安装位置：$data_dir/runtime/node。请安装 Node.js 22 或以上版本后重试，或重新执行安装并输入 y 确认下载。" ;;
+    esac
+    step '下载并校验项目独立的 Node.js 24 LTS。'
+    step '正在获取 Node.js 校验清单。'
+    curl --fail --silent --show-error --location --retry 3 --connect-timeout 15 --max-time 300 \
+      https://nodejs.org/dist/latest-v24.x/SHASUMS256.txt -o "$temporary/SHASUMS256.txt"
+    checksum='' node_archive=''
+    while read -r sum name; do
+      if [[ "$name" =~ ^node-v24\.[0-9]+\.[0-9]+-linux-x64\.tar\.xz$ && "$sum" =~ ^[a-fA-F0-9]{64}$ ]]; then
+        [[ -z "$node_archive" ]] || die 'Node.js 清单包含多个匹配版本。'
+        checksum="$sum" node_archive="$name"
+      fi
+    done < "$temporary/SHASUMS256.txt"
+    [[ -n "$node_archive" ]] || die '无法从官方清单确定 Node.js 安装包。'
+    step "正在下载 ${node_archive}。"
+    curl --fail --silent --show-error --location --retry 3 --connect-timeout 15 --max-time 600 \
+      "https://nodejs.org/dist/latest-v24.x/$node_archive" -o "$temporary/$node_archive"
+    step '正在校验并解压 Node.js。'
+    printf '%s  %s\n' "$checksum" "$temporary/$node_archive" > "$temporary/node.sha256"
+    sha256sum -c "$temporary/node.sha256" || die 'Node.js 校验失败，已中止安装。'
+    install -d -m 0755 "$temporary/node"
+    tar --no-same-owner -xJf "$temporary/$node_archive" --strip-components=1 -C "$temporary/node"
+    chown -R "$service_user:$service_group" "$temporary/node"
+    [[ ! -e "$data_dir/runtime/node" ]] || mv -- "$data_dir/runtime/node" "$data_dir/runtime/node.previous-$(date +%s)-$$"
+    mv -- "$temporary/node" "$data_dir/runtime/node"
+    node_version="$(runuser -u "$service_user" -- "$node_bin" -e 'process.stdout.write(process.versions.node)')"
+    step "Node.js ${node_version} 已安装到 $data_dir/runtime/node。"
+  fi
 fi
 runuser -u "$service_user" -- "$node_bin" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' || die 'Node.js 运行检查失败。'
 runuser -u "$service_user" -- "$node_bin" --input-type=module -e 'import { isIP } from "node:net"; process.exit(isIP(process.argv[1]) || process.argv[1] === "localhost" ? 0 : 1);' "$listen_host" || die '请使用有效的 IPv4、IPv6 地址或 localhost。'
