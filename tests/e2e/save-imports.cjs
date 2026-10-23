@@ -11,10 +11,11 @@ const path = require('node:path');
   try {
     await f.login();
     assert.equal((await f.task('install')).state, 'succeeded');
+    const configurationBackup = await f.manager.backup('before-restore');
     const original = await nativeBackupFixture(f.runtime.saved, { worldId: 'ARCHIVED' });
     const fullArchive = path.join(f.directory, 'full-saved.tar.gz');
     await f.runtime.run('tar', ['-czf', fullArchive, '-C', f.runtime.server, '--', 'Pal/Saved']);
-    await nativeBackupFixture(f.runtime.saved, { worldId: 'CURRENT' });
+    const current = await nativeBackupFixture(f.runtime.saved, { worldId: 'CURRENT' });
     await fs.writeFile(path.join(f.runtime.saved, 'remove-from-saved.txt'), 'old');
     browser = await chromium.launch({ headless: true });
     const context = await browser.newContext();
@@ -23,7 +24,7 @@ const path = require('node:path');
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     await page.goto(f.base + '/#saves');
 
-    async function importArchive(file) {
+    async function importArchive(file, { hasWorld = true } = {}) {
       const button = page.locator('[data-action="import-save"]');
       await page.waitForFunction(() => {
         const button = document.querySelector('[data-action="import-save"]');
@@ -33,7 +34,9 @@ const path = require('node:path');
       assert.equal(await page.locator('#save-import-title').textContent(), '导入与恢复');
       await page.locator('#save-import-file').setInputFiles(file);
       await page.locator('#save-import-details').waitFor();
-      assert.match(await page.locator('#save-import-details').textContent(), /恢复目标世界 ID/);
+      const details = await page.locator('#save-import-details').textContent();
+      assert.match(details, hasWorld ? /恢复目标世界 ID.*CURRENT/ : /仅游戏配置/);
+      assert.doesNotMatch(details, /整体替换 Pal\/Saved/);
       const submitted = page.waitForResponse(response => response.url().endsWith('/api/tasks') && response.request().method() === 'POST');
       await page.locator('#save-import-confirm').click();
       const response = await submitted;
@@ -46,11 +49,12 @@ const path = require('node:path');
     }
 
     await importArchive(fullArchive);
-    assert.deepEqual(await fs.readdir(path.join(f.runtime.saved, 'SaveGames/0')), ['ARCHIVED']);
-    await assert.rejects(fs.access(path.join(f.runtime.saved, 'remove-from-saved.txt')), { code: 'ENOENT' });
-    assert.equal(await f.manager.targetWorld(), 'ARCHIVED');
+    assert.deepEqual(await fs.readdir(path.join(f.runtime.saved, 'SaveGames/0')), ['ARCHIVED', 'CURRENT']);
+    assert.equal(await fs.readFile(path.join(f.runtime.saved, 'remove-from-saved.txt'), 'utf8'), 'old');
+    assert.equal(await f.manager.targetWorld(), 'CURRENT');
     assert.equal(await fs.readFile(path.join(original.snapshot, 'Level.sav'), 'utf8'), 'official-world');
-    console.log('PASS 浏览器上传完整备份，整体替换 Saved 并恢复备份世界与历史');
+    assert.equal(await fs.readFile(path.join(current.world, 'Level.sav'), 'utf8'), 'current-world');
+    console.log('PASS 浏览器上传旧 Saved 归档，只恢复当前世界与配置，保留其他世界和外部文件');
 
     const source = path.join(f.directory, 'world-source/DIFFERENT_ID');
     await fs.mkdir(path.join(source, 'Players'), { recursive: true });
@@ -65,18 +69,24 @@ const path = require('node:path');
     await f.runtime.run('tar', ['-czf', worldArchive, '-C', path.dirname(source), '--', 'DIFFERENT_ID']);
     const config = await fs.readFile(f.runtime.config);
     await importArchive(worldArchive);
-    assert.equal(await f.manager.targetWorld(), 'ARCHIVED');
-    assert.deepEqual(await fs.readdir(path.join(f.runtime.saved, 'SaveGames/0')), ['ARCHIVED']);
-    assert.equal(await fs.readFile(path.join(original.world, 'Level.sav'), 'utf8'), 'new-world');
-    assert.deepEqual(await fs.readdir(path.join(original.world, 'Players')), ['new.sav']);
-    assert.deepEqual(await fs.readdir(path.join(original.world, 'backup/world')), ['imported']);
-    assert.deepEqual(await fs.readdir(path.join(original.world, 'empty-directory')), []);
-    assert.equal(await fs.readFile(path.join(original.world, 'extra.txt'), 'utf8'), 'extra-file');
-    await assert.rejects(fs.access(path.join(original.world, 'WorldOption.sav')), { code: 'ENOENT' });
+    assert.equal(await f.manager.targetWorld(), 'CURRENT');
+    assert.deepEqual(await fs.readdir(path.join(f.runtime.saved, 'SaveGames/0')), ['ARCHIVED', 'CURRENT']);
+    assert.equal(await fs.readFile(path.join(current.world, 'Level.sav'), 'utf8'), 'new-world');
+    assert.deepEqual(await fs.readdir(path.join(current.world, 'Players')), ['new.sav']);
+    assert.deepEqual(await fs.readdir(path.join(current.world, 'backup/world')), ['imported']);
+    assert.deepEqual(await fs.readdir(path.join(current.world, 'empty-directory')), []);
+    assert.equal(await fs.readFile(path.join(current.world, 'extra.txt'), 'utf8'), 'extra-file');
+    await assert.rejects(fs.access(path.join(current.world, 'WorldOption.sav')), { code: 'ENOENT' });
     assert.deepEqual(await fs.readFile(f.runtime.config), config);
     assert.equal((await f.manager.backups()).filter(entry => entry.category === 'before-import').length, 2);
     assert.equal(f.runtime.game, null);
     assert.deepEqual(errors, []);
     console.log('PASS 浏览器上传世界包，清空当前世界后写入玩家、包内历史、额外文件和空目录');
+    await importArchive(f.manager.backupFile(configurationBackup), { hasWorld: false });
+    assert.equal(await fs.readFile(path.join(current.world, 'Level.sav'), 'utf8'), 'new-world');
+    assert.equal(await f.manager.targetWorld(), 'CURRENT');
+    assert.deepEqual(await fs.readdir(path.join(f.runtime.saved, 'SaveGames/0')), ['ARCHIVED', 'CURRENT']);
+    assert.deepEqual(errors, []);
+    console.log('PASS 浏览器重新上传仅配置保护备份，只恢复配置并保留全部世界');
   } finally { await browser?.close(); await f.close(); }
 })().catch(error => { console.error(error); process.exit(1); });

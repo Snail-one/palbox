@@ -41,7 +41,7 @@ export function createSaveImportDialog({ dom, api, onRestore }) {
         ['恢复目录', value.targetDirectory]
       ] : []),
       ['配置处理', value.hasConfiguration ? '导入「游戏默认配置」，并设为当前选中的配置；缺项按官方默认补齐。' : '未检测到配置，保留当前游戏配置。'],
-      ...(value.scope === 'saved' ? [['恢复范围', '旧格式完整存档包：整体替换 Pal/Saved，使用包内世界 ID。']] : []),
+      ['恢复范围', value.hasWorld ? '当前世界存档及包内游戏配置。' : '仅游戏配置。'],
       ['保护备份', value.protectionCategory === 'before-import' ? '执行前自动创建「导入前备份」' : '执行前自动创建「恢复前备份」'],
       ['游戏状态', value.running ? '先保存并停服，完成后重新启动' : '当前已停止，完成后保持停止']
     ];

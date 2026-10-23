@@ -12,7 +12,7 @@ async function fixture(t, action = 'restore') {
   assert.equal((await f.task('install')).state, 'succeeded');
   const world = await nativeBackupFixture(f.runtime.saved, { worldId: 'CURRENT' });
   let id = await f.manager.backup('manual');
-  if (action === 'import-full') {
+  if (action === 'import-saved') {
     const file = path.join(f.directory, 'full.tar.gz');
     await f.runtime.run('tar', ['-czf', file, '-C', f.runtime.server, '--', 'Pal/Saved']);
     const uploaded = await f.upload('/api/save-import', await fs.readFile(file));
@@ -36,11 +36,11 @@ async function fixture(t, action = 'restore') {
     assert.deepEqual(await fs.readFile(f.manager.store.file), before.workspace);
     assert.deepEqual(f.manager.store.snapshot(), before.snapshot);
   }
-  return { f, world, id, before, unchanged, action: action === 'import-full' ? 'import-save' : action };
+  return { f, world, id, before, unchanged, action: action === 'import-saved' ? 'import-save' : action };
 }
 
 test('恢复和导入在配置库写入失败时回滚世界、游戏配置和配置选择，含写入后报错', async t => {
-  for (const action of ['restore', 'import-save', 'import-full']) for (const afterWrite of [false, true]) {
+  for (const action of ['restore', 'import-save', 'import-saved']) for (const afterWrite of [false, true]) {
     await t.test(`${action} / ${afterWrite ? '配置库替换后报错' : '配置库写入失败'}`, async t => {
       const { f, world, id, before, unchanged, action: operation } = await fixture(t, action);
       const persist = f.manager.store.persist.bind(f.manager.store);
@@ -130,7 +130,7 @@ test('配置合并超限时在停服和替换前拒绝恢复，保留当前游�
 });
 
 test('恢复和两种导入在预览及执行时拒绝无效或冲突 REST 端口，保持原游戏和数据', async t => {
-  for (const [action, port] of [['restore', -1], ['import-save', 8080], ['import-full', 8081]]) {
+  for (const [action, port] of [['restore', -1], ['import-save', 8080], ['import-saved', 8081]]) {
     await t.test(action, async t => {
       const { f, before, unchanged } = await fixture(t);
       const invalid = before.config.toString().replace(`RESTAPIPort=${f.restPort}`, `RESTAPIPort=${port}`);
@@ -139,7 +139,7 @@ test('恢复和两种导入在预览及执行时拒绝无效或冲突 REST 端�
       let id = await f.manager.backup('manual');
       if (action !== 'restore') {
         let archive = f.manager.backupFile(id);
-        if (action === 'import-full') {
+        if (action === 'import-saved') {
           archive = path.join(f.directory, 'invalid-full.tar.gz');
           await f.runtime.run('tar', ['-czf', archive, '-C', f.runtime.server, '--', 'Pal/Saved']);
         }
@@ -150,7 +150,7 @@ test('恢复和两种导入在预览及执行时拒绝无效或冲突 REST 端�
       await fs.writeFile(f.runtime.config, before.config);
       assert.equal((await f.task('start')).state, 'succeeded');
       const pid = f.runtime.game.pid;
-      const operation = action === 'import-full' ? 'import-save' : action;
+      const operation = action === 'import-saved' ? 'import-save' : action;
       const preview = await f.request('/api/restore-preview', { method: 'POST', body: { action: operation, id } });
       assert.equal(preview.status, 400);
       assert.match(await preview.text(), /REST API 端口无效/);

@@ -8,7 +8,6 @@ import { pipeline } from 'node:stream/promises';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { failure, jsonWrite, readJson } from './files.js';
-import { NativeBackups } from './native-backups.js';
 import { parse } from '../../shared/domain/config.js';
 
 const run = promisify(execFile);
@@ -67,39 +66,36 @@ export function detectSnapshot(entries) {
   const files = new Map(normalized.filter(entry => entry.type === 'file').map(entry => [entry.name, entry]));
   const candidates = [];
   for (const entry of files.values()) {
-    if (entry.name !== 'Level.sav' && !entry.name.endsWith('/Level.sav')) continue;
-    const root = entry.name === 'Level.sav' ? '' : entry.name.slice(0, -10);
-    if (!files.has(root ? `${root}/LevelMeta.sav` : 'LevelMeta.sav')) continue;
+    if (!/(^|\/)Level(?:Meta)?\.sav$/.test(entry.name)) continue;
+    const root = entry.name.includes('/') ? entry.name.slice(0, entry.name.lastIndexOf('/')) : '';
     const layout = root === '' ? 'root'
       : /^SaveGames\/0\/([A-Za-z0-9_-]{1,128})$/.test(root) ? 'savegames'
+      : /^Saved\/SaveGames\/0\/([A-Za-z0-9_-]{1,128})$/.test(root) ? 'saved'
       : /^Pal\/Saved\/SaveGames\/0\/([A-Za-z0-9_-]{1,128})$/.test(root) ? 'pal-saved'
       : /^[A-Za-z0-9_-]{1,128}$/.test(root) ? 'world' : null;
-    if (!layout) continue;
+    if (!layout || candidates.some(candidate => candidate.root === root)) continue;
     const worldId = layout === 'root' ? null : root.split('/').at(-1);
     candidates.push({ root, layout, worldId });
   }
-  // A full Saved archive contains server configuration. One world directory
-  // placed beside Config/ is an official download and still imports as a world.
-  const besideConfig = candidates.length === 1 && candidates[0].layout === 'world';
-  if (!besideConfig) {
-    for (const root of ['Pal/Saved', 'Saved', '']) {
-      const prefix = root ? `${root}/` : '';
-      if (files.has(`${prefix}Level.sav`) && files.has(`${prefix}LevelMeta.sav`)) continue;
-      if (!normalized.some(entry => entry.name === `${prefix}Config` || entry.name.startsWith(`${prefix}Config/`))) continue;
-      if (!files.get(`${prefix}Config/LinuxServer/PalWorldSettings.ini`)?.size) throw failure('完整备份缺少有效的 PalWorldSettings.ini。');
-      return { kind: 'full', root, layout: 'full', worldId: null, copy: [...files.keys()].filter(name => name.startsWith(prefix)).map(name => name.slice(prefix.length)) };
-    }
-  }
-  if (!candidates.length) throw failure('压缩包中没有可导入的世界存档（需要 Level.sav 和 LevelMeta.sav）。');
   if (candidates.length > 1) throw failure('压缩包包含多个世界存档，请只保留一个世界后重新压缩。');
+  const configurations = ['Config/LinuxServer/PalWorldSettings.ini', 'Saved/Config/LinuxServer/PalWorldSettings.ini', 'Pal/Saved/Config/LinuxServer/PalWorldSettings.ini']
+    .filter(name => files.has(name) && (!candidates[0]?.root || !name.startsWith(candidates[0].root + '/')));
+  if (configurations.length > 1) throw failure('压缩包包含多份 PalWorldSettings.ini，无法确定要导入的配置。');
+  const configurationPath = configurations[0];
+  if (configurationPath && !files.get(configurationPath).size) throw failure('PalWorldSettings.ini 为空。');
+  if (!candidates.length) {
+    if (configurationPath) return { kind: 'configuration', root: null, layout: 'configuration', worldId: null, copy: [], configurationPath };
+    throw failure('压缩包中没有可导入的世界存档（需要 Level.sav 和 LevelMeta.sav）或游戏配置。');
+  }
   const [{ root, layout, worldId }] = candidates;
   const prefix = root ? `${root}/` : '';
   const level = files.get(`${prefix}Level.sav`);
   const meta = files.get(`${prefix}LevelMeta.sav`);
+  if (!level || !meta) throw failure('世界存档不完整，需要 Level.sav 和 LevelMeta.sav。');
   if (!level.size || !meta.size) throw failure('世界存档文件为空，无法导入。');
-  const copy = [...files.keys()].filter(name => name.startsWith(prefix)).map(name => name.slice(prefix.length));
+  const copy = [...files.keys()].filter(name => name.startsWith(prefix) && (root || !/^(?:Config|Logs)\//.test(name))).map(name => name.slice(prefix.length));
   if (!copy.includes('Level.sav') || !copy.includes('LevelMeta.sav')) throw failure('世界存档不完整。');
-  return { kind: 'world', root, layout, worldId, copy };
+  return { kind: 'world', root, layout, worldId, copy, ...(configurationPath ? { configurationPath } : {}) };
 }
 
 function tarEnvironment() {
@@ -161,10 +157,8 @@ function classifySevenZipEntry(fields) {
 }
 
 export class SaveImports {
-  constructor({ directory, runtime, native, limits = {} }) {
+  constructor({ directory, limits = {} }) {
     this.directory = path.resolve(directory);
-    this.runtime = runtime;
-    this.native = native;
     this.limits = { ...DEFAULT_IMPORT_LIMITS, ...limits };
     this.root = path.join(this.directory, 'palbox/imports');
     this.receiving = new Set();
@@ -204,6 +198,7 @@ export class SaveImports {
       await this.remove(id);
       throw failure('导入存档已过期，请重新上传。', 404);
     }
+    if (meta.kind === 'full') throw failure('导入方式已更新，请重新上传备份，仅恢复存档和游戏配置。', 409);
     let info;
     try { info = await lstat(snapshot); }
     catch (error) { if (error.code === 'ENOENT') throw failure('导入存档不存在或已过期，请重新上传。', 404); throw error; }
@@ -214,7 +209,7 @@ export class SaveImports {
     let configurationSource = null;
     try { configurationSource = await readFile(path.join(directory, 'configuration.ini'), 'utf8'); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
-    if (meta.hasConfiguration && configurationSource == null) throw failure('导入存档已损坏，请重新上传。', 404);
+    if ((meta.hasConfiguration || meta.kind === 'configuration') && configurationSource == null) throw failure('导入存档已损坏，请重新上传。', 404);
     return { ...meta, kind: meta.kind || 'world', snapshot, configurationSource };
   }
 
@@ -397,28 +392,9 @@ export class SaveImports {
 
   async inspectSnapshot(snapshot, kind) {
     const verified = await this.verify(snapshot);
-    if (kind === 'full') {
-      const config = path.join(snapshot, 'Config/LinuxServer/PalWorldSettings.ini');
-      try {
-        const source = await readFile(config, 'utf8');
-        if (!source.trim()) throw failure('完整备份的 PalWorldSettings.ini 为空。');
-        parse(source);
-      } catch (error) {
-        if (error.code === 'ENOENT') throw failure('完整备份缺少 PalWorldSettings.ini。');
-        throw error;
-      }
-      const archived = new NativeBackups(snapshot, this.directory);
-      const worlds = await archived.worlds();
-      const worldId = await archived.configuredWorld();
-      if (worlds.length) {
-        if (!worlds.includes(worldId)) throw failure('完整备份的 GameUserSettings.ini 缺少有效的世界 ID。');
-        const level = await lstat(path.join(snapshot, 'SaveGames/0', worldId, 'Level.sav')).catch(error => {
-          if (error.code === 'ENOENT') throw failure('完整备份缺少配置指定的世界存档。');
-          throw error;
-        });
-        if (!level.isFile() || !level.size) throw failure('完整备份的世界存档为空或无效。');
-      }
-      return { ...verified, worldId };
+    if (kind === 'configuration') {
+      if (verified.count) throw failure('仅配置的导入不能包含世界存档。');
+      return verified;
     }
     if (kind !== 'world') throw failure('导入存档类型无效。');
     for (const name of ['Level.sav', 'LevelMeta.sav']) {
@@ -453,27 +429,28 @@ export class SaveImports {
         if (encryptedArchive(error.stderr)) throw failure('压缩包包含加密文件，无法导入。', 400);
         throw failure('无法解压存档压缩包。', 400);
       }
+      let configurationSource = null;
+      if (detected.configurationPath) {
+        configurationSource = await readFile(path.join(extract, detected.configurationPath), 'utf8');
+        if (!configurationSource.trim()) throw failure('PalWorldSettings.ini 为空。');
+        try { parse(configurationSource); }
+        catch (error) { throw failure(error.message); }
+      }
       let source = extract;
-      for (const part of detected.root.split('/').filter(Boolean)) {
+      for (const part of (detected.root || '').split('/').filter(Boolean)) {
         source = path.join(source, part);
         const info = await lstat(source).catch(error => { if (error.code === 'ENOENT') throw failure('压缩包中的世界目录不存在。', 400); throw error; });
         if (!info.isDirectory()) throw failure('压缩包中的世界目录无效。', 400);
       }
-      let configurationSource = null;
-      if (detected.kind === 'world') {
-        const prefix = detected.root ? `${detected.root}/` : '';
-        const matches = detected.entries
-          .filter(entry => entry.type === 'file' && /(^|\/)Config\/LinuxServer\/PalWorldSettings\.ini$/.test(entry.name) && (!prefix || !entry.name.startsWith(prefix)))
-          .map(entry => entry.name);
-        if (matches.length > 1) throw failure('压缩包包含多份 PalWorldSettings.ini，无法确定要导入的配置。', 400);
-        if (matches.length === 1) {
-          configurationSource = await readFile(path.join(extract, matches[0]), 'utf8');
-          if (!configurationSource.trim()) throw failure('PalWorldSettings.ini 为空。', 400);
-          try { parse(configurationSource); }
-          catch (error) { throw failure(error.message, 400); }
+      if (detected.kind === 'configuration') {
+        await mkdir(snapshot, { mode: 0o700 });
+      } else {
+        if (!detected.root) {
+          // These are Saved-level data, even when a world sits at the archive root.
+          for (const name of ['Config', 'Logs']) await rm(path.join(source, name), { recursive: true, force: true });
         }
+        await rename(source, snapshot);
       }
-      await rename(source, snapshot);
       const verified = await this.verify(snapshot);
       return { snapshot, verified, configurationSource };
     } finally { await rm(extract, { recursive: true, force: true }); }
@@ -482,7 +459,7 @@ export class SaveImports {
   async receive(request, { authorize = () => {} } = {}) {
     authorize();
     const type = String(request.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
-    if (!ARCHIVE_TYPES.has(type)) throw failure('请上传 .tar.gz、.zip 或 .7z 格式的存档或完整备份。', 415);
+    if (!ARCHIVE_TYPES.has(type)) throw failure('请上传 .tar.gz、.zip 或 .7z 格式的存档和配置备份。', 415);
     const declared = Number(request.headers['content-length']);
     if (Number.isFinite(declared) && declared > this.limits.maxCompressedBytes) throw failure('存档压缩包超过大小限制。', 413);
     if (this.receiving.size) throw failure('已有存档正在上传，请稍后再试。', 429);
@@ -521,7 +498,7 @@ export class SaveImports {
       authorize();
       const format = detectArchive(magic);
       const declaredFormat = ARCHIVE_TYPES.get(type);
-      if (!format || (declaredFormat && declaredFormat !== format)) throw failure('请上传 .tar.gz、.zip 或 .7z 格式的存档或完整备份。', 400);
+      if (!format || (declaredFormat && declaredFormat !== format)) throw failure('请上传 .tar.gz、.zip 或 .7z 格式的存档和配置备份。', 400);
       const stored = path.join(directory, format === 'gzip' ? 'upload.tar.gz' : format === 'zip' ? 'upload.zip' : 'upload.7z');
       await handle.sync();
       await handle.close();
@@ -540,7 +517,7 @@ export class SaveImports {
         createdAt: new Date().toISOString(),
         kind: detected.kind,
         layout: detected.layout,
-        worldId: detected.kind === 'full' ? inspected.worldId : detected.worldId,
+        worldId: detected.worldId,
         compressedBytes: bytes,
         uncompressedBytes: inspected.bytes,
         entries: detected.entries.length,

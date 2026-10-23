@@ -49,18 +49,22 @@ test('完整保留世界目录中的 backup 历史与额外文件', () => {
   assert.deepEqual(result.copy, ['Level.sav', 'LevelMeta.sav', 'Players/a.sav', 'backup/world/2026.01.01-00.00.00/Level.sav', 'backup/world/2026.01.01-00.00.00/LevelMeta.sav', 'WorldOption.sav', 'Extra.log']);
 });
 
-test('完整备份按目录内容识别，支持多个世界并保留配置和日志', () => {
+test('旧 Saved 布局只识别一个世界和游戏配置，不导入其他 Saved 内容', () => {
   const entries = [file('Pal/Saved/Config/LinuxServer/PalWorldSettings.ini'),
     file('Pal/Saved/Config/LinuxServer/GameUserSettings.ini'), file('Pal/Saved/Logs/game.log'),
-    ...snapshot('Pal/Saved/SaveGames/0/ONE'), ...snapshot('Pal/Saved/SaveGames/0/TWO')];
+    ...snapshot('Pal/Saved/SaveGames/0/ONE')];
   const result = detectSnapshot(entries);
-  assert.equal(result.kind, 'full');
-  assert.equal(result.root, 'Pal/Saved');
-  assert.equal(result.copy.length, entries.filter(entry => entry.type === 'file').length);
-  assert.throws(() => detectSnapshot([file('Pal/Saved/Config/LinuxServer/GameUserSettings.ini'), ...snapshot('Pal/Saved/SaveGames/0/ONE')]), /PalWorldSettings/);
+  assert.equal(result.kind, 'world');
+  assert.equal(result.root, 'Pal/Saved/SaveGames/0/ONE');
+  assert.equal(result.configurationPath, 'Pal/Saved/Config/LinuxServer/PalWorldSettings.ini');
+  assert.deepEqual(result.copy, ['Level.sav', 'LevelMeta.sav', 'Players/player.sav']);
+  assert.equal(detectSnapshot([file('Pal/Saved/Config/LinuxServer/GameUserSettings.ini'), ...snapshot('Pal/Saved/SaveGames/0/ONE')]).kind, 'world');
+  assert.throws(() => detectSnapshot([...entries, ...snapshot('Pal/Saved/SaveGames/0/TWO')]), /多个世界存档/);
   for (const root of ['', 'Saved']) {
     const prefix = root ? `${root}/` : '';
-    assert.equal(detectSnapshot([file(`${prefix}Config/LinuxServer/PalWorldSettings.ini`), ...snapshot(`${prefix}SaveGames/0/ONE`)]).kind, 'full');
+    const detected = detectSnapshot([file(`${prefix}Config/LinuxServer/PalWorldSettings.ini`), ...snapshot(`${prefix}SaveGames/0/ONE`)]);
+    assert.equal(detected.kind, 'world');
+    assert.equal(detected.root, `${prefix}SaveGames/0/ONE`);
   }
   assert.equal(detectSnapshot([...snapshot(''), file('Config/extra.txt')]).kind, 'world');
   const downloaded = detectSnapshot([...snapshot('WORLD3'), file('Config/LinuxServer/PalWorldSettings.ini', 20)]);
@@ -69,11 +73,25 @@ test('完整备份按目录内容识别，支持多个世界并保留配置和�
   assert.deepEqual(downloaded.copy, ['Level.sav', 'LevelMeta.sav', 'Players/player.sav']);
 });
 
+test('只有配置的备份单独恢复配置，残缺世界不能冒充仅配置备份', () => {
+  for (const prefix of ['', 'Saved/', 'Pal/Saved/']) {
+    const configurationPath = `${prefix}Config/LinuxServer/PalWorldSettings.ini`;
+    assert.deepEqual(detectSnapshot([file(configurationPath), file(`${prefix}Logs/game.log`)]), {
+      kind: 'configuration', root: null, layout: 'configuration', worldId: null, copy: [], configurationPath
+    });
+    assert.throws(() => detectSnapshot([file(configurationPath), file(`${prefix}SaveGames/0/WORLD/Level.sav`)]), /世界存档不完整/);
+  }
+  assert.throws(() => detectSnapshot([file('Config/LinuxServer/PalWorldSettings.ini', 0)]), /为空/);
+  assert.throws(() => detectSnapshot([file('Config/LinuxServer/PalWorldSettings.ini'), file('Saved/Config/LinuxServer/PalWorldSettings.ini')]), /多份 PalWorldSettings/);
+  const detected = detectSnapshot([...snapshot(''), file('Config/LinuxServer/PalWorldSettings.ini'), file('Logs/game.log')]);
+  assert.deepEqual(detected.copy, ['Level.sav', 'LevelMeta.sav', 'Players/player.sav']);
+});
+
 test('世界存档拒绝多个世界或缺少元数据，保留 Players 内的全部普通文件', () => {
   assert.throws(() => detectSnapshot([
     ...snapshot('SaveGames/0/ONE'), ...snapshot('SaveGames/0/TWO')
   ]), /多个世界存档/);
-  assert.throws(() => detectSnapshot([file('Level.sav')]), /没有可导入/);
+  assert.throws(() => detectSnapshot([file('Level.sav')]), /世界存档不完整/);
   assert.ok(detectSnapshot([
     file('Level.sav'), file('LevelMeta.sav'), dir('Players'), file('Players/readme.txt')
   ]).copy.includes('Players/readme.txt'));
