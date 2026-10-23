@@ -26,6 +26,7 @@ main:has(#configuration-page:not([hidden])) { padding-bottom: calc(150px + env(s
 .configuration-tools .button { min-height: 30px; padding: 6px 10px; border: 0; border-radius: 5px; background: transparent; box-shadow: none; gap: 6px; }
 .configuration-tools .button + .button { border-left: 1px solid var(--line); border-radius: 0; }
 .configuration-tools .button:hover { background: var(--accent-soft); color: var(--accent); }
+.configuration-tools .button[aria-current="page"] { background: var(--accent-soft); color: var(--accent); }
 .configuration-tools .icon { width: 14px; height: 14px; flex-shrink: 0; }
 .sidebar-account-actions { margin-top: 12px; }
 .sidebar-account-actions .button, .sidebar-bottom > .docs-link { display: flex; align-items: center; justify-content: flex-start; width: 100%; min-width: 0; min-height: 44px; gap: 9px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; box-shadow: none; font-size: 11px; }
@@ -379,8 +380,9 @@ main:has(#game-page:not([hidden])), main:has(#login-logs-page:not([hidden])) { d
   #configuration-actions { left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); width: auto; max-width: none; display: grid; grid-template-columns: minmax(0, 1fr); padding: 10px; }
   #configuration-actions .configuration-apply { grid-column: 1 / -1; justify-content: flex-start; border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 10px; }
   .configuration-apply .button { flex: 1; }
-  .configuration-tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
-  .configuration-tools .button { min-width: 0; padding: 7px 5px; font-size: 10px; }
+  main:has(#configuration-page:not([hidden])) { padding-bottom: calc(180px + env(safe-area-inset-bottom)); }
+  .configuration-tools { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; }
+  .configuration-tools .button { flex-direction: column; gap: 4px; min-width: 0; padding: 7px 5px; font-size: 10px; }
 }
 .backup-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 11px; }
 .backup-row > span { flex: 1; min-width: 150px; overflow-wrap: anywhere; }

@@ -82,7 +82,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
   panel = createEditorPanel({ dom, editor, catalog, ask, notify: notifications.toast, onChanged: () => save({ automatic: true }), ready, onViewChanged: navigation.openEditor, workspace });
   modifiedParameters = createModifiedParametersPage({ dom, editor, catalog, workspace });
   window.addEventListener('hashchange', () => modifiedParameters.render());
-  dom.$('modified-summary').addEventListener('click', () => { window.location.hash = '#configuration/changes'; modifiedParameters.render(); });
+  for (const id of ['modified-summary', 'show-modified-parameters']) dom.$(id).addEventListener('click', () => { window.location.hash = '#configuration/changes'; modifiedParameters.render(); });
   navigation.refresh();
   async function saveProfileSource(id, source, message = '配置源码已保存') {
     if (!workspace.updateSource(id, source)) throw new Error(workspace.message || '保存失败，请复制备份后重试。');
