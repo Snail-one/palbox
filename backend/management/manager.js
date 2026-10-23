@@ -173,10 +173,6 @@ export class Manager extends EventEmitter {
     for (const task of this.tasks) if (task.state === 'running') { task.state = 'interrupted'; task.message = '面板重启，任务已中断，请检查日志后重试。'; }
     await this.saveTasks();
     await this.playerHistoryRecorder.start();
-    this.transactionCleanup = setInterval(() => {
-      this.transactionCleanupWork = cleanupTransactions(this.directory, { onCleanupError }).catch(onCleanupError);
-    }, 60_000);
-    this.transactionCleanup.unref();
   }
   settingsError() {
     return `settings.json 中的管理员记录或备份设置损坏。请先备份数据目录，再删除 ${this.settingsFile} 后重新启动，并在网页中重新初始化管理员。`;
@@ -1097,8 +1093,6 @@ export class Manager extends EventEmitter {
   }
   async close() {
     this.closing = true;
-    clearInterval(this.transactionCleanup);
-    await this.transactionCleanupWork;
     await this.runtime.close();
     await this.playerHistoryRecorder.close();
     await this.operation;

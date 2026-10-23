@@ -46,7 +46,7 @@ test('并发操作只清理自己的目录，最后一个操作结束后清理�
   await absent(f.journal);
 });
 
-test('清理失败不改变已提交结果，后续清理重试并删除记录和空父目录', async t => {
+test('清理失败不改变已提交结果，仅尝试一次并在下次启动清理', async t => {
   const f = await fixture(t);
   const stage = await createTransaction(f.directory, f.directory, 'reset-');
   const remove = fs.rm;
@@ -58,9 +58,14 @@ test('清理失败不改变已提交结果，后续清理重试并删除记录�
   await finishTransaction(stage, { onCleanupError: error => errors.push(error.message) });
   assert.match(errors[0], /disk busy.*暂存目录/);
   const [record] = await fs.readdir(f.journal);
-  assert.equal(JSON.parse(await fs.readFile(path.join(f.journal, record))).state, 'cleanup');
+  const saved = JSON.parse(await fs.readFile(path.join(f.journal, record)));
+  assert.equal(saved.state, 'cleanup');
+  assert.equal(saved.attempts, undefined);
+  assert.equal(saved.nextAttemptAt, undefined);
+  assert.equal(mock.mock.callCount(), 1);
+  assert.equal(errors.length, 1);
   mock.mock.restore();
-  await cleanupTransactions(f.directory);
+  await cleanupTransactions(f.directory, { startup: true });
   await absent(stage);
   await absent(f.root);
   await absent(f.journal);
@@ -77,7 +82,7 @@ test('重启清理已完成事务和中断的只读暂存，包括存档盘目�
   await absent(f.journal);
 });
 
-test('暂存内容已删除但空父目录删除失败时，继续重试父目录清理', async t => {
+test('空父目录删除失败只尝试一次，下次启动再清理', async t => {
   const f = await fixture(t);
   const stage = await createTransaction(f.directory, f.directory, 'reset-');
   const rmdir = fs.rmdir;
@@ -90,13 +95,15 @@ test('暂存内容已删除但空父目录删除失败时，继续重试父目�
   await absent(stage);
   assert.match(errors[0], /parent busy/);
   assert.deepEqual(await fs.readdir(f.root), []);
+  assert.equal(mock.mock.callCount(), 1);
+  assert.equal(errors.length, 1);
   mock.mock.restore();
-  await cleanupTransactions(f.directory);
+  await cleanupTransactions(f.directory, { startup: true });
   await absent(f.root);
   await absent(f.journal);
 });
 
-test('提交后清理状态写入失败也会在运行期间重试，避免永久搁置', async t => {
+test('清理状态写入失败不重试，下次启动保留可能的原数据副本', async t => {
   const f = await fixture(t);
   const stage = await createTransaction(f.directory, f.directory, 'reset-');
   const rename = fs.rename;
@@ -111,11 +118,14 @@ test('提交后清理状态写入失败也会在运行期间重试，避免永�
   assert.match(errors[0], /journal write failed/);
   const [record] = await fs.readdir(f.journal);
   assert.equal(JSON.parse(await fs.readFile(path.join(f.journal, record))).state, 'active');
+  assert.equal(mock.mock.callCount(), 1);
+  assert.equal(errors.length, 1);
   mock.mock.restore();
   syncBuiltinESMExports();
-  await cleanupTransactions(f.directory);
-  await absent(f.root);
-  await absent(f.journal);
+  await cleanupTransactions(f.directory, { startup: true });
+  const [saved] = await fs.readdir(f.journal);
+  assert.equal(JSON.parse(await fs.readFile(path.join(f.journal, saved))).state, 'recovery');
+  assert.equal((await fs.lstat(stage)).isDirectory(), true);
 });
 
 test('写操作中断或回滚失败时标记保留副本，普通清理不会删除', async t => {
@@ -136,6 +146,50 @@ test('写操作中断或回滚失败时标记保留副本，普通清理不会�
   await fs.rm(failed, { recursive: true });
   await cleanupTransactions(f.directory);
   await absent(f.root);
+  await absent(f.journal);
+});
+
+test('启动忽略旧重试计数，清理失败只执行一次并保留完成状态', async t => {
+  const f = await fixture(t);
+  const { stage, file } = await interrupted(f, { state: 'exhausted' });
+  const original = JSON.parse(await fs.readFile(file));
+  await fs.writeFile(file, JSON.stringify({ ...original, attempts: 3, nextAttemptAt: Date.now() + 86_400_000, lastError: 'old failure' }));
+  const remove = fs.rm;
+  const mock = t.mock.method(fs, 'rm', async (target, ...args) => {
+    if (target === stage) throw new Error('disk busy');
+    return remove(target, ...args);
+  });
+  const errors = [];
+  await cleanupTransactions(f.directory, { startup: true, onCleanupError: error => errors.push(error.message) });
+  assert.equal(mock.mock.callCount(), 1);
+  assert.equal(errors.length, 1);
+  const saved = JSON.parse(await fs.readFile(file));
+  assert.equal(saved.state, 'cleanup');
+  assert.equal(saved.attempts, undefined);
+  assert.equal(saved.nextAttemptAt, undefined);
+  mock.mock.restore();
+  await cleanupTransactions(f.directory, { startup: true });
+  await absent(f.root);
+  await absent(f.journal);
+});
+
+test('孤立临时记录删除失败只记录一次，保留到下次启动检查', async t => {
+  const f = await fixture(t);
+  await fs.mkdir(f.journal, { recursive: true });
+  const temporary = path.join(f.journal, `${randomUUID()}.json.${randomUUID()}.tmp`);
+  await fs.writeFile(temporary, 'interrupted');
+  const remove = fs.rm;
+  const mock = t.mock.method(fs, 'rm', async (file, ...args) => {
+    if (file === temporary) throw new Error('temporary file busy');
+    return remove(file, ...args);
+  });
+  const errors = [];
+  await cleanupTransactions(f.directory, { startup: true, onCleanupError: error => errors.push(error.message) });
+  assert.equal(mock.mock.callCount(), 1);
+  assert.equal(errors.length, 1);
+  assert.equal((await fs.readdir(f.journal)).length, 1);
+  mock.mock.restore();
+  await cleanupTransactions(f.directory, { startup: true });
   await absent(f.journal);
 });
 
@@ -172,4 +226,17 @@ test('清理拒绝数据目录外路径和被替换为链接的父目录', async
   assert.ok(errors.some(message => message.includes('不能包含链接')));
   assert.equal(await fs.readFile(path.join(external.stage, 'previous.sav'), 'utf8'), 'original-world');
   assert.equal(await fs.readFile(path.join(linked.stage, 'previous.sav'), 'utf8'), 'original-world');
+});
+
+test('清理记录目录为链接时不在链接目标创建或删除任何文件', async t => {
+  const f = await fixture(t);
+  const outside = await fs.mkdtemp(path.join(tmpdir(), 'palbox-journal-outside-'));
+  t.after(() => fs.rm(outside, { recursive: true, force: true }));
+  await fs.mkdir(path.dirname(f.journal), { recursive: true });
+  await fs.symlink(outside, f.journal);
+  const errors = [];
+  await cleanupTransactions(f.directory, { startup: true, onCleanupError: error => errors.push(error.message) });
+  assert.ok(errors.some(message => message.includes('不能包含链接')));
+  assert.deepEqual(await fs.readdir(outside), []);
+  assert.equal((await fs.lstat(f.journal)).isSymbolicLink(), true);
 });
