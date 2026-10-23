@@ -5,8 +5,8 @@ import { constants, existsSync } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
 import { stripVTControlCharacters } from 'node:util';
 import path from 'node:path';
-import { decodeString, parse } from '../../shared/domain/config.js';
 import { failure } from './files.js';
+import { validateManagedConfiguration } from './game-configuration.js';
 import { appendCombinedLog, initializeCombinedLog, initializeLoginLog, readCombinedLog, readLogTail, timestampLogChunk, withoutLoginLogs } from './logs.js';
 import { appendLog, cleanupLogs, LOG_FILES, logPolicy } from './log-retention.js';
 import { readLogPage } from './log-pages.js';
@@ -159,11 +159,7 @@ export class Runtime extends EventEmitter {
   }
   async rest(endpoint, body) {
     const source = await readFile(this.config, 'utf8');
-    const values = new Map(parse(source).entries.map(e => [e.key, e.raw]));
-    const port = Number(values.get('RESTAPIPort') || 8212);
-    if (!Number.isInteger(port) || port < 1 || port > 65535 || values.get('RESTAPIEnabled') !== 'True') throw failure('请在配置中启用 REST API 后应用配置。', 409);
-    const password = decodeString(values.get('AdminPassword') || '""');
-    if (!password) throw failure('请先设置游戏管理员密码。', 409);
+    const { port, password } = validateManagedConfiguration(source, { gamePort: this.port, reservedPorts: this.reservedPorts });
     const response = await fetch(`http://127.0.0.1:${port}/v1/api/${endpoint}`, {
       method: body === undefined ? 'GET' : 'POST',
       headers: { Authorization: `Basic ${Buffer.from(`admin:${password}`).toString('base64')}`, 'Content-Type': 'application/json' },
@@ -178,8 +174,7 @@ export class Runtime extends EventEmitter {
     if (this.game) throw failure('游戏服已在运行。', 409);
     if (!(await this.installed())) throw failure('请先安装帕鲁服务端。', 409);
     const source = await readFile(this.config, 'utf8');
-    const values = new Map(parse(source).entries.map(e => [e.key, e.raw]));
-    if (values.get('RESTAPIEnabled') !== 'True' || !decodeString(values.get('AdminPassword') || '""')) throw failure('启动管理模式需要启用 REST API 并设置管理员密码，请先应用配置。', 409);
+    validateManagedConfiguration(source, { gamePort: this.port, reservedPorts: this.reservedPorts });
     const child = spawn('/bin/bash', [path.join(this.server, 'PalServer.sh'), `-port=${this.port}`, ...this.args], { cwd: this.server, shell: false, detached: true, env: this.childEnvironment(), stdio: ['ignore', 'pipe', 'pipe'] });
     this.game = child; this.ready = false; this.runningSource = source; this.runningArgs = [...this.args]; this.startedAt = new Date().toISOString();
     this.emit('state');

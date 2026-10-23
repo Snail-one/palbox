@@ -13,13 +13,14 @@ import { readBanList } from './banned-players.js';
 import { PlayerHistory, PlayerHistoryRecorder } from './player-history.js';
 import { ManagementStore } from './store.js';
 import { atomicWrite, readJson, jsonWrite, failure } from './files.js';
+import { validateManagedConfiguration } from './game-configuration.js';
 import { normalizeUsername, passwordRecord, validUsername } from './auth.js';
 import { validTotpRecord } from './totp.js';
 import { backupDirectory, BACKUP_CATEGORIES as categories } from './backup-paths.js';
 import { readBackupWorld, recordBackupWorld, removeBackupMetadata } from './backup-metadata.js';
 import { EditorSession } from '../../shared/domain/editor-session.js';
 import { createCatalog } from '../../shared/domain/catalog.js';
-import { parse, decodeString } from '../../shared/domain/config.js';
+import { parse } from '../../shared/domain/config.js';
 
 const exec = promisify(execFile);
 const shellQuote = value => "'" + String(value).replaceAll("'", "'\\''") + "'";
@@ -98,7 +99,7 @@ function normalizeInstallArgs(value, server) {
 }
 
 export class Manager extends EventEmitter {
-  constructor({ directory, runtime, webPort = 8080, importLimits = {}, ...options }) {
+  constructor({ directory, runtime, webPort = 8080, apiPort = 8081, importLimits = {}, ...options }) {
     super();
     this.setMaxListeners(0);
     this.stateInstance = randomUUID();
@@ -110,9 +111,12 @@ export class Manager extends EventEmitter {
     this.settingsUpdates = Promise.resolve();
     this.settingsFile = path.join(this.directory, 'palbox/settings.json');
     this.tasksFile = path.join(this.directory, 'palbox/tasks.json');
-    this.store = new ManagementStore(this.directory, options.port || runtime?.port || 8211);
-    this.webPort = webPort;
+    const gamePort = options.port ?? runtime?.port ?? 8211;
+    const reservedPorts = [apiPort, webPort].filter(port => port != null);
+    this.configurationOptions = { gamePort, reservedPorts };
+    this.store = new ManagementStore(this.directory, gamePort, { reservedPorts });
     this.runtime = runtime || new Runtime(this.directory, options);
+    this.runtime.reservedPorts = reservedPorts;
     this.runtime.on?.('state', () => this.changed());
     this.playerHistory = new PlayerHistory(this.directory);
     this.playerHistoryRecorder = new PlayerHistoryRecorder({ history: this.playerHistory, runtime: this.runtime, onChange: () => this.changed() });
@@ -332,6 +336,58 @@ export class Manager extends EventEmitter {
     this.servicePhase(update ? 'updating' : 'installing', update ? '正在启动 SteamCMD，准备更新服务端。' : '正在启动 SteamCMD，准备下载和安装服务端。');
     await this.runtime.install({ onProgress: (phase, message) => this.servicePhase(update && phase === 'installing' ? 'updating' : phase, message) });
   }
+  async applyConfiguration(source) {
+    validateManagedConfiguration(source, this.configurationOptions);
+    const directory = path.dirname(this.runtime.config);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const stage = await mkdtemp(path.join(directory, '.apply-'));
+    const next = path.join(stage, 'next.ini');
+    const previous = path.join(stage, 'previous.ini');
+    let preserve = false;
+    try {
+      let original = null;
+      try { original = await readFile(this.runtime.config); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if (original !== null) await atomicWrite(previous, original);
+      // Finish allocation and fsync before stopping a running game.
+      await atomicWrite(next, source);
+      const running = Boolean(this.runtime.game);
+      if (running) await this.stopGame({ requireSave: true });
+      this.servicePhase('applying', '正在将配置写入游戏文件。');
+      try {
+        await rename(next, this.runtime.config);
+        const handle = await open(directory, 'r');
+        try { await handle.sync(); } finally { await handle.close(); }
+      } catch (error) {
+        try {
+          let current = null;
+          try { current = await readFile(this.runtime.config); }
+          catch (caught) { if (caught.code !== 'ENOENT') throw caught; }
+          // A failed rename leaves the old file intact; avoid another write
+          // on a full volume unless replacement actually changed the file.
+          if (original !== null) {
+            if (!current?.equals(original)) await atomicWrite(this.runtime.config, original);
+          } else if (current !== null) await rm(this.runtime.config);
+        } catch (caught) {
+          preserve = true;
+          const rollback = failure(`${error.message}；配置回滚失败，原文件副本已保留在 ${stage}：${caught.message}`, 500);
+          rollback.rollbackFailed = true;
+          throw rollback;
+        }
+        if (running && !this.runtime.game && !this.closing) {
+          try { await this.startGame(); }
+          catch (caught) { this.runtime.log('palbox', `应用配置失败后启动游戏服失败：${caught.message}\n`); }
+        }
+        throw error;
+      }
+      if (running && !this.runtime.game && !this.closing) {
+        try { await this.startGame(); }
+        catch (error) { throw failure(`配置已应用，但游戏服启动失败：${error.message}`, 500); }
+      }
+    } finally {
+      if (!preserve) await rm(stage, { recursive: true, force: true }).catch(error => this.runtime.log('palbox', `应用配置临时文件清理失败：${error.message}\n`));
+    }
+  }
   async execute(action, payload, task) {
     switch (action) {
       case 'install-steamcmd':
@@ -360,16 +416,7 @@ export class Manager extends EventEmitter {
         if (payload.revision !== snapshot.revision || payload.profileId !== snapshot.workspace.activeId) throw failure('配置已变更，请等待自动保存完成后重新应用。', 409);
         const active = this.store.active();
         if (!active) throw failure('尚无可用配置，请先安装服务端或手动新建配置。', 409);
-        const source = output(active.source);
-        const values = new Map(parse(source).entries.map(e => [e.key, e.raw]));
-        if (values.get('RESTAPIEnabled') !== 'True' || !decodeString(values.get('AdminPassword') || '""')) throw failure('管理模式需要 RESTAPIEnabled=True 和非空管理员密码。');
-        const restPort = Number(values.get('RESTAPIPort') || 8212);
-        if (!Number.isInteger(restPort) || restPort < 1 || restPort > 65535 || restPort === this.runtime.port || restPort === this.webPort) throw failure('REST API 端口无效或与现有服务端口冲突。');
-        const running = Boolean(this.runtime.game);
-        if (running) await this.stopGame({ requireSave: true });
-        this.servicePhase('applying', '正在将配置写入游戏文件。');
-        await atomicWrite(this.runtime.config, source);
-        if (running) await this.startGame();
+        await this.applyConfiguration(output(active.source));
         break;
       }
       case 'backup': {

@@ -20,6 +20,50 @@ async function fixture(t) {
   return { directory, file };
 }
 
+test('官方配置同步写盘失败时保留已提交状态，恢复后仍能重试并持久化', async t => {
+  const { directory, file } = await fixture(t);
+  await writeFile(file, official);
+  const store = new ManagementStore(directory);
+  await store.initialize();
+  const before = store.snapshot();
+  const configuration = { ...store.defaultConfiguration };
+  await writeFile(file, official.replace('ExpRate=2.500000', 'ExpRate=8.000000'));
+  const persist = store.persist.bind(store);
+  store.persist = async () => { throw Object.assign(new Error('disk full'), { code: 'ENOSPC' }); };
+  await assert.rejects(store.syncDefaultProfile(), { code: 'ENOSPC' });
+  assert.deepEqual(store.snapshot(), before);
+  assert.deepEqual(store.defaultConfiguration, configuration);
+  assert.deepEqual(JSON.parse(await readFile(store.file, 'utf8')), before);
+  store.persist = persist;
+  assert.equal(await store.syncDefaultProfile(), true);
+  assert.equal(store.revision, before.revision + 1);
+  assert.equal(values(store.active().source).get('ExpRate'), '8.000000');
+  assert.deepEqual(JSON.parse(await readFile(store.file, 'utf8')), store.snapshot());
+  assert.equal(await store.syncDefaultProfile(), false);
+});
+
+test('导入预检查和配置提交都拒绝无效及冲突端口，且不改变已提交配置', async t => {
+  const { directory, file } = await fixture(t);
+  await writeFile(file, official);
+  const store = new ManagementStore(directory, 8211, { reservedPorts: [8090, 8091] });
+  await store.initialize();
+  const before = store.snapshot();
+  const configFile = path.join(directory, 'current.ini');
+  await writeFile(configFile, before.workspace.profiles[0].source);
+  const disk = await readFile(configFile, 'utf8');
+  for (const port of ['-1', '0', '65536', '1.5', '8211', '8090', '8091']) {
+    const imported = `OptionSettings=(RESTAPIPort=${port},ServerName="imported")`;
+    await assert.rejects(store.validateImportedConfig(imported), /REST API 端口无效/);
+    await assert.rejects(store.applyImportedConfig(imported, { configFile }), /REST API 端口无效/);
+    assert.deepEqual(store.snapshot(), before);
+    assert.deepEqual(JSON.parse(await readFile(store.file, 'utf8')), before);
+    assert.equal(await readFile(configFile, 'utf8'), disk);
+  }
+  // A rejected import must not leave the write queue blocked.
+  await store.applyImportedConfig('OptionSettings=(RESTAPIPort=8212)', { configFile });
+  assert.equal(store.revision, before.revision + 1);
+});
+
 test('导入的配置合并进游戏默认配置，缺项沿用官方默认，REST 保持开启且不采用导入密码', async t => {
   const { directory, file } = await fixture(t);
   await writeFile(file, official);

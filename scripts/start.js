@@ -33,7 +33,7 @@ function start(entry, env) {
 // together. An external proxy allowlist must not replace loopback API trust.
 console.log(`游戏管理：http://${process.env.HOST || '127.0.0.1'}:${port}/#game`);
 console.log(`数据目录：${dataDirectory}（已有数据沿用原管理员账号）`);
-start('backend/index.js', { HOST: apiHost, PORT: apiPort, PALBOX_DATA_DIR: dataDirectory, PALBOX_TRUSTED_PROXIES: process.env.API_TRUSTED_PROXIES ?? '127.0.0.1,::1' });
+start('backend/index.js', { HOST: apiHost, PORT: apiPort, PALBOX_WEB_PORT: port, PALBOX_DATA_DIR: dataDirectory, PALBOX_TRUSTED_PROXIES: process.env.API_TRUSTED_PROXIES ?? '127.0.0.1,::1' });
 start('frontend/index.js', { PORT: port, PALBOX_API_URL: process.env.PALBOX_API_URL || `http://${address}:${apiPort}` });
 process.on('SIGINT', () => close());
 process.on('SIGTERM', () => close());

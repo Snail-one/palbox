@@ -131,7 +131,12 @@ export function createRemoteRepository({ api, workspace, revision, defaultConfig
   function start() {
     if (working) return working;
     error = '';
-    working = Promise.resolve().then(drain).finally(() => { working = null; emit(); });
+    working = Promise.resolve().then(drain).finally(() => {
+      working = null;
+      // A save can arrive after drain finishes but before this finalizer runs.
+      if (queued && !error) start();
+      else emit();
+    });
     emit();
     return working;
   }
@@ -143,6 +148,13 @@ export function createRemoteRepository({ api, workspace, revision, defaultConfig
     load() { return structuredClone(snapshot); },
     save(value) { queued = structuredClone(value); start(); },
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
-    async flush() { if (queued) await start(); else await working; return !error; }
+    async flush() {
+      // Follow replacement workers as well as the one active on entry.
+      do {
+        if (queued) await start();
+        else await working;
+      } while (!error && (working || queued));
+      return !error;
+    }
   };
 }

@@ -128,3 +128,38 @@ test('配置合并超限时在停服和替换前拒绝恢复，保留当前游�
   await unchanged();
   assert.equal((await f.manager.backups()).filter(backup => backup.category === 'before-restore').length, 0);
 });
+
+test('恢复和两种导入在预览及执行时拒绝无效或冲突 REST 端口，保持原游戏和数据', async t => {
+  for (const [action, port] of [['restore', -1], ['import-save', 8080], ['import-full', 8081]]) {
+    await t.test(action, async t => {
+      const { f, before, unchanged } = await fixture(t);
+      const invalid = before.config.toString().replace(`RESTAPIPort=${f.restPort}`, `RESTAPIPort=${port}`);
+      assert.notEqual(invalid, before.config.toString());
+      await fs.writeFile(f.runtime.config, invalid);
+      let id = await f.manager.backup('manual');
+      if (action !== 'restore') {
+        let archive = f.manager.backupFile(id);
+        if (action === 'import-full') {
+          archive = path.join(f.directory, 'invalid-full.tar.gz');
+          await f.runtime.run('tar', ['-czf', archive, '-C', f.runtime.server, '--', 'Pal/Saved']);
+        }
+        const uploaded = await f.upload('/api/save-import', await fs.readFile(archive));
+        assert.equal(uploaded.status, 201);
+        id = (await uploaded.json()).id;
+      }
+      await fs.writeFile(f.runtime.config, before.config);
+      assert.equal((await f.task('start')).state, 'succeeded');
+      const pid = f.runtime.game.pid;
+      const operation = action === 'import-full' ? 'import-save' : action;
+      const preview = await f.request('/api/restore-preview', { method: 'POST', body: { action: operation, id } });
+      assert.equal(preview.status, 400);
+      assert.match(await preview.text(), /REST API 端口无效/);
+      const failed = await f.task(operation, { id });
+      assert.equal(failed.state, 'failed');
+      assert.match(failed.message, /REST API 端口无效/);
+      assert.equal(f.runtime.game.pid, pid);
+      await unchanged();
+      assert.equal((await f.manager.backups()).some(backup => ['before-restore', 'before-import'].includes(backup.category)), false);
+    });
+  }
+});

@@ -7,6 +7,7 @@ import {
   GAME_DEFAULT_PROFILE_ID, GAME_DEFAULT_PROFILE_NAME, OFFICIAL_DEFAULT_ORIGIN, DERIVED_DEFAULT_ORIGIN
 } from '../../shared/domain/workspace.js';
 import { atomicWrite, jsonWrite, readJson, failure } from './files.js';
+import { validateManagedConfiguration } from './game-configuration.js';
 
 export function managedTemplate(port, source, { password } = {}) {
   return applyManagedChanges(source, new Map([
@@ -74,11 +75,12 @@ export function validateConfigurationWorkspace(value, { maxProfiles = MAX_PROFIL
 }
 
 export class ManagementStore {
-  constructor(directory, gamePort = 8211) {
+  constructor(directory, gamePort = 8211, { reservedPorts = [] } = {}) {
     this.directory = directory;
     this.file = path.join(directory, 'palbox/workspace.json');
     this.revision = 0;
     this.gamePort = gamePort;
+    this.configurationOptions = { gamePort, reservedPorts };
     this.workspace = null;
     this.defaultConfiguration = { state: 'unknown', version: null };
     this.writes = Promise.resolve();
@@ -198,13 +200,18 @@ export class ManagementStore {
       let state;
       try { source = await this.readDefaultFile({ optional: true }); state = source === null ? 'missing' : 'ready'; }
       catch { state = 'unavailable'; }
-      const changed = this.applyDefaultProfile(this.workspace, source);
-      const baseline = this.workspace.profiles.find(profile => profile.locked)?.initialSource;
-      this.defaultConfiguration = { state, version: state === 'ready' && baseline ? createHash('sha256').update(baseline).digest('hex') : null };
-      if (!changed) return false;
-      this.revision += 1;
-      await this.persist();
-      return true;
+      const candidate = structuredClone(this.workspace);
+      const changed = this.applyDefaultProfile(candidate, source);
+      const baseline = candidate.profiles.find(profile => profile.locked)?.initialSource;
+      const configuration = { state, version: state === 'ready' && baseline ? createHash('sha256').update(baseline).digest('hex') : null };
+      if (changed) {
+        const revision = this.revision + 1;
+        await this.persist({ workspace: candidate, revision });
+        this.workspace = candidate;
+        this.revision = revision;
+      }
+      this.defaultConfiguration = configuration;
+      return changed;
     });
     this.writes = operation.catch(() => {});
     return operation;
@@ -224,7 +231,9 @@ export class ManagementStore {
     this.applyDefaultProfile(workspace, official);
     const profile = workspace.profiles.find(entry => entry.locked === true);
     if (!profile?.initialSource) throw failure('未找到游戏默认配置。', 409);
-    return mergedImportedSource(profile, importedSource);
+    const merged = mergedImportedSource(profile, importedSource);
+    validateManagedConfiguration(merged, this.configurationOptions);
+    return merged;
   }
   applyImportedConfig(importedSource, { configFile, onCleanupError = () => {} } = {}) {
     const operation = this.writes.then(async () => {
@@ -236,6 +245,7 @@ export class ManagementStore {
       const profile = candidate.profiles.find(entry => entry.locked === true);
       if (!profile?.initialSource) throw failure('未找到游戏默认配置。', 409);
       const merged = mergedImportedSource(profile, importedSource);
+      validateManagedConfiguration(merged, this.configurationOptions);
       profile.source = merged;
       profile.updatedAt = new Date().toISOString();
       candidate.activeId = profile.id;
