@@ -2,7 +2,7 @@ import { fields } from '../../../shared/domain/schema.js';
 import { configurationValue } from './components/configuration-value.js';
 
 /** Read differences only when requested; keep values out of status streams. */
-export function createConfigurationDiffDialog({ dom, api }) {
+export function createConfigurationDiffDialog({ dom, api, onRead }) {
   const { $, el } = dom;
   const dialog = $('pending-config-dialog');
   let reading = 0;
@@ -14,7 +14,7 @@ export function createConfigurationDiffDialog({ dom, api }) {
     messages.push(value.running ? '本次启动值与已保存的面板配置进行比较，应用并重启后生效。' : '对比已写入文件与已保存的面板配置，应用后将在下次启动时使用。');
     if (!value.diskExists) messages.push('游戏配置尚未写入文件。');
     if (value.running && !value.runningKnown) messages.push('无法确认本次启动值，仅列出文件与面板配置的差异。');
-    if (!value.changes.length) messages.push(value.formatOnly ? '参数值一致，仅文件格式或参数排列不同。' : '当前各参数值一致。');
+    if (!value.changes.length) messages.push(value.formatOnly ? '参数值一致，文件格式或参数排列不同不影响生效。' : '当前各参数值一致。');
     note.textContent = messages.join(' ');
     const list = $('pending-config-list');
     for (const change of value.changes) {
@@ -40,7 +40,7 @@ export function createConfigurationDiffDialog({ dom, api }) {
     dialog.showModal();
     try {
       const value = await api.request('configuration-diff');
-      if (dialog.open && request === reading) render(value);
+      if (dialog.open && request === reading) { render(value); onRead?.(value); }
     } catch (error) {
       if (!dialog.open || request !== reading) return;
       $('pending-config-note').textContent = '';

@@ -12,6 +12,7 @@ async function fixture(t, { desired = 'OptionSettings=(ExpRate=2.5)', written = 
   const runtime = {
     config: path.join(directory, 'current.ini'), saved: path.join(directory, 'Saved'),
     game: running === null ? null : {}, runningSource: running,
+    installed: async () => false, steamcmdStatus: async () => ({ installed: true }),
     rest() { throw new Error('差异查看不应请求游戏接口'); }
   };
   const manager = new Manager({ directory, runtime });
@@ -52,6 +53,30 @@ test('仅格式或排列不同时不伪造参数修改，数字格式按实际�
   const value = await manager.configurationDiff();
   assert.deepEqual(value.changes, []);
   assert.equal(value.formatOnly, true);
+  assert.equal(value.configuration, 'applied');
+  assert.equal((await manager.status({ scope: 'local' })).configuration, 'applied');
+});
+
+test('运行配置仅注释、换行、顺序和数字格式不同时，状态与明细一致', async t => {
+  const manager = await fixture(t, {
+    desired: 'OptionSettings=(ExpRate=1,ServerName="World")',
+    written: '; written\r\nOptionSettings=(ServerName="World",ExpRate=1.000000)\r\n',
+    running: '; started\nOptionSettings=(ExpRate=1.0,ServerName="World")\n'
+  });
+  assert.deepEqual((await manager.configurationDiff()).changes, []);
+  assert.equal((await manager.status({ scope: 'local' })).configuration, 'applied');
+  await fs.writeFile(manager.runtime.config, 'OptionSettings=(ServerName="Changed",ExpRate=1)');
+  assert.equal((await manager.configurationDiff()).changes.length, 1);
+  assert.equal((await manager.status({ scope: 'local' })).configuration, 'pending');
+});
+
+test('缺少本次启动快照时标为未知，不把零参数差异误报成待生效', async t => {
+  const manager = await fixture(t, { desired: 'OptionSettings=(ExpRate=1)', written: 'OptionSettings=(ExpRate=1.000000)' });
+  manager.runtime.game = {};
+  const differences = await manager.configurationDiff();
+  assert.deepEqual(differences.changes, []);
+  assert.equal(differences.configuration, 'unknown');
+  assert.equal((await manager.status({ scope: 'local' })).configuration, 'unknown');
 });
 
 test('配置未写入、启动快照缺失或无选中配置时提供明确状态', async t => {

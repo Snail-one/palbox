@@ -278,7 +278,11 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     } finally { button.disabled = false; }
   });
   let runningRead = 0;
-  createConfigurationDiffDialog({ dom, api });
+  createConfigurationDiffDialog({ dom, api, onRead(value) {
+    if (!lastStatus || value.stateInstance !== lastStatus.stateInstance || value.revision !== lastStatus.revision || value.running !== lastStatus.running) return;
+    if (value.running && value.startedAt !== lastStatus.startedAt) return;
+    renderStatus({ ...lastStatus, configuration: value.configuration });
+  } });
   const runningPanel = createRunningConfigPanel({ dom });
   $('show-running-config').addEventListener('click', async () => {
     const dialog = $('running-config-dialog');
@@ -867,14 +871,14 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     game.title = serviceState.description;
     game.setAttribute('aria-label', `${serviceState.label}。${serviceState.description}`);
     const config = $('game-config-state');
-    config.textContent = value.hasConfiguration === false ? '暂无配置' : value.configuration === 'pending' ? '待生效' : value.running && value.ready ? '已生效' : '已写入';
-    config.dataset.state = value.configuration === 'pending' ? 'pending' : value.running && value.ready ? 'saved' : 'written';
-    config.title = value.hasConfiguration === false ? '请先安装服务端或手动新建配置。' : value.configuration === 'pending' ? '当前面板配置尚未应用到游戏，点击应用配置后生效。'
+    config.textContent = value.hasConfiguration === false ? '暂无配置' : value.configuration === 'unknown' ? '状态未知' : value.configuration === 'pending' ? '待生效' : value.running && value.ready ? '已生效' : '已写入';
+    config.dataset.state = ['pending', 'unknown'].includes(value.configuration) ? 'pending' : value.running && value.ready ? 'saved' : 'written';
+    config.title = value.hasConfiguration === false ? '请先安装服务端或手动新建配置。' : value.configuration === 'unknown' ? '文件参数与面板一致，但无法确认本次启动使用的配置，请查看差异说明。' : value.configuration === 'pending' ? '当前面板配置尚未应用到游戏，点击应用配置后生效。'
       : value.running && value.ready ? '游戏服务已使用当前配置运行。'
       : value.running ? '配置已写入，正在等待游戏管理接口就绪。'
       : '配置已写入游戏文件，启动服务器后生效。';
     config.setAttribute('aria-label', `游戏配置：${config.textContent}。${config.title}`);
-    $('show-pending-config').hidden = value.hasConfiguration === false || value.configuration !== 'pending';
+    $('show-pending-config').hidden = value.hasConfiguration === false || !['pending', 'unknown'].includes(value.configuration);
     updatePendingFields(value);
     $('game-version').textContent = value.version || value.info?.version || (value.installed ? '启动后获取' : '未安装');
     $('game-build').textContent = value.installedBuild || '—';
