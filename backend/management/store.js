@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import { createHash, randomBytes } from 'node:crypto';
 import { parse, encodeString, decodeString, mergeConfiguration, applyManagedAccess, applyManagedChanges, MAX_CONFIGURATION_SOURCE_LENGTH } from '../../shared/domain/config.js';
 import {
@@ -8,6 +8,7 @@ import {
 } from '../../shared/domain/workspace.js';
 import { atomicWrite, jsonWrite, readJson, failure } from './files.js';
 import { validateManagedConfiguration } from './game-configuration.js';
+import { createTransaction } from './transactions.js';
 
 export function managedTemplate(port, source, { password } = {}) {
   return applyManagedChanges(source, new Map([
@@ -250,7 +251,7 @@ export class ManagementStore {
       profile.updatedAt = new Date().toISOString();
       candidate.activeId = profile.id;
       const next = { workspace: candidate, revision: this.revision + 1 };
-      const stage = await mkdtemp(path.join(this.directory, 'palbox/.configuration-'));
+      const stage = await createTransaction(this.directory, path.dirname(this.file), '.configuration-');
       const originals = [];
       let preserve = false;
       try {

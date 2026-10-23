@@ -59,7 +59,7 @@ test('恢复和导入在配置库写入失败时回滚世界、游戏配置和�
       await unchanged();
       assert.equal(f.runtime.game, null);
       assert.equal((await fs.readdir(path.dirname(world.world))).some(name => name.startsWith('.import-')), false);
-      assert.equal((await fs.readdir(path.join(f.directory, 'palbox'))).some(name => name.startsWith('.configuration-')), false);
+      assert.equal((await fs.readdir(path.join(f.directory, 'palbox/transactions'))).some(name => name.startsWith('.configuration-')), false);
       f.manager.store.persist = persist;
       // The failed transaction must leave the write queue usable.
       if (operation === 'restore') assert.equal((await f.task('restore', { id })).state, 'succeeded');
@@ -108,10 +108,10 @@ test('配置回滚自身失败时保留原文件副本并保持停服，世界�
   assert.equal(f.runtime.game, null);
   assert.equal(await fs.readFile(path.join(world.world, 'Level.sav'), 'utf8'), 'original-world');
   assert.deepEqual(f.manager.store.snapshot(), before.snapshot);
-  const stage = (await fs.readdir(path.join(f.directory, 'palbox'))).find(name => name.startsWith('.configuration-'));
+  const stage = (await fs.readdir(path.join(f.directory, 'palbox/transactions'))).find(name => name.startsWith('.configuration-'));
   assert.ok(stage);
-  assert.deepEqual(await fs.readFile(path.join(f.directory, 'palbox', stage, 'PalWorldSettings.ini')), before.config);
-  assert.deepEqual(await fs.readFile(path.join(f.directory, 'palbox', stage, 'workspace.json')), before.workspace);
+  assert.deepEqual(await fs.readFile(path.join(f.directory, 'palbox/transactions', stage, 'PalWorldSettings.ini')), before.config);
+  assert.deepEqual(await fs.readFile(path.join(f.directory, 'palbox/transactions', stage, 'workspace.json')), before.workspace);
 });
 
 test('配置合并超限时在停服和替换前拒绝恢复，保留当前游戏与数据', async t => {

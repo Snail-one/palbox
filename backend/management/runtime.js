@@ -10,7 +10,7 @@ import { validateManagedConfiguration } from './game-configuration.js';
 import { appendCombinedLog, initializeCombinedLog, initializeLoginLog, readCombinedLog, readLogTail, timestampLogChunk, withoutLoginLogs } from './logs.js';
 import { appendLog, cleanupLogs, LOG_FILES, logPolicy } from './log-retention.js';
 import { readLogPage } from './log-pages.js';
-import { defaultSteamcmd, managedSteamcmd, steamcmdStatus, installSteamcmd } from './steamcmd.js';
+import { defaultSteamcmd, steamcmdStatus, installSteamcmd } from './steamcmd.js';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 // SteamCMD block-buffers stdout when it is a pipe. A pseudo-terminal keeps its
@@ -48,7 +48,7 @@ export class Runtime extends EventEmitter {
     this.logCleanupTimer = null;
   }
   async initialize() {
-    await mkdir(path.join(this.directory, 'logs'), { recursive: true, mode: 0o700 });
+    for (const name of ['logs', 'steam-home', 'tmp', 'cache']) await mkdir(path.join(this.directory, name), { recursive: true, mode: 0o700 });
     await initializeLoginLog(this.directory);
     await initializeCombinedLog(this.directory);
     this.cleanupLogs();
@@ -131,8 +131,7 @@ export class Runtime extends EventEmitter {
     });
   }
   childEnvironment({ direct = false, source = process.env } = {}) {
-    const env = { ...source, TZ: 'UTC' };
-    if (managedSteamcmd(this)) env.HOME = path.resolve(this.directory, 'steam-home');
+    const env = { ...source, TZ: 'UTC', HOME: path.resolve(this.directory, 'steam-home'), TMPDIR: path.resolve(this.directory, 'tmp'), XDG_CACHE_HOME: path.resolve(this.directory, 'cache') };
     delete env.PALBOX_ADMIN_PASSWORD;
     delete env.PALBOX_ADMIN_PASSWORD_FILE;
     if (direct) for (const key of ['http_proxy', 'https_proxy', 'all_proxy', 'ftp_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'FTP_PROXY', 'socks_proxy', 'SOCKS_PROXY', 'socks5_proxy', 'SOCKS5_PROXY', 'NODE_USE_ENV_PROXY']) delete env[key];

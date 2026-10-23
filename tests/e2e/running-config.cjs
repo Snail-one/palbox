@@ -1,5 +1,5 @@
 'use strict';
-const { chromium } = require('playwright');
+const { chromium, testOutput } = require('../helpers/browser.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -91,7 +91,7 @@ const path = require('node:path');
     unavailable = false;
     await page.locator('#show-running-config').click(); await card('ExpRate').waitFor();
     assert.equal(await input('ServerPassword').getAttribute('type'), 'password');
-    const output = path.resolve('test-results/running-config'); await fs.mkdir(output, { recursive: true });
+    const output = testOutput('running-config'); await fs.mkdir(output, { recursive: true });
     await page.screenshot({ path: path.join(output, 'desktop.png') });
     await page.setViewportSize({ width: 390, height: 844 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);

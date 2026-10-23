@@ -10,7 +10,7 @@
 sudo bash ./install.sh
 ```
 
-例如项目放在 `/home/ubuntu/palbox` 并归 `ubuntu` 所有，脚本会配置 `ubuntu` 作为运行用户。脚本安装系统依赖，将校验后的独立 Node.js 24 LTS 准备到 `.runtime/node/`，创建 `data/` 并设置该用户权限，写入 `.palbox.env`，注册并启动 systemd 服务，检查前后端连通后设置开机启动。生产运行无需 `npm install`。
+例如项目放在 `/home/ubuntu/palbox` 并归 `ubuntu` 所有，脚本会配置 `ubuntu` 作为运行用户。脚本安装系统依赖，将校验后的独立 Node.js 24 LTS 准备到 `data/runtime/node/`，创建 `data/` 并设置该用户权限，写入 `data/palbox/.env`，注册并启动 systemd 服务，检查前后端连通后设置开机启动。生产运行无需 `npm install`。
 
 安装过程会打印 Node.js、停服、启动和健康检查的进度。已有服务会先停止，游戏正在运行时停服最多等待 7 分钟。脚本使用管理员权限处理依赖和系统服务，应用进程使用普通用户。它不会创建系统用户、搬迁程序、创建版本链接或递归修改已有数据的属主。`curl` 能运行、`lib32gcc-s1` 已安装、并且 `7z` 或 `7zz` 可用时不再访问软件源，也不升级这些包；缺少时才安装缺失项。`7zip` 用于导入 `.zip` 和 `.7z` 存档。系统已有 Node.js 不会被替换，重复安装会复用项目中兼容的 Node.js。
 
@@ -28,7 +28,7 @@ bash ./install.sh --user ubuntu
 
 这个用户需要能访问整个项目路径。建议将项目放到该用户的目录中，例如 `/home/ubuntu/palbox`，不要放在无法进入的 `/root` 下。脚本不会为了运行程序修改 `/root` 或其他父目录的权限。
 
-新建 `data/` 时自动设置为运行用户所有。已有 `data/` 会先检查读、写和进入权限，权限不匹配则中止并提示，不会自动接管目录。所有服务启动入口（包括前后端独立入口）都会按实际 UID / 有效 UID 拒绝 root，在写数据和监听端口前退出；修改 `USER`、`SUDO_USER` 等环境变量不能绕过。终端启动还会检查当前系统用户是否与 `.palbox.env` 一致。`sudo bash ./install.sh` 仍可用于系统安装，注册后的服务以普通用户运行。
+新建 `data/` 时自动设置为运行用户所有。已有 `data/` 会先检查读、写和进入权限，权限不匹配则中止并提示，不会自动接管目录。所有服务启动入口（包括前后端独立入口）都会按实际 UID / 有效 UID 拒绝 root，在写数据和监听端口前退出；修改 `USER`、`SUDO_USER` 等环境变量不能绕过。终端启动还会检查当前系统用户是否与 `data/palbox/.env` 一致。`sudo bash ./install.sh` 仍可用于系统安装，注册后的服务以普通用户运行。
 
 ## 目录与游戏安装
 
@@ -36,18 +36,25 @@ bash ./install.sh --user ubuntu
 
 ```text
 /home/ubuntu/palbox/
-├── backend/
+├── backend/                    程序源码
 ├── frontend/
-├── .runtime/node/     项目独立 Node.js
-├── .palbox.env        终端启动与后台服务共用配置
-└── data/
-    ├── steamcmd/      网页安装的 SteamCMD
-    ├── steam-home/    SteamCMD 独立运行主目录
-    ├── server/        游戏服务端
-    │   └── Pal/Saved/ 游戏配置和存档
-    ├── backups/       面板备份
-    ├── logs/          日志
-    └── palbox/        面板账号、配置及任务
+├── install.sh
+├── uninstall.sh
+└── data/                       统一数据根目录
+    ├── runtime/node/           项目独立 Node.js
+    ├── steamcmd/               SteamCMD
+    ├── steam-home/             游戏及 SteamCMD 的独立主目录
+    ├── server/                 游戏程序和存档
+    ├── backups/                世界备份
+    ├── logs/                   应用日志
+    ├── tmp/                    下载和测试临时文件
+    ├── cache/                  npm、浏览器及子进程缓存
+    ├── dependencies/           开发测试依赖
+    ├── test-results/           浏览器测试产物
+    └── palbox/
+        ├── .env                部署配置
+        ├── transactions/       操作暂存和回滚副本
+        └── ...                 账号、配置库、任务及导入暂存
 ```
 
 面板地址默认为 `http://127.0.0.1:8080`。远程服务器在自己的电脑上执行：
@@ -74,11 +81,11 @@ sudo bash ./install.sh --host 0.0.0.0 --port 8090 --api-port 8091
 
 `--host` 默认 `127.0.0.1`，`--port` 默认 `8080`，`--api-port` 默认 `8081`。两个端口必须不同，范围为 1024–65535。项目路径使用不含空格的绝对路径；数据始终使用当前项目下的 `data/`。
 
-配置保存在项目的 `.palbox.env`，仅运行用户可读写，不提交到 Git。`dev.sh` 优先使用 `.runtime/node/` 中的 Node.js，并通过 Node.js 的 `--env-file` 加载配置；环境变量可覆盖文件中的对应值。后台服务也调用 `dev.sh --no-watch`，因此后台和终端启动共用入口、运行时与配置。
+配置保存在项目的 `data/palbox/.env`，仅运行用户可读写，不提交到 Git。`dev.sh` 优先使用 `data/runtime/node/` 中的 Node.js，并通过 Node.js 的 `--env-file` 加载配置；环境变量可覆盖文件中的对应值。后台服务也调用 `dev.sh --no-watch`，因此后台和终端启动共用入口、运行时与配置。
 
 共用启动入口会自动把实际网页端口传给后端，用于拒绝与面板冲突的游戏 REST 端口。若在同一台机器分别运行 `start:frontend` 和 `start:backend`，请为后端设置 `PALBOX_WEB_PORT` 为前端的实际 `PORT`；前后端分容器或分机器运行时无需设置。
 
-首次管理员初始化只接受本机或可信内网来源；只有公网 IP 时先用 SSH 隧道初始化。公网长期访问使用 HTTPS 反向代理，并在 `.palbox.env` 设置 `PALBOX_SECURE_COOKIE=true` 和相应的可信代理地址。
+首次管理员初始化只接受本机或可信内网来源；只有公网 IP 时先用 SSH 隧道初始化。公网长期访问使用 HTTPS 反向代理，并在 `data/palbox/.env` 设置 `PALBOX_SECURE_COOKIE=true` 和相应的可信代理地址。
 
 ## 服务管理、调试和更新
 
@@ -96,7 +103,7 @@ sudo systemctl start palbox
 sudo bash ./uninstall.sh
 ```
 
-卸载脚本无需安装脚本、Node.js 或应用文件完整。命令会停止正在运行的服务，取消开机启动，并删除本项目的 `palbox.service`。`data/`、`.palbox.env`、`.runtime/` 和项目程序保留。服务指向其他目录时会中止，不会停止那一份部署。需要恢复时重新执行 `sudo bash ./install.sh`。
+卸载脚本无需安装脚本、Node.js 或应用文件完整。命令会停止正在运行的服务，取消开机启动，并删除本项目的 `palbox.service`。整个 `data/`（含配置及运行依赖）和项目程序保留。服务指向其他目录时会中止，不会停止那一份部署。需要恢复时重新执行 `sudo bash ./install.sh`。
 
 终端调试时先停止后台服务，再使用配置的普通用户，在同一个项目目录执行：
 
@@ -108,4 +115,6 @@ bash ./dev.sh --no-watch
 
 更新前备份 `data/`，停止服务，更新当前目录中的程序，再启动；依赖或服务配置需要更新时重新执行 `sudo bash ./install.sh`。重复安装保留配置和 `data/`，显式选项修改相应配置。启动检查失败会恢复原部署配置并尝试恢复原服务状态；程序代码和应用已经写入的数据不由安装器回退。
 
-项目目录需要长期保留。移动目录时先在旧目录执行 `sudo bash ./uninstall.sh`，保留程序与数据，移动后同步修改 `.palbox.env` 中的 `PALBOX_DATA_DIR`，再执行安装脚本注册新位置。安装器检测到已有服务指向其他目录或配置指向其他数据位置时会中止，避免接管另一份部署或生成空世界。迁移旧部署的数据时也应先停服、备份并确认用户权限，安装器不会自动搬迁或删除旧数据。
+项目目录需要长期保留。移动目录时先在旧目录执行 `sudo bash ./uninstall.sh`，保留程序与数据，移动后同步修改 `data/palbox/.env` 中的 `PALBOX_DATA_DIR`，再执行安装脚本注册新位置。安装器检测到已有服务指向其他目录或配置指向其他数据位置时会中止，避免接管另一份部署或生成空世界。迁移旧部署的数据时也应先停服、备份并确认用户权限，安装器不会自动搬迁或删除旧数据。
+
+旧部署重新执行安装脚本时，会复用并迁移根目录的 `.runtime/`，沿用旧 `.palbox.env` 设置；启动成功后将旧配置归档到数据目录。升级失败时保留旧配置供重试。开发依赖与测试产物由 `npm run setup:tests` 迁入数据目录。

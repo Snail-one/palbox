@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -9,7 +10,7 @@ const original = 'OptionSettings=(RESTAPIEnabled=True,AdminPassword="old",RESTAP
 const next = original.replace('"old"', '"new"');
 
 async function fixture(t, { running = true, existed = true } = {}) {
-  const directory = await fs.mkdtemp('/tmp/palbox-apply-');
+  const directory = await fs.mkdtemp(tmpdir() + '/palbox-apply-');
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const calls = [], logs = [];
   const runtime = {
@@ -41,7 +42,7 @@ test('应用配置在准备文件失败时不停止原游戏，也不留下临�
   assert.equal(runtime.game, process);
   assert.deepEqual(calls, []);
   assert.equal(await fs.readFile(runtime.config, 'utf8'), original);
-  assert.deepEqual(await fs.readdir(directory), ['config.ini']);
+  assert.deepEqual(await fs.readdir(directory), ['config.ini', 'palbox']);
 });
 
 test('应用配置提交失败会恢复旧配置与原运行状态，包括替换后报错', async t => {
@@ -60,7 +61,7 @@ test('应用配置提交失败会恢复旧配置与原运行状态，包括替�
       assert.equal(await fs.readFile(runtime.config, 'utf8'), original);
       assert.equal(Boolean(runtime.game), running);
       assert.deepEqual(calls, running ? ['stop', 'start'] : []);
-      assert.deepEqual(await fs.readdir(directory), ['config.ini']);
+      assert.deepEqual(await fs.readdir(directory), ['config.ini', 'palbox']);
     });
   }
 });
@@ -77,9 +78,10 @@ test('应用回滚失败时保留旧配置副本并保持停服', async t => {
   await assert.rejects(manager.applyConfiguration(next), error => error.rollbackFailed && /原文件副本已保留/.test(error.message));
   assert.equal(runtime.game, null);
   assert.deepEqual(calls, ['stop']);
-  const stage = (await fs.readdir(directory)).find(name => name.startsWith('.apply-'));
+  const transactions = path.join(directory, 'palbox/transactions');
+  const stage = (await fs.readdir(transactions)).find(name => name.startsWith('.apply-'));
   assert.ok(stage);
-  assert.equal(await fs.readFile(path.join(directory, stage, 'previous.ini'), 'utf8'), original);
+  assert.equal(await fs.readFile(path.join(transactions, stage, 'previous.ini'), 'utf8'), original);
 });
 
 test('应用配置成功后使用新配置重启，初次写入不会启动已停止的游戏', async t => {
@@ -90,7 +92,7 @@ test('应用配置成功后使用新配置重启，初次写入不会启动已�
     assert.equal(await fs.readFile(runtime.config, 'utf8'), next);
     assert.equal(Boolean(runtime.game), running);
     assert.deepEqual(calls, running ? ['stop', 'start'] : []);
-    assert.deepEqual(await fs.readdir(directory), ['config.ini']);
+    assert.deepEqual(await fs.readdir(directory), ['config.ini', 'palbox']);
   }
 });
 
@@ -105,5 +107,5 @@ test('校验和正常停服失败时不提交新配置', async t => {
   await assert.rejects(manager.applyConfiguration(next), /save failed/);
   assert.equal(runtime.game, process);
   assert.equal(await fs.readFile(runtime.config, 'utf8'), original);
-  assert.deepEqual(await fs.readdir(directory), ['config.ini']);
+  assert.deepEqual(await fs.readdir(directory), ['config.ini', 'palbox']);
 });

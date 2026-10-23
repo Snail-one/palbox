@@ -1,5 +1,5 @@
 'use strict';
-const { chromium } = require('playwright');
+const { chromium, testOutput } = require('../helpers/browser.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -9,7 +9,7 @@ const path = require('node:path');
   const { parse } = await import('../../shared/domain/config.js');
   const { formatBytes } = await import('../../frontend/src/ui/format.js');
   const f = await managementFixture();
-  const output = path.resolve('test-results/management');
+  const output = testOutput('management');
   await fs.mkdir(output, { recursive: true });
   let browser;
   try {

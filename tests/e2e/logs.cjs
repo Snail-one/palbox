@@ -1,5 +1,5 @@
 'use strict';
-const { chromium } = require('playwright');
+const { chromium, testOutput } = require('../helpers/browser.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -205,7 +205,7 @@ const path = require('node:path');
     f.runtime.log('game', '[CHAT] <Snail> 查看历史时收到新聊天\n');
     await page.waitForFunction(() => document.getElementById('chat-content').textContent.includes('查看历史时收到新聊天'));
     assert.ok(Math.abs(await chat.evaluate(el => el.scrollTop) - 80) < 2);
-    const output = path.resolve('test-results/chat');
+    const output = testOutput('chat');
     await fs.mkdir(output, { recursive: true });
     await page.screenshot({ path: path.join(output, 'mobile-chat.png'), fullPage: true });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);

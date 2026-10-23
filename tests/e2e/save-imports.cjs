@@ -1,4 +1,4 @@
-const { chromium } = require('playwright');
+const { chromium } = require('../helpers/browser.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');

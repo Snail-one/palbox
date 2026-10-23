@@ -74,8 +74,11 @@ docker compose up -d --build
 /app/backend/                          后端 API（palbox 容器）
 /app/frontend/                         网页与代理（frontend 容器）
 /app/shared/                           两个镜像各自包含的共享领域模块
-/opt/steamcmd/                          SteamCMD
 /data/
+├── steamcmd/                          SteamCMD（首次通过网页安装）
+├── steam-home/                        游戏与 SteamCMD 的主目录
+├── cache/                             缓存
+├── tmp/                               临时文件
 ├── server/                            游戏安装目录
 │   ├── PalServer.sh
 │   ├── steamapps/

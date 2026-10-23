@@ -111,7 +111,7 @@ test('自定义路径只检测和使用，不自动覆盖；缺失时给出修�
   await assert.rejects(installSteamcmd(runtime), /PALBOX_STEAMCMD/);
   await writeFile(runtime.steamcmd, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   assert.equal((await runtime.steamcmdStatus()).installed, true);
-  assert.equal(runtime.childEnvironment().HOME, process.env.HOME);
+  assert.equal(runtime.childEnvironment().HOME, path.join(directory, 'steam-home'));
   await installSteamcmd(runtime, { fetch() { throw new Error('不得下载或覆盖'); } });
 });
 

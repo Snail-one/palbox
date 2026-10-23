@@ -1,5 +1,5 @@
 'use strict';
-const { chromium } = require('playwright');
+const { chromium, testOutput } = require('../helpers/browser.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -117,7 +117,7 @@ const path = require('node:path');
     assert.equal(await page.locator('#field-ServerDescription').inputValue(), '保留其他修改');
     await search('ServerName');
     await page.locator('#field-ServerName').fill('准备单项恢复');
-    const output = path.resolve('test-results/field-reset'); await fs.mkdir(output, { recursive: true });
+    const output = testOutput('field-reset'); await fs.mkdir(output, { recursive: true });
     await page.screenshot({ path: path.join(output, 'desktop.png'), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForFunction(() => document.getElementById('sidebar').getBoundingClientRect().right <= 0);

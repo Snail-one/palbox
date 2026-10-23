@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { readFile, mkdir, mkdtemp, open, readdir, stat, rename, rm, rmdir, lstat, unlink, cp } from 'node:fs/promises';
+import { readFile, mkdir, open, readdir, stat, rename, rm, rmdir, lstat, unlink, cp } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
@@ -14,6 +14,7 @@ import { PlayerHistory, PlayerHistoryRecorder } from './player-history.js';
 import { ManagementStore } from './store.js';
 import { atomicWrite, readJson, jsonWrite, failure } from './files.js';
 import { validateManagedConfiguration } from './game-configuration.js';
+import { createTransaction } from './transactions.js';
 import { normalizeUsername, passwordRecord, validUsername } from './auth.js';
 import { validTotpRecord } from './totp.js';
 import { backupDirectory, BACKUP_CATEGORIES as categories } from './backup-paths.js';
@@ -340,7 +341,7 @@ export class Manager extends EventEmitter {
     validateManagedConfiguration(source, this.configurationOptions);
     const directory = path.dirname(this.runtime.config);
     await mkdir(directory, { recursive: true, mode: 0o700 });
-    const stage = await mkdtemp(path.join(directory, '.apply-'));
+    const stage = await createTransaction(this.directory, directory, '.apply-');
     const next = path.join(stage, 'next.ini');
     const previous = path.join(stage, 'previous.ini');
     let preserve = false;
@@ -464,7 +465,7 @@ export class Manager extends EventEmitter {
         task.removedEntries = await this.native.clearWorld(worldId, async () => {
           this.requireResetAllowed(payload);
           this.assertRestoreTarget(worldId, await this.targetWorld());
-        });
+        }, { onCleanupError: error => this.runtime.log('palbox', `重置事务临时文件清理失败：${error.message}\n`) });
         this.runtime.log('palbox', `重置存档完成：已清空世界 ${worldId} 下的 ${task.removedEntries} 个顶层条目，其他世界保留。\n`);
         break;
       }
@@ -536,6 +537,7 @@ export class Manager extends EventEmitter {
         if (ensured.created) created = ensured.directory;
         this.servicePhase('restoring', '正在恢复当前世界存档和包内的游戏配置。');
         await replaceDirectory(imported.snapshot, ensured.directory, {
+          stageDirectory: await createTransaction(this.directory, path.dirname(ensured.directory), 'import-'),
           afterReplace: () => this.adoptImportedConfig(importedConfig),
           onCleanupError: error => this.runtime.log('palbox', `导入事务临时文件清理失败：${error.message}\n`)
         });
@@ -645,7 +647,7 @@ export class Manager extends EventEmitter {
     }
     const id = `${category}/${Date.now()}-${randomUUID()}.tar.gz`;
     const file = path.join(this.directory, 'backups', id);
-    const stage = await mkdtemp(path.join(directory, '.creating-'));
+    const stage = await createTransaction(this.directory, directory, 'backup-');
     const temporary = path.join(stage, 'archive.tar.gz');
     try {
       const packedDir = path.join(stage, 'packed');
@@ -785,7 +787,7 @@ export class Manager extends EventEmitter {
     if (mode !== undefined && mode !== 'world') throw failure('恢复方式已统一为当前世界恢复，请刷新页面后重试。');
     const archive = await this.inspectBackup(id);
     this.assertRestoreTarget(expectedWorldId, archive.currentWorld);
-    const stage = await mkdtemp(path.join(this.runtime.server, '.restore-'));
+    const stage = await createTransaction(this.directory, path.join(this.directory, 'palbox'), 'restore-');
     try {
       if (archive.sourcePrefix) await this.runtime.run('tar', ['-xzf', archive.file, '--no-same-owner', '--no-same-permissions', '-C', stage, '--', archive.sourcePrefix]);
       await this.restoreWorldBackup(id, archive.sourcePrefix ? path.join(stage, archive.sourcePrefix) : null, archive.configuration, archive.currentWorld);
@@ -812,6 +814,7 @@ export class Manager extends EventEmitter {
         const ensured = await this.native.ensureWorld(currentWorld);
         if (ensured.created) created = ensured.directory;
         await replaceDirectory(source, ensured.directory, {
+          stageDirectory: await createTransaction(this.directory, path.dirname(ensured.directory), 'world-restore-'),
           afterReplace: () => this.adoptImportedConfig(configuration),
           onCleanupError: error => this.runtime.log('palbox', `恢复事务临时文件清理失败：${error.message}\n`)
         });

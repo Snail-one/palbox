@@ -1,4 +1,4 @@
-# 从同一 Debian 系列的官方镜像取得 Node.js 22 运行时。
+# 从同一 Debian 系列的官方镜像取得 Node.js 运行时。
 FROM node:26-trixie-slim AS node-runtime
 
 # 固定 Debian 大版本，SteamCMD 和游戏文件在运行时安装。
@@ -23,17 +23,9 @@ RUN test "${TARGETARCH:-amd64}" = amd64 \
 
 # 保留 node 用户名，与入口脚本中的 PUID/PGID 权限调整保持一致。
 RUN groupadd --gid 1000 node \
-    && useradd --uid 1000 --gid node --create-home --home-dir /home/node --shell /bin/bash node \
-    && mkdir -p /opt/steamcmd /home/node/.steam/sdk64 /data
-
-# 下载器设置重试和连接超时，解包后由普通用户更新和运行。
-RUN curl --fail --silent --show-error --location --retry 3 --connect-timeout 15 \
-        https://client-update.steamstatic.com/installer/steamcmd_linux.tar.gz \
-        -o /tmp/steamcmd.tar.gz \
-    && tar -xzf /tmp/steamcmd.tar.gz -C /opt/steamcmd \
-    && rm /tmp/steamcmd.tar.gz \
-    && ln -s /opt/steamcmd/linux64/steamclient.so /home/node/.steam/sdk64/steamclient.so \
-    && chown -R node:node /opt/steamcmd /home/node /data
+    && useradd --uid 1000 --gid node --create-home --home-dir /data/steam-home --shell /bin/bash node \
+    && mkdir -p /data/tmp /data/cache \
+    && chown -R node:node /data
 
 # 后端镜像仅包含管理 API 和共享领域模块。
 WORKDIR /app
@@ -44,8 +36,7 @@ COPY docker/entrypoint.sh /usr/local/bin/palbox-entrypoint
 RUN chmod 755 /usr/local/bin/palbox-entrypoint
 
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=8081 \
-    PALBOX_DATA_DIR=/data PALBOX_STEAMCMD=/opt/steamcmd/steamcmd.sh \
-    HOME=/home/node
+    PALBOX_DATA_DIR=/data HOME=/data/steam-home TMPDIR=/data/tmp XDG_CACHE_HOME=/data/cache
 
 EXPOSE 8081/tcp 8211/udp
 VOLUME ["/data"]

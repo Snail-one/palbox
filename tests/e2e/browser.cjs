@@ -1,6 +1,6 @@
 // Optional end-to-end checks. Install Playwright outside the app if needed.
 'use strict';
-const { chromium } = require('playwright');
+const { chromium, testOutput } = require('../helpers/browser.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -8,7 +8,7 @@ const path = require('node:path');
 
 let url;
 const fixtures = [];
-const output = process.env.PALBOX_QA_OUTPUT || path.resolve('test-results/e2e');
+const output = process.env.PALBOX_QA_OUTPUT || testOutput('e2e');
 
 (async () => {
   const Config = await import('../../shared/domain/config.js');

@@ -1,5 +1,5 @@
 import { createWriteStream } from 'node:fs';
-import { access, mkdir, mkdtemp, rm, symlink, lstat, writeFile } from 'node:fs/promises';
+import { access, mkdir, rm, symlink, lstat, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { lookup } from 'node:dns/promises';
 import diagnostics_channel from 'node:diagnostics_channel';
@@ -9,6 +9,7 @@ import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 import { failure } from './files.js';
 import { replaceDirectory } from './replace-directory.js';
+import { createTransaction } from './transactions.js';
 
 const DOWNLOAD_URL = 'https://client-update.steamstatic.com/installer/steamcmd_linux.tar.gz';
 const MAX_DOWNLOAD = 64 * 1024 * 1024;
@@ -100,7 +101,7 @@ export async function installSteamcmd(runtime, { onProgress = () => {}, fetch: d
   try {
     await mkdir(runtime.directory, { recursive: true, mode: 0o700 });
     await access(runtime.directory, constants.R_OK | constants.W_OK | constants.X_OK);
-    temporary = await mkdtemp(path.join(runtime.directory, '.steamcmd-'));
+    temporary = await createTransaction(runtime.directory, runtime.directory, '.steamcmd-');
     const archive = path.join(temporary, 'steamcmd.tar.gz');
     const unpacked = path.join(temporary, 'installation');
     await mkdir(unpacked);
@@ -136,7 +137,9 @@ export async function installSteamcmd(runtime, { onProgress = () => {}, fetch: d
     await access(path.join(unpacked, 'steamcmd.sh'), constants.R_OK | constants.X_OK);
     signal.throwIfAborted();
     // Only replace PalBox's dedicated SteamCMD directory, never a custom path.
-    await replaceDirectory(unpacked, path.dirname(runtime.steamcmd));
+    await replaceDirectory(unpacked, path.dirname(runtime.steamcmd), {
+      stageDirectory: await createTransaction(runtime.directory, path.dirname(path.dirname(runtime.steamcmd)), 'steamcmd-swap-')
+    });
     const sdk = path.join(runtime.directory, 'steam-home/.steam/sdk64');
     await mkdir(sdk, { recursive: true, mode: 0o700 });
     const library = path.join(sdk, 'steamclient.so');

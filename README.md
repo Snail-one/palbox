@@ -53,7 +53,7 @@ sudo bash ./install.sh
 | 恢复开机启动并立即启动 | `sudo systemctl enable --now palbox` |
 | 卸载后台服务 | `sudo bash ./uninstall.sh` |
 
-独立卸载脚本会停止服务、取消开机启动并移除本项目的 `palbox.service`，保留程序、`data/`、`.palbox.env` 和 `.runtime/`。重新安装执行 `sudo bash ./install.sh`。需要彻底删除时，先备份，再手动删除项目目录及自行配置的其他数据目录。
+独立卸载脚本会停止服务、取消开机启动并移除本项目的 `palbox.service`，保留程序和整个 `data/`（含配置及运行依赖）。重新安装执行 `sudo bash ./install.sh`。需要彻底删除时，先备份，再手动删除项目目录及自行配置的其他数据目录。
 
 ### 更新面板
 
@@ -66,7 +66,7 @@ git pull --ff-only
 sudo bash ./install.sh
 ```
 
-压缩包部署则替换程序文件，保留 `data/`、`.palbox.env` 和 `.runtime/`，再执行安装脚本。**游戏服务端更新**在网页「游戏管理」中单独操作。
+压缩包部署则替换程序文件，保留整个 `data/`（含配置及运行依赖），再执行安装脚本。**游戏服务端更新**在网页「游戏管理」中单独操作。
 
 ## Docker 部署
 
@@ -112,7 +112,7 @@ docker compose -f compose.ghcr.yaml up -d
 ## 首次使用
 
 1. 打开面板，设置管理员用户名和至少 12 位密码；已有数据沿用原账号。
-2. 在「游戏管理」中安装 SteamCMD（Docker 已内置），再安装游戏服务端并启动。
+2. 在「游戏管理」中安装 SteamCMD（原生和 Docker 均通过网页安装），再安装游戏服务端并启动。
 3. 在「配置管理」中新建或导入配置。有效修改自动保存。输入源码只读，请在参数表单中修改。
 4. 点击「应用配置」才会写入游戏配置；游戏正在运行时会按需重启。
 
@@ -142,9 +142,13 @@ ssh -N -L 18080:127.0.0.1:8080 登录用户@服务器IP
 | 面板账号、配置库和任务 | `palbox/` |
 | 面板世界备份 | `backups/` |
 | 面板、安装、游戏及登录日志 | `logs/` |
-| SteamCMD | 直接安装为 `steamcmd/`；Docker 中为 `/opt/steamcmd/`，位于数据根目录之外 |
+| SteamCMD | `steamcmd/`，原生和 Docker 均在数据目录内 |
+| 部署配置（原生） | `palbox/.env` |
+| Node.js 运行时（原生） | `runtime/node/` |
+| 开发测试依赖、缓存和测试产物 | `dependencies/`、`cache/`、`test-results/` |
+| 临时文件与操作事务 | `tmp/`、`palbox/transactions/` |
 
-**完整备份请先停止面板服务或容器，再复制整个数据根目录**，并保存直接安装的 `.palbox.env` 或 Docker 使用的 Compose 文件；备份放到部署目录之外。自定义挂载或 `PALBOX_DATA_DIR` 时，以实际路径为准。
+**完整备份请先停止面板服务或容器，再复制整个数据根目录**，原生部署的配置及 Node.js 运行时已在数据目录内；Docker 另保存使用的 Compose 文件；备份放到部署目录之外。自定义挂载或 `PALBOX_DATA_DIR` 时，以实际路径为准。
 
 网页中的「世界备份」（手动、恢复前、导入前、重置前）都打包当前世界目录和 `PalWorldSettings.ini`，不包含其他世界、日志、封禁名单、面板账号、配置库和程序。导入存档或恢复这些备份时，包内的 `PalWorldSettings.ini` 会按导入方式合并进「游戏默认配置」并写入游戏：以官方默认为底补全缺项，再用包内同名参数覆盖。REST API 保持开启，管理员密码沿用「游戏默认配置」已有的随机密码，不采用包内的这两项。没有该文件的包不改配置。迁移整个面板时需要完整数据备份。备份恢复操作见 [使用指南](docs/usage.md#官方自动备份与世界备份)。
 
@@ -167,8 +171,7 @@ ssh -N -L 18080:127.0.0.1:8080 登录用户@服务器IP
 
 ```sh
 npm test                       # 单元与集成测试
-npm ci                         # 浏览器测试依赖
-npx playwright install chromium
+npm run setup:tests            # 浏览器依赖和浏览器缓存安装到 data/ 内
 npm run test:e2e               # 浏览器回归，使用临时测试数据
 ```
 

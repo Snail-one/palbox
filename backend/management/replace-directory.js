@@ -3,13 +3,15 @@ import fs from 'node:fs/promises';
 import { failure } from './files.js';
 
 /** Prepare the entire replacement before moving the old directory out of the way. */
-export async function replaceDirectory(source, target, { afterReplace = async () => {}, onCleanupError = () => {} } = {}) {
-  const stage = await fs.mkdtemp(path.join(path.dirname(target), '.import-'));
+export async function replaceDirectory(source, target, { stageDirectory, beforeReplace = async () => {}, afterReplace = async () => {}, onCleanupError = () => {} } = {}) {
+  const stage = stageDirectory ?? await fs.mkdtemp(path.join(path.dirname(target), '.import-'));
   const replacement = path.join(stage, 'replacement');
   const previous = path.join(stage, 'previous');
   let preserve = false;
   try {
-    await fs.cp(source, replacement, { recursive: true, force: false, errorOnExist: true });
+    if (source === null) await fs.mkdir(replacement, { mode: 0o700 });
+    else await fs.cp(source, replacement, { recursive: true, force: false, errorOnExist: true });
+    await beforeReplace();
     let moved = false;
     try { await fs.rename(target, previous); moved = true; }
     catch (error) { if (error.code !== 'ENOENT') throw error; }

@@ -3,7 +3,11 @@ set -Eeuo pipefail
 
 app_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 systemd_dir="${PALBOX_SYSTEMD_DIR:-/etc/systemd/system}"
-config_file="$app_dir/.palbox.env"
+data_dir="${PALBOX_DATA_DIR:-$app_dir/data}"
+config_file="$data_dir/palbox/.env"
+legacy_config_file="$app_dir/.palbox.env"
+settings_source="$config_file"
+if [[ ! -f "$settings_source" && -f "$legacy_config_file" ]]; then settings_source="$legacy_config_file"; fi
 requested_user='' requested_host='' requested_port='' requested_api_port=''
 temporary='' switched=false was_active=false was_enabled=false
 
@@ -101,30 +105,33 @@ systemctl show-environment >/dev/null 2>&1 || die 'systemd 未运行，请在正
 for entry in backend/index.js frontend/index.js shared/domain/config.js scripts/start.js dev.sh package.json; do
   [[ -f "$app_dir/$entry" ]] || die "项目文件不完整：缺少 $entry，请下载完整项目后执行。"
 done
-for directory in "$app_dir" "$systemd_dir"; do
+for directory in "$app_dir" "$systemd_dir" "$data_dir"; do
   [[ "$directory" =~ ^/[A-Za-z0-9_./-]+$ ]] || die "目录必须为不含空格的绝对路径：$directory"
 done
 systemd_dir="$(realpath -m -- "$systemd_dir")"
 unit_file="$systemd_dir/palbox.service"
-data_dir="$app_dir/data"
+data_dir="$(realpath -m -- "$data_dir")"
+config_file="$data_dir/palbox/.env"
 
 # Read configuration as data. Never source an application-owned file as root.
 read_setting() {
   local key value result=''
-  if [[ -f "$config_file" ]]; then
+  if [[ -f "$settings_source" ]]; then
     while IFS='=' read -r key value || [[ -n "$key" ]]; do
       if [[ "$key" == "$1" ]]; then
         value="${value%$'\r'}"
         if [[ "$value" == \"*\" || "$value" == \'*\' ]]; then value="${value:1:${#value}-2}"; fi
         result="$value"
       fi
-    done < "$config_file"
+    done < "$settings_source"
   fi
   printf '%s' "$result"
 }
 if [[ -f "$unit_file" ]]; then
   previous_app="$(sed -n 's/^WorkingDirectory=//p' "$unit_file")"
   [[ -z "$previous_app" || "$(realpath -m -- "$previous_app")" == "$app_dir" ]] || die "已有 palbox 服务运行在 $previous_app。请先处理原部署，再为当前目录注册服务。"
+  registered_data="$(sed -n 's/^Environment=PALBOX_DATA_DIR=//p' "$unit_file")"
+  [[ -z "$registered_data" || "$(realpath -m -- "$registered_data")" == "$data_dir" ]] || die "已有服务使用其他数据目录：$registered_data。请先停服并迁移数据，再调整 PALBOX_DATA_DIR。"
 fi
 
 cleanup() {
@@ -188,13 +195,22 @@ else
   DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends --no-upgrade "${missing[@]}"
 fi
 
-temporary="$(mktemp -d /tmp/palbox-install.XXXXXX)"
 install -d -m 0755 "$systemd_dir"
 if [[ ! -e "$data_dir" ]]; then install -d -o "$service_user" -g "$service_group" -m 0700 "$data_dir"; fi
 [[ -d "$data_dir" ]] || die 'data 路径不是目录。'
 runuser -u "$service_user" -- test -r "$data_dir" && runuser -u "$service_user" -- test -w "$data_dir" && runuser -u "$service_user" -- test -x "$data_dir" || die "$service_user 无权读写 data/。请使用该数据所属的用户，不要混用运行用户；安装器不会自动修改已有数据属主。"
-if [[ ! -e "$app_dir/.runtime" ]]; then install -d -o "$service_user" -g "$service_group" -m 0755 "$app_dir/.runtime"; fi
-node_bin="$app_dir/.runtime/node/bin/node"
+for subdirectory in palbox tmp cache; do
+  if [[ ! -e "$data_dir/$subdirectory" ]]; then install -d -o "$service_user" -g "$service_group" -m 0700 "$data_dir/$subdirectory"; fi
+  [[ -d "$data_dir/$subdirectory" && ! -L "$data_dir/$subdirectory" ]] || die "数据子目录不能为链接或特殊文件：$subdirectory"
+done
+temporary="$(mktemp -d "$data_dir/tmp/install.XXXXXX")"
+if [[ -d "$app_dir/.runtime" && ! -L "$app_dir/.runtime" ]]; then
+  if [[ ! -e "$data_dir/runtime" ]]; then mv -- "$app_dir/.runtime" "$data_dir/runtime";
+  else mv -- "$app_dir/.runtime" "$data_dir/runtime/legacy-$(date +%s)-$$"; fi
+fi
+if [[ ! -e "$data_dir/runtime" ]]; then install -d -o "$service_user" -g "$service_group" -m 0755 "$data_dir/runtime"; fi
+[[ -d "$data_dir/runtime" && ! -L "$data_dir/runtime" ]] || die 'runtime 不能为链接或特殊文件。'
+node_bin="$data_dir/runtime/node/bin/node"
 node_version=''
 if [[ -x "$node_bin" ]]; then
   node_version="$(runuser -u "$service_user" -- "$node_bin" -e 'const major = Number(process.versions.node.split(".")[0]); if (!(major >= 22)) process.exit(1); process.stdout.write(process.versions.node)')" || node_version=''
@@ -223,18 +239,18 @@ else
   install -d -m 0755 "$temporary/node"
   tar --no-same-owner -xJf "$temporary/$node_archive" --strip-components=1 -C "$temporary/node"
   chown -R "$service_user:$service_group" "$temporary/node"
-  [[ ! -e "$app_dir/.runtime/node" ]] || mv -- "$app_dir/.runtime/node" "$app_dir/.runtime/node.previous-$(date +%s)-$$"
-  mv -- "$temporary/node" "$app_dir/.runtime/node"
+  [[ ! -e "$data_dir/runtime/node" ]] || mv -- "$data_dir/runtime/node" "$data_dir/runtime/node.previous-$(date +%s)-$$"
+  mv -- "$temporary/node" "$data_dir/runtime/node"
   node_version="$(runuser -u "$service_user" -- "$node_bin" -e 'process.stdout.write(process.versions.node)')"
-  step "Node.js ${node_version} 已安装到 .runtime/node。"
+  step "Node.js ${node_version} 已安装到 $data_dir/runtime/node。"
 fi
 runuser -u "$service_user" -- "$node_bin" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' || die 'Node.js 运行检查失败。'
 runuser -u "$service_user" -- "$node_bin" --input-type=module -e 'import { isIP } from "node:net"; process.exit(isIP(process.argv[1]) || process.argv[1] === "localhost" ? 0 : 1);' "$listen_host" || die '请使用有效的 IPv4、IPv6 地址或 localhost。'
 
 step "为当前项目配置后台服务，运行用户：$service_user。"
-if [[ -f "$config_file" ]]; then
-  cp -p -- "$config_file" "$temporary/previous.env"
-  awk '!/^(PALBOX_SERVICE_USER|NODE_ENV|HOST|PORT|API_HOST|API_PORT|PALBOX_DATA_DIR)=/' "$config_file" > "$temporary/palbox.env"
+if [[ -f "$config_file" ]]; then cp -p -- "$config_file" "$temporary/previous.env"; fi
+if [[ -f "$settings_source" ]]; then
+  awk '!/^(PALBOX_SERVICE_USER|NODE_ENV|HOST|PORT|API_HOST|API_PORT|PALBOX_DATA_DIR)=/' "$settings_source" > "$temporary/palbox.env"
 else printf '# PalBox 配置，终端启动与 systemd 共用\n' > "$temporary/palbox.env"; fi
 cat >> "$temporary/palbox.env" <<EOF
 PALBOX_SERVICE_USER=$service_user
@@ -257,6 +273,7 @@ Type=simple
 User=$service_user
 Group=$service_group
 WorkingDirectory=$app_dir
+Environment=PALBOX_DATA_DIR=$data_dir
 ExecStart=/bin/bash $app_dir/dev.sh --no-watch
 Restart=always
 RestartSec=5
@@ -278,7 +295,7 @@ if [[ "$was_active" == true ]]; then
 else
   step '当前没有正在运行的 PalBox 服务。'
 fi
-step '正在写入 .palbox.env、palbox.service，并重新加载 systemd。'
+step '正在写入数据目录中的部署配置、palbox.service，并重新加载 systemd。'
 install -o "$service_user" -g "$service_group" -m 0600 "$temporary/palbox.env" "$config_file"
 install -m 0644 "$temporary/palbox.service" "$unit_file"
 systemctl daemon-reload
@@ -318,6 +335,7 @@ fi
 step '正在设置开机启动。'
 systemctl enable palbox.service
 switched=false
+if [[ -f "$legacy_config_file" ]]; then mv -- "$legacy_config_file" "$data_dir/palbox/legacy-env-$(date +%s)-$$"; fi
 
 step '安装完成，PalBox 已启动并设置开机启动。'
 summary=("状态：已启动，并已设置开机启动" "运行用户：$service_user")

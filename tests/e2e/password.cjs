@@ -1,5 +1,5 @@
 'use strict';
-const { chromium } = require('playwright');
+const { chromium } = require('../helpers/browser.cjs');
 const assert = require('node:assert/strict');
 
 (async () => {

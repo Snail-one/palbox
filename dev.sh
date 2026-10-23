@@ -7,6 +7,10 @@ if (( EUID == 0 || UID == 0 )); then
 fi
 
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
+data_dir="${PALBOX_DATA_DIR:-$PWD/data}"
+if [[ $data_dir != /* ]]; then data_dir="$PWD/$data_dir"; fi
+config_file="$data_dir/palbox/.env"
+if [[ ! -f "$config_file" && -f "$PWD/.palbox.env" ]]; then config_file="$PWD/.palbox.env"; fi
 
 watch=true
 if [[ "${1:-}" == '--no-watch' ]]; then
@@ -17,7 +21,9 @@ elif [[ $# -gt 0 ]]; then
 fi
 
 node_bin=''
-if [[ -x "$PWD/.runtime/node/bin/node" ]] && "$PWD/.runtime/node/bin/node" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)'; then
+if [[ -x "$data_dir/runtime/node/bin/node" ]] && "$data_dir/runtime/node/bin/node" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)'; then
+  node_bin="$data_dir/runtime/node/bin/node"
+elif [[ -x "$PWD/.runtime/node/bin/node" ]]; then
   node_bin="$PWD/.runtime/node/bin/node"
 else node_bin="$(command -v node || true)"; fi
 if [[ -z "$node_bin" ]]; then
@@ -36,7 +42,7 @@ if [[ -z "$node_bin" ]] || ! "$node_bin" -e 'process.exit(Number(process.version
 fi
 
 node_options=()
-if [[ -f "$PWD/.palbox.env" ]]; then node_options+=("--env-file=$PWD/.palbox.env"); fi
+if [[ -f "$config_file" ]]; then node_options+=("--env-file=$config_file"); fi
 echo '首次打开页面时请在浏览器中设置管理员用户名和密码。'
 if [[ "$watch" == true ]]; then
   echo '前后端服务独立运行，服务代码修改自动重启，页面修改后刷新。按 Ctrl+C 停止。'

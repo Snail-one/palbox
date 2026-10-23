@@ -1,4 +1,4 @@
-const { chromium } = require('playwright');
+const { chromium, testOutput } = require('../helpers/browser.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -66,7 +66,7 @@ const path = require('node:path');
     await working.getByRole('button', { name: '已选择', exact: true }).waitFor();
     assert.equal(new URL(page.url()).hash, '#configuration/profiles');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-    const output = path.resolve('test-results/profile-defaults');
+    const output = testOutput('profile-defaults');
     await fs.mkdir(output, { recursive: true });
     await page.screenshot({ path: path.join(output, 'mobile.png'), fullPage: true });
     assert.deepEqual(errors, []);

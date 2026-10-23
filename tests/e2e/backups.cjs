@@ -1,5 +1,5 @@
 'use strict';
-const { chromium } = require('playwright');
+const { chromium, testOutput } = require('../helpers/browser.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -64,7 +64,7 @@ const path = require('node:path');
       await assertPageFits(category);
       assert.equal(await group(category).locator('.backup-entry-world code').first().textContent(), savedWorld);
     }
-    const output = path.resolve('test-results/backups');
+    const output = testOutput('backups');
     await fs.mkdir(output, { recursive: true });
     await page.screenshot({ path: path.join(output, 'desktop.png'), fullPage: true });
     await page.locator('#backup-page-manual-3').click();

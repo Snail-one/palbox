@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -24,7 +25,7 @@ test('管理配置校验要求可用凭据，并允许独立容器复用前端�
 });
 
 test('磁盘配置的 REST 端口无效时，启动前拒绝且不创建游戏进程', async t => {
-  const directory = await mkdtemp('/tmp/palbox-configuration-');
+  const directory = await mkdtemp(tmpdir() + '/palbox-configuration-');
   t.after(() => rm(directory, { recursive: true, force: true }));
   const runtime = new Runtime(directory);
   runtime.config = directory + '/config.ini';

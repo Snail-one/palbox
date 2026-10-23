@@ -1,4 +1,4 @@
-const { chromium } = require('playwright');
+const { chromium, testOutput } = require('../helpers/browser.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -39,7 +39,7 @@ const path = require('node:path');
     assert.equal(await fs.readFile(path.join(current.world, 'Level.sav'), 'utf8'), 'before-restore');
     await restore().click();
     await page.locator('#save-import-details').waitFor();
-    const output = path.resolve('test-results/unified-restore');
+    const output = testOutput('unified-restore');
     await fs.mkdir(output, { recursive: true });
     await page.screenshot({ path: path.join(output, 'mobile.png') });
     assert.equal(await page.locator('#save-import-dialog').evaluate(dialog => dialog.scrollWidth <= dialog.clientWidth), true);

@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -20,7 +21,7 @@ async function freePort() {
 test('真实启动入口区分原生共用端口和独立后端的端口边界', { timeout: 20000 }, async t => {
   for (const native of [true, false]) {
     await t.test(native ? '原生双进程' : '独立后端', async t => {
-      const directory = await mkdtemp('/tmp/palbox-port-startup-');
+      const directory = await mkdtemp(tmpdir() + '/palbox-port-startup-');
       t.after(() => rm(directory, { recursive: true, force: true }));
       await mkdir(path.join(directory, 'server'));
       await writeFile(path.join(directory, 'server/DefaultPalWorldSettings.ini'), 'OptionSettings=(RESTAPIEnabled=False,AdminPassword="",RESTAPIPort=8212)');

@@ -1,11 +1,13 @@
 import path from 'node:path';
 import { constants } from 'node:fs';
-import { lstat, readdir, readFile, open, mkdir, mkdtemp, rename, rm } from 'node:fs/promises';
+import { lstat, readdir, readFile, open, mkdir, rename, rm } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { failure } from './files.js';
-import { backupDirectory } from './backup-paths.js';
 import { createBackupDownloadFilename } from './backup-downloads.js';
+import { backupDirectory } from './backup-paths.js';
+import { createTransaction } from './transactions.js';
+import { replaceDirectory } from './replace-directory.js';
 
 const run = promisify(execFile);
 export const worldName = /^[A-Za-z0-9_-]{1,128}$(?![\s\S])/;
@@ -40,18 +42,19 @@ export class NativeBackups {
     return (await readdir(root, { withFileTypes: true })).filter(entry => entry.isDirectory() && worldName.test(entry.name)).map(entry => entry.name);
   }
 
-  async clearWorld(worldId, assertStopped) {
+  async clearWorld(worldId, assertStopped, { onCleanupError = () => {} } = {}) {
     if (!worldName.test(worldId || '')) throw failure('世界 ID 无效。');
     await assertStopped();
     let root;
     try { root = await this.safeDirectory(['SaveGames', '0', worldId]); }
     catch (error) { if (error.code === 'ENOENT') return 0; throw error; }
     const entries = await readdir(root);
-    for (const name of entries) {
-      await assertStopped();
-      // Remove links themselves; never follow them outside the save directory.
-      await rm(path.join(root, name), { recursive: true, force: true });
-    }
+    if (!entries.length) return 0;
+    const stage = await createTransaction(this.directory, path.dirname(root), 'reset-');
+    await replaceDirectory(null, root, {
+      stageDirectory: stage, beforeReplace: assertStopped,
+      onCleanupError: error => onCleanupError(new Error(`${error.message}；暂存目录：${stage}`, { cause: error }))
+    });
     return entries.length;
   }
 
@@ -206,7 +209,8 @@ export class NativeBackups {
 
   async export(id, { timeZone = 'UTC' } = {}) {
     const downloadFilename = createBackupDownloadFilename(timeZone);
-    const stage = await mkdtemp(path.join(await backupDirectory(this.directory), '.official-export-'));
+    await backupDirectory(this.directory);
+    const stage = await createTransaction(this.directory, path.join(this.directory, 'palbox'), '.official-export-');
     const cleanup = () => rm(stage, { recursive: true, force: true });
     try {
       const snapshot = path.join(stage, 'snapshot');
@@ -238,7 +242,7 @@ export class NativeBackups {
     }
     await beforeSwap?.();
     world = await this.safeDirectory(['SaveGames', '0', worldId]);
-    const stage = await mkdtemp(path.join(await backupDirectory(this.directory), '.official-restore-'));
+    const stage = await createTransaction(this.directory, path.dirname(world), '.official-restore-');
     const moved = [];
     let preserve = false;
     try {
@@ -275,7 +279,8 @@ export class NativeBackups {
   async restore(id, beforeReplace, { onCleanupError = () => {} } = {}) {
     const backup = await this.get(id);
     if (backup.worldId !== await this.configuredWorld()) throw failure('无法确认该备份属于 GameUserSettings.ini 指定的当前世界，拒绝恢复。', 409);
-    const stage = await mkdtemp(path.join(await backupDirectory(this.directory), '.official-restore-'));
+    const world = await this.safeDirectory(['SaveGames', '0', backup.worldId]);
+    const stage = await createTransaction(this.directory, path.dirname(world), '.official-restore-');
     try {
       const source = path.join(stage, 'save');
       await this.copy(id, source);

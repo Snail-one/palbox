@@ -1,5 +1,5 @@
 'use strict';
-const { chromium } = require('playwright');
+const { chromium, testOutput } = require('../helpers/browser.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -50,7 +50,7 @@ const path = require('node:path');
     assert.equal(await page.locator('#username-password').inputValue(), '');
     await page.waitForFunction(() => document.getElementById('login-log-content').textContent.includes('管理员用户名已修改'));
     assert.equal((await page.locator('#login-log-status').textContent()).includes('登录已失效'), false);
-    const output = path.resolve('test-results/username'); await fs.mkdir(output, { recursive: true });
+    const output = testOutput('username'); await fs.mkdir(output, { recursive: true });
     await page.screenshot({ path: path.join(output, 'desktop.png') });
     console.log('PASS 用户名表单、当前密码校验、小眼睛、切换清理、改名与会话和日志连接更新');
 

@@ -96,7 +96,7 @@ else: raise RuntimeError('Unexpected mock command: ' + name)
   for (const name of ['id', 'stat', 'useradd', 'apt-get', 'chown', 'dpkg-query', 'install', 'runuser', 'curl', 'systemctl', 'journalctl']) await symlink(mock, path.join(bin, name));
   await symlink('/bin/true', path.join(bin, '7z'));
   const systemd = path.join(directory, 'systemd');
-  const config = path.join(app, '.palbox.env');
+  const config = path.join(app, 'data/palbox/.env');
   const data = path.join(app, 'data');
   const env = { ...process.env, PATH: `${bin}:/usr/bin:/bin`, SUDO_USER: '', PALBOX_NATIVE_TEST_DIR: directory, PALBOX_SYSTEMD_DIR: systemd };
   const invoke = (...args) => run('/bin/bash', [path.join(app, 'install.sh'), ...args], { env, timeout: 10000 });
@@ -108,14 +108,14 @@ test('就地安装使用项目属主和 data，不创建用户或搬迁程序，
   const f = await fixture(t);
   const result = await f.invoke();
   assert.match(result.stdout, /正在下载 node-v24\.0\.0-linux-x64\.tar\.xz/);
-  assert.match(result.stdout, /Node\.js .+ 已安装到 \.runtime\/node/);
+  assert.match(result.stdout, /Node\.js .+ 已安装到 .*data\/runtime\/node/);
   assert.match(result.stdout, /当前没有正在运行的 PalBox 服务/);
   assert.match(result.stdout, /启动检查通过（第 1\/30 次）/);
   assert.match(result.stdout, /正在设置开机启动/);
   assert.match(result.stdout, /安装完成.*开机启动/);
   assert.ok(result.stdout.includes(`运行用户：deployer`));
   assert.ok(result.stdout.includes(`游戏目录：${f.data}/server`));
-  await access(path.join(f.app, '.runtime/node/bin/node'));
+  await access(path.join(f.data, 'runtime/node/bin/node'));
   const config = await readFile(f.config, 'utf8');
   assert.match(config, /HOST=127\.0\.0\.1\n/);
   assert.ok(config.includes(`PALBOX_DATA_DIR=${f.data}\n`));
@@ -127,14 +127,15 @@ test('就地安装使用项目属主和 data，不创建用户或搬迁程序，
   assert.ok(service.includes(`ExecStart=/bin/bash ${f.app}/dev.sh --no-watch`));
   assert.match(service, /KillMode=mixed\nTimeoutStopSec=420/);
   await run('systemd-analyze', ['verify', unit]);
-  assert.deepEqual(await readdir(f.data), []);
+  assert.deepEqual((await readdir(f.data)).sort(), ['cache', 'palbox', 'runtime', 'tmp']);
   await assert.rejects(access(path.join(f.app, 'current')), { code: 'ENOENT' });
   await assert.rejects(access(path.join(f.app, 'releases')), { code: 'ENOENT' });
   const commands = await readFile(path.join(f.directory, 'commands'), 'utf8');
   assert.match(commands, /apt-get install -y --no-install-recommends --no-upgrade lib32gcc-s1\n/);
   assert.doesNotMatch(commands, /apt-get install[^\n]* curl/);
   assert.ok(commands.includes(`install -d -o deployer -g deployer -m 0700 ${f.data}`));
-  assert.doesNotMatch(commands, /useradd|steamstatic|chown -R.*data/);
+  assert.doesNotMatch(commands, /useradd|steamstatic/);
+  assert.ok(!commands.split('\n').some(line => line.startsWith('chown -R ') && line.endsWith(' ' + f.data)));
 });
 
 test('重新安装保留同一 data、配置和程序目录，不重复下载兼容 Node', linux, async t => {
@@ -158,6 +159,40 @@ test('重新安装保留同一 data、配置和程序目录，不重复下载兼
   const commands = await readFile(path.join(f.directory, 'commands'), 'utf8');
   assert.equal(commands.match(/https:\/\/nodejs.org\/dist\/latest-v24.x\/SHASUMS256.txt/g).length, 1);
   assert.equal(commands.match(/apt-get update/g).length, 1);
+});
+
+test('旧目录升级后迁移运行时与配置，复用 Node 并保留所有自定义设置', linux, async t => {
+  const f = await fixture(t);
+  await f.invoke('--port', '9090');
+  const { rename } = await import('node:fs/promises');
+  const legacyConfig = path.join(f.app, '.palbox.env');
+  await rename(f.config, legacyConfig);
+  await rename(path.join(f.data, 'runtime'), path.join(f.app, '.runtime'));
+  await writeFile(legacyConfig, (await readFile(legacyConfig, 'utf8')) + 'PALBOX_GAME_PORT=9999\n');
+  const result = await f.invoke();
+  assert.match(result.stdout, /已可用，跳过下载/);
+  const config = await readFile(f.config, 'utf8');
+  assert.match(config, /PORT=9090\n/); assert.match(config, /PALBOX_GAME_PORT=9999/);
+  await assert.rejects(access(legacyConfig), { code: 'ENOENT' });
+  await assert.rejects(access(path.join(f.app, '.runtime')), { code: 'ENOENT' });
+  await access(path.join(f.data, 'runtime/node/bin/node'));
+  assert.ok((await readdir(path.join(f.data, 'palbox'))).some(name => name.startsWith('legacy-env-')));
+});
+
+test('旧配置升级启动失败时仍保留旧配置，重试后才归档迁移', linux, async t => {
+  const f = await fixture(t);
+  await f.invoke();
+  const { rename } = await import('node:fs/promises');
+  const legacy = path.join(f.app, '.palbox.env');
+  await rename(f.config, legacy);
+  const original = await readFile(legacy, 'utf8');
+  await writeFile(path.join(f.directory, 'fail-start'), 'fail');
+  await assert.rejects(f.invoke('--port', '9090'), /恢复原部署配置/);
+  assert.equal(await readFile(legacy, 'utf8'), original);
+  await assert.rejects(access(f.config), { code: 'ENOENT' });
+  await rm(path.join(f.directory, 'fail-start'));
+  assert.match((await f.invoke()).stdout, /安装完成/);
+  await assert.rejects(access(legacy), { code: 'ENOENT' });
 });
 
 test('项目归 root 时要求明确普通用户，拒绝 root 和不存在的用户', linux, async t => {
@@ -217,6 +252,7 @@ test('首次启动失败可重新安装，其他数据目录配置不会被静�
   await assert.rejects(access(path.join(f.directory, 'enabled')), { code: 'ENOENT' });
   await access(f.data);
   await rm(path.join(f.directory, 'fail-start'));
+  await mkdir(path.dirname(f.config), { recursive: true });
   await writeFile(f.config, 'PALBOX_DATA_DIR=/existing-world\n');
   await assert.rejects(f.invoke(), /已有配置使用其他数据目录/);
   assert.equal(await readFile(f.config, 'utf8'), 'PALBOX_DATA_DIR=/existing-world\n');
@@ -242,7 +278,7 @@ test('卸载停止并移除本项目服务，保留 data、配置和程序', lin
   await assert.rejects(access(path.join(f.directory, 'enabled')), { code: 'ENOENT' });
   assert.equal(await readFile(path.join(f.data, 'world.sav'), 'utf8'), 'world-content');
   await access(f.config);
-  await access(path.join(f.app, '.runtime/node/bin/node'));
+  await access(path.join(f.data, 'runtime/node/bin/node'));
   const commands = await readFile(path.join(f.directory, 'commands'), 'utf8');
   assert.match(commands, /systemctl stop palbox\.service\n/);
   assert.match(commands, /systemctl disable palbox\.service\n/);

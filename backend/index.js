@@ -1,4 +1,4 @@
-import { fileURLToPath } from 'node:url';
+import paths from '../shared/data-paths.cjs';
 import { createServer } from './http-server.js';
 import { Manager } from './management/manager.js';
 import { createManagementApi } from './management/api.js';
@@ -21,7 +21,7 @@ try {
   // The launcher supplies this only when the frontend shares the backend's host.
   // Separate Docker containers may use the same TCP port without a conflict.
   const webPort = process.env.PALBOX_WEB_PORT ? port(process.env.PALBOX_WEB_PORT, 'PALBOX_WEB_PORT') : null;
-  manager = new Manager({ directory: process.env.PALBOX_DATA_DIR || fileURLToPath(new URL('../data', import.meta.url)), steamcmd: process.env.PALBOX_STEAMCMD || undefined, port: port(process.env.PALBOX_GAME_PORT || '8211', 'PALBOX_GAME_PORT'), apiPort: listenPort, webPort, logs: logPolicyFromEnv(process.env) });
+  manager = new Manager({ directory: paths.dataPaths().root, steamcmd: process.env.PALBOX_STEAMCMD || undefined, port: port(process.env.PALBOX_GAME_PORT || '8211', 'PALBOX_GAME_PORT'), apiPort: listenPort, webPort, logs: logPolicyFromEnv(process.env) });
   await manager.initialize();
   const api = createManagementApi(manager, { secureCookie, trustedProxies: process.env.PALBOX_TRUSTED_PROXIES });
   const server = createServer({ api });

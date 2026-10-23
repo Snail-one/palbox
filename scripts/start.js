@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { userInfo } from 'node:os';
 import { assertNonRoot } from '../shared/runtime-user.js';
+import paths from '../shared/data-paths.cjs';
 
 try { assertNonRoot(); }
 catch (error) { console.error(`启动失败：${error.message}`); process.exit(1); }
@@ -11,7 +12,7 @@ const watch = process.argv.includes('--watch');
 const apiPort = process.env.API_PORT || '8081';
 const apiHost = process.env.API_HOST || '127.0.0.1';
 const port = process.env.PORT || '8080';
-const dataDirectory = process.env.PALBOX_DATA_DIR || fileURLToPath(new URL('../data', import.meta.url));
+const dataDirectory = paths.dataPaths().root;
 if (process.env.PALBOX_SERVICE_USER && process.env.PALBOX_SERVICE_USER !== userInfo().username) throw new Error(`请使用配置的系统用户 ${process.env.PALBOX_SERVICE_USER} 启动 PalBox，避免 data 目录权限冲突。`);
 if (apiPort === port) throw new Error('PORT 和 API_PORT 必须使用不同端口。');
 const address = apiHost === '0.0.0.0' ? '127.0.0.1' : apiHost === '::' ? '[::1]' : apiHost.includes(':') ? `[${apiHost}]` : apiHost;

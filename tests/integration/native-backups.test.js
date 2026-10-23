@@ -187,8 +187,8 @@ test('官方恢复失败后的清理错误不能覆盖原错误或回滚失败�
     if (rollbackFails) {
       assert.match(task.message, /恢复回滚失败，原文件已保留在/);
       assert.equal(f.runtime.game, null);
-      const stages = (await readdir(path.join(f.directory, 'backups'))).filter(name => name.startsWith('.official-restore-'));
-      const originals = await Promise.all(stages.map(name => readFile(path.join(f.directory, 'backups', name, 'previous/Level.sav'), 'utf8').catch(() => null)));
+      const stages = (await readdir(path.join(f.directory, 'palbox/transactions'))).filter(name => name.startsWith('.official-restore-'));
+      const originals = await Promise.all(stages.map(name => readFile(path.join(f.directory, 'palbox/transactions', name, 'previous/Level.sav'), 'utf8').catch(() => null)));
       assert.ok(originals.includes('current-world'));
     } else {
       assert.match(task.message, /模拟官方存档写入失败/);
@@ -241,7 +241,7 @@ test('不完整、链接、越界和其他世界的官方备份不能恢复，�
   };
   await assert.rejects(f.manager.native.export(backup.id), /正在写入/);
   assert.equal(f.runtime.game.pid, pid);
-  assert.equal((await readdir(path.join(f.directory, 'backups'))).some(name => name.startsWith('.official-')), false);
+  assert.equal((await readdir(path.join(f.directory, 'palbox/transactions'))).some(name => name.startsWith('.official-')), false);
 });
 
 test('启动移除旧备份分类与保留设置，旧归档不再展示且文件保留', async t => {

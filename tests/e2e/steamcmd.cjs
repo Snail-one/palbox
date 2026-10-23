@@ -1,5 +1,5 @@
 'use strict';
-const { chromium } = require('playwright');
+const { chromium, testOutput } = require('../helpers/browser.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -33,7 +33,7 @@ const path = require('node:path');
     await steamcmd.waitFor({ state: 'visible' });
     await page.waitForFunction(() => !document.querySelector('[data-action="install-steamcmd"]').disabled);
     assert.equal(await game.isDisabled(), true);
-    const output = path.resolve('test-results/steamcmd');
+    const output = testOutput('steamcmd');
     await fs.mkdir(output, { recursive: true });
     await page.screenshot({ path: path.join(output, 'missing-desktop.png'), fullPage: true });
     await steamcmd.click();

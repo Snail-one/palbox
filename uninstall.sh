@@ -3,15 +3,15 @@ set -Eeuo pipefail
 
 app_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 systemd_dir="${PALBOX_SYSTEMD_DIR:-/etc/systemd/system}"
-config_file="$app_dir/.palbox.env"
-data_dir="$app_dir/data"
+data_dir="${PALBOX_DATA_DIR:-$app_dir/data}"
+config_file="$data_dir/palbox/.env"
 
 usage() {
   cat <<'EOF'
 用法：sudo bash ./uninstall.sh
 
 停止并取消开机启动，移除当前项目注册的 palbox.service。
-保留 data/、.palbox.env、.runtime/ 和全部程序文件。
+保留整个数据目录（含配置和运行依赖）以及全部程序文件。
 不删除系统用户或依赖，不要求 Node.js 和应用文件完整。
 
   -h, --help        查看帮助
