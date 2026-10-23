@@ -9,7 +9,6 @@ export function createNavigation({ dom, window, isDirty, onSave, onConfiguration
     '#game/saves': { page: 'saves', view: 'native', title: '官方备份' },
     '#configuration': { page: 'configuration', view: 'editor', mode: 'form', title: '配置编辑' },
     '#configuration/advanced': { page: 'configuration', view: 'editor', mode: 'advanced', title: '配置编辑' },
-    '#configuration/changes': { page: 'configuration', view: 'changes', title: '已修改参数' },
     '#configuration/profiles': { page: 'configuration', view: 'profiles', title: '配置列表' },
     '#login-logs': { page: 'login-logs', title: '登录日志' }
   };
@@ -58,8 +57,6 @@ export function createNavigation({ dom, window, isDirty, onSave, onConfiguration
     const configuring = route.page === 'configuration';
     $('configuration-actions').hidden = !configuring;
     $('configuration-apply').hidden = !configuring;
-    if (configuring && route.view === 'changes') $('show-modified-parameters').setAttribute('aria-current', 'page');
-    else $('show-modified-parameters').removeAttribute('aria-current');
     if (configuring && route.view === 'editor') onConfigurationView(route.mode || 'form');
     $('main').setAttribute('aria-label', route.title);
     document.title = name === route.title ? `PalBox · ${name}` : `PalBox · ${name} · ${route.title}`;

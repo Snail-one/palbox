@@ -7,9 +7,10 @@
 }
 .management-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .management-heading h2 { font-size: 17px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.modified-parameters-page .management-heading { flex-wrap: wrap; }
-.modified-parameters-page .modified-parameters-search { width: min(100%,420px); margin: 16px 0; flex-wrap: nowrap; }
-.modified-parameters-page .modified-parameters-search input[type=search] { flex: 1; width: 100%; min-width: 0; margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.modified-parameters-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+.modified-parameters-dialog .modified-parameters-search { flex: 1; min-width: 180px; flex-wrap: nowrap; }
+.modified-parameters-dialog .modified-parameters-search input[type=search] { flex: 1; width: 100%; min-width: 0; margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.profile-save-state { margin-top: 6px; }
 #configuration-actions { position: fixed; right: 28px; bottom: calc(20px + env(safe-area-inset-bottom)); z-index: 24; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; width: max-content; max-width: calc(100vw - 278px); margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: #fffffff2; box-shadow: 0 10px 36px #3223171f; backdrop-filter: blur(12px); }
 main:has(#configuration-page:not([hidden])) { padding-bottom: calc(150px + env(safe-area-inset-bottom)); }
 .topbar:has(#game-actions:not([hidden])) { height: auto; min-height: 73px; padding-top: 14px; padding-bottom: 14px; gap: 12px; }
@@ -26,7 +27,6 @@ main:has(#configuration-page:not([hidden])) { padding-bottom: calc(150px + env(s
 .configuration-tools .button { min-height: 30px; padding: 6px 10px; border: 0; border-radius: 5px; background: transparent; box-shadow: none; gap: 6px; }
 .configuration-tools .button + .button { border-left: 1px solid var(--line); border-radius: 0; }
 .configuration-tools .button:hover { background: var(--accent-soft); color: var(--accent); }
-.configuration-tools .button[aria-current="page"] { background: var(--accent-soft); color: var(--accent); }
 .configuration-tools .icon { width: 14px; height: 14px; flex-shrink: 0; }
 .sidebar-account-actions { margin-top: 12px; }
 .sidebar-account-actions .button, .sidebar-bottom > .docs-link { display: flex; align-items: center; justify-content: flex-start; width: 100%; min-width: 0; min-height: 44px; gap: 9px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; box-shadow: none; font-size: 11px; }

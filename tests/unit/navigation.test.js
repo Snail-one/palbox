@@ -38,7 +38,7 @@ function setup(hash = '#game') {
   for (const [page, views] of [
     ['game', [['overview', 'game-overview'], ['players', 'game-players-view'], ['chat', 'game-chat-view']]],
     ['saves', [['native', 'saves-native'], ['archives', 'saves-archives']]],
-    ['configuration', [['editor', 'configuration-editor'], ['changes', 'configuration-changes'], ['profiles', 'configuration-profiles']]]
+    ['configuration', [['editor', 'configuration-editor'], ['profiles', 'configuration-profiles']]]
   ]) {
     $(`${page}-navigation`).links = views.map(([view, target]) => {
       const link = new Element();
@@ -146,24 +146,6 @@ test('存档页面与游戏、配置页面互不混用，保存快捷键只作�
   assert.equal(app.$('configuration-actions').hidden, true);
 });
 
-test('已修改参数可直接进入，独立于编辑器和配置列表，返回时保留编辑模式', () => {
-  const app = setup('#configuration/changes');
-  assert.equal(app.$('configuration-changes').hidden, false);
-  assert.equal(app.$('configuration-editor').hidden, true);
-  assert.equal(app.$('configuration-profiles').hidden, true);
-  assert.equal(app.document.title, 'PalBox · 配置管理 · 已修改参数');
-  assert.deepEqual(app.modes, []);
-  const link = app.$('configuration-navigation').links.find(link => link.dataset.view === 'changes');
-  assert.equal(link.getAttribute('aria-current'), 'page');
-  app.go('#configuration/advanced');
-  assert.equal(app.$('configuration-changes').hidden, true);
-  assert.equal(app.$('configuration-editor').hidden, false);
-  assert.deepEqual(app.modes, ['advanced']);
-  app.go('#configuration/changes');
-  assert.deepEqual(app.modes, ['advanced']);
-  assert.equal(app.$('configuration-apply').hidden, false);
-});
-
 test('登录日志有独立导航，直接进入和前后切换不混用游戏或配置页面', () => {
   const app = setup('#login-logs');
   assert.equal(app.document.title, 'PalBox · 登录日志');
@@ -216,7 +198,7 @@ test('中文输入法确认、组合键、长按、弹窗和其他页面不触�
     app.key({ key: 'Enter', ...properties, preventDefault() { assert.fail('不应触发保存'); } });
     assert.equal(app.saves, 0);
   }
-  for (const route of ['#game', '#saves/archives', '#configuration/profiles', '#configuration/changes', '#login-logs', '#configuration']) {
+  for (const route of ['#game', '#saves/archives', '#configuration/profiles', '#login-logs', '#configuration']) {
     const app = setup(route);
     app.document.activeElement = new Element('INPUT', 'field-input');
     if (route === '#configuration') app.document.querySelector = selector => selector === 'dialog[open]' ? {} : null;
