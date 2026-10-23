@@ -21,6 +21,35 @@ EOF
 }
 die() { echo "卸载失败：$*" >&2; exit 1; }
 step() { echo "[PalBox] $*"; }
+text_columns() {
+  local text=$1 i char width=0
+  for (( i = 0; i < ${#text}; i++ )); do
+    char=${text:i:1}
+    if [[ $char == [[:ascii:]] ]]; then width=$((width + 1)); else width=$((width + 2)); fi
+  done
+  printf '%s' "$width"
+}
+print_card() {
+  local title=$1 line width title_width line_width gap dashes
+  shift
+  title_width=$(text_columns "$title")
+  width=$title_width
+  for line in "$@"; do
+    line_width=$(text_columns "$line")
+    if (( line_width > width )); then width=$line_width; fi
+  done
+  if (( width < 28 )); then width=28; fi
+  gap=$((width - title_width - 1))
+  if (( gap < 2 )); then width=$((title_width + 3)); gap=2; fi
+  printf -v dashes '%*s' "$gap" ''
+  printf '╭─ %s %s╮\n' "$title" "${dashes// /─}"
+  for line in "$@"; do
+    gap=$((width - $(text_columns "$line")))
+    printf '│ %s%*s │\n' "$line" "$gap" ''
+  done
+  printf -v dashes '%*s' "$((width + 2))" ''
+  printf '╰%s╯\n' "${dashes// /─}"
+}
 
 while (( $# )); do
   case "$1" in
@@ -39,9 +68,14 @@ command -v systemctl >/dev/null || die '需要 systemd。'
 systemctl show-environment >/dev/null 2>&1 || die 'systemd 未运行，请在正常启动的服务器上执行。'
 
 if [[ ! -f "$unit_file" ]]; then
-  step '当前项目没有已注册的开机服务。'
-  echo "程序目录：$app_dir"
-  echo "数据目录：$data_dir"
+  echo
+  print_card '卸载' \
+    '状态：当前项目没有已注册的开机服务' \
+    "程序目录：$app_dir" \
+    "部署配置：$config_file" \
+    "数据目录：$data_dir" \
+    '配置、存档、备份和程序仍在以上目录。' \
+    '再次启用：sudo bash ./install.sh'
   exit 0
 fi
 
@@ -59,10 +93,12 @@ rm -f -- "$unit_file"
 systemctl daemon-reload
 systemctl reset-failed palbox.service >/dev/null 2>&1 || true
 
-step '已停止并取消开机启动。'
-echo "已移除：$unit_file"
-echo "程序目录：$app_dir"
-echo "部署配置：$config_file"
-echo "数据目录：$data_dir"
-echo '配置、存档、备份和程序仍在以上目录。'
-echo '再次启用：sudo bash ./install.sh'
+echo
+print_card '卸载' \
+  '状态：已停止并取消开机启动' \
+  "已移除：$unit_file" \
+  "程序目录：$app_dir" \
+  "部署配置：$config_file" \
+  "数据目录：$data_dir" \
+  '配置、存档、备份和程序仍在以上目录。' \
+  '再次启用：sudo bash ./install.sh'
