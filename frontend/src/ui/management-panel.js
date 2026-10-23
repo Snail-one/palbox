@@ -3,6 +3,7 @@ import { createSaveImportDialog } from './save-import-dialog.js';
 import { formatBytes } from './format.js';
 import { gameServiceState } from './game-service-state.js';
 import { createRunningConfigPanel } from './running-config-panel.js';
+import { createConfigurationDiffDialog } from './configuration-diff-dialog.js';
 import { compactLogDisplay } from './log-display.js';
 import { createTimeFormatter } from './time.js';
 import { createBackupRetentionAutosave } from './backup-retention-autosave.js';
@@ -30,7 +31,7 @@ function uptimeLabel(seconds) {
   return `${Math.floor(hours / 24)}天${hours % 24 ? `${hours % 24}小时` : ''}`;
 }
 
-export function createManagementPanel({ dom, api, ask, notify, getConfiguration, onDefaultsImported, onWorkspaceChanged }) {
+export function createManagementPanel({ dom, api, ask, notify, getConfiguration, onDefaultsImported, onWorkspaceChanged, onConfigurationDiff }) {
   const { $, document } = dom;
   const timeFormat = createTimeFormatter();
   const NATIVE_BACKUP_PAGE_SIZE = 10;
@@ -277,6 +278,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     } finally { button.disabled = false; }
   });
   let runningRead = 0;
+  createConfigurationDiffDialog({ dom, api });
   const runningPanel = createRunningConfigPanel({ dom });
   $('show-running-config').addEventListener('click', async () => {
     const dialog = $('running-config-dialog');
@@ -832,6 +834,24 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     }
     return 'local';
   }
+  let pendingSignature = null;
+  let pendingRead = 0;
+  function updatePendingFields(value) {
+    if (!onConfigurationDiff) return;
+    const visible = !$('configuration-page').hidden;
+    const signature = visible && value.hasConfiguration !== false && value.configuration === 'pending'
+      ? JSON.stringify([value.stateInstance, value.revision, value.running, value.startedAt]) : 'clear';
+    if (value.task && signature !== 'clear') return;
+    if (signature === pendingSignature) return;
+    pendingSignature = signature;
+    const read = ++pendingRead;
+    onConfigurationDiff(null);
+    if (signature === 'clear') return;
+    void api.request('configuration-diff').then(differences => {
+      if (read !== pendingRead || $('configuration-page').hidden || differences.revision !== lastStatus?.revision) return;
+      onConfigurationDiff(differences);
+    }).catch(() => { /* The status stays pending; the details dialog can report read errors. */ });
+  }
   function renderStatus(snapshot) {
     if (retiredStatusInstances.has(snapshot.stateInstance)) return false;
     const sameInstance = snapshot.stateInstance === lastStatus?.stateInstance;
@@ -854,6 +874,8 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       : value.running ? '配置已写入，正在等待游戏管理接口就绪。'
       : '配置已写入游戏文件，启动服务器后生效。';
     config.setAttribute('aria-label', `游戏配置：${config.textContent}。${config.title}`);
+    $('show-pending-config').hidden = value.hasConfiguration === false || value.configuration !== 'pending';
+    updatePendingFields(value);
     $('game-version').textContent = value.version || value.info?.version || (value.installed ? '启动后获取' : '未安装');
     $('game-build').textContent = value.installedBuild || '—';
     $('game-build-meta').hidden = !value.installedBuild;
@@ -950,6 +972,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   async function refresh(options = {}) {
     syncLogs(); syncStatus();
     if (stopped || !pageActive || document.hidden) return;
+    if (options.syncDefaults) pendingSignature = null;
     const scope = options.scope || currentScope();
     if (refreshing) { pendingRefresh = { scope, syncDefaults: options.syncDefaults || pendingRefresh?.syncDefaults }; return; }
     refreshing = true;

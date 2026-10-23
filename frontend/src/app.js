@@ -191,6 +191,9 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
       profiles.render();
     }
     if (revision > repository.revision && !isDirty() && !document.querySelector('dialog[open]')) window.location.reload();
+  }, onConfigurationDiff(value) {
+    if (value && (value.profileId !== workspace.active?.id || value.revision !== repository.revision)) return;
+    panel.setPendingConfiguration(value);
   }, onDefaultsImported() {
     if (!isDirty() && !document.querySelector('dialog[open]')) window.location.reload();
     else notifications.toast('官方默认配置已导入，请复制当前草稿后刷新页面。');

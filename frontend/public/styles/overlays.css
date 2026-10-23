@@ -175,6 +175,22 @@ dialog::backdrop {
   overflow-wrap: anywhere;
 }
 
+.pending-config-dialog { width: min(900px,calc(100vw - 28px)); }
+.pending-config-list { max-height: 52dvh; overflow: auto; overscroll-behavior: contain; }
+.pending-config-entry { padding: 14px; margin: 12px 0; border: 1px solid var(--line); border-radius: 8px; }
+.pending-config-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.pending-config-heading h3 { margin: 0 auto 0 0; font-size: 13px; }
+.pending-config-entry .field-key { margin: 6px 0 12px; }
+.pending-config-values { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.pending-config-values.with-running { grid-template-columns: repeat(3,minmax(0,1fr)); }
+.pending-config-value { min-width: 0; }
+.pending-config-label { display: block; margin-bottom: 6px; font-size: 11px; color: var(--muted); }
+.pending-config-raw { margin: 0; padding: 9px; border-radius: 6px; background: var(--input-bg); font: 12px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .pending-config-dialog { padding: 18px; }
+  .pending-config-values, .pending-config-values.with-running { grid-template-columns: minmax(0,1fr); }
+}
+
 .running-config-dialog { width: min(1040px,calc(100vw - 28px)); }
 .running-config-dialog > .source-caption, .running-config-dialog #running-json .source-caption { margin: 12px 0 4px; padding: 0; border: 0; background: transparent; }
 .running-config-dialog .dialog-heading { margin-bottom: 8px; }

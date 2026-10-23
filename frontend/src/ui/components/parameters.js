@@ -3,6 +3,7 @@ import { createParameterEvidence } from './parameter-evidence.js';
 import { createAdminPasswordControl } from './admin-password.js';
 import { encodeString } from '../../../../shared/domain/config.js';
 import { updateModifiedBadge } from './modified-badge.js';
+import { updatePendingBadge } from './pending-badge.js';
 
 export function createParameterView({ dom, editor, catalog, view, ask, onChanged }) {
   const { $, el, icon, empty } = dom;
@@ -30,6 +31,7 @@ export function createParameterView({ dom, editor, catalog, view, ask, onChanged
       : '没有匹配的参数。';
     for (const entry of entries) {
       const row = el('tr', isModified(entry.key) ? 'modified' : '');
+      row.dataset.editorKey = entry.key;
       const name = el('td', '', entry.key);
       const field = catalog.fields[entry.key];
       if (field) {
@@ -44,6 +46,7 @@ export function createParameterView({ dom, editor, catalog, view, ask, onChanged
         updateResetButton(entry.key, name);
       }
       const cell = el('td');
+      updatePendingBadge(dom, name.querySelector('.parameter-heading') || name, view.pendingKeys?.has(entry.key));
       const wrap = el('div', 'input-wrap');
       const secret = catalog.fields[entry.key]?.secret;
       const input = el('input', `raw-input${secret ? ' field-secret' : ''}`);

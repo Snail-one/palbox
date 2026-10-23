@@ -29,6 +29,7 @@
     "test:e2e:logs": "node tests/e2e/logs.cjs",
     "test:e2e:on-demand": "node tests/e2e/on-demand.cjs",
     "test:e2e:running": "node tests/e2e/running-config.cjs",
+    "test:e2e:pending": "node tests/e2e/pending-configuration.cjs",
     "test:e2e:field-reset": "node tests/e2e/field-reset.cjs",
     "test:e2e:reset": "node tests/e2e/save-reset.cjs",
     "test:e2e:imports": "node tests/e2e/save-imports.cjs",

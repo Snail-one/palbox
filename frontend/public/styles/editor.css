@@ -154,7 +154,7 @@
   flex-wrap: wrap;
 }
 
-.modified-badge, .verification-badge {
+.modified-badge, .verification-badge, .pending-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -170,6 +170,7 @@
   vertical-align: middle;
 }
 .modified-badge { border-color: #edc5aa; background: var(--accent-soft); color: var(--accent); }
+.pending-badge { border-color: #ead39c; background: #fff7df; color: #89651b; }
 
 .field-reset { display: inline-flex; align-items: center; justify-content: center; min-height: 26px; padding: 3px 7px; border: 1px solid var(--line); border-radius: 5px; background: #fff; color: var(--muted); font: inherit; font-size: 10px; white-space: nowrap; flex-shrink: 0; }
 .field-reset:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }

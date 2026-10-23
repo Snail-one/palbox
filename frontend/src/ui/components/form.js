@@ -3,6 +3,7 @@ import { createFieldFeedback } from './field-feedback.js';
 import { createParameterEvidence } from './parameter-evidence.js';
 import { createAdminPasswordControl } from './admin-password.js';
 import { updateModifiedBadge } from './modified-badge.js';
+import { updatePendingBadge } from './pending-badge.js';
 
 export function createFormView({ dom, editor, catalog, view, ask, onCategory, onChanged }) {
   const { $, el, icon, empty, document } = dom;
@@ -45,12 +46,14 @@ export function createFormView({ dom, editor, catalog, view, ask, onCategory, on
       const f = catalog.fields[entry.key];
       const value = raw(entry.key);
       const box = el('div', `field${f.wide ? ' wide' : ''}${f.type === 'boolean' ? ' boolean-field' : ''}`);
+      box.dataset.editorKey = entry.key;
       const label = fieldLabel(f);
       const keyLabel = el('div', 'field-key', entry.key);
       const descriptionId = `desc-${entry.key}`;
       const heading = el('div', 'parameter-heading');
       heading.append(label, createParameterEvidence(dom, f, descriptionId));
       updateModifiedBadge(dom, heading, isModified(entry.key));
+      updatePendingBadge(dom, heading, view.pendingKeys?.has(entry.key));
       updateResetButton(entry.key, heading);
       const errorNode = el('p', 'field-error', editor.error(entry.key));
       errorNode.id = `error-${entry.key}`;

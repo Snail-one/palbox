@@ -1,11 +1,13 @@
 import { createFormView } from './components/form.js';
 import { createParameterView } from './components/parameters.js';
 import { createSourceEditor } from './components/source-editor.js';
+import { updatePendingBadge } from './components/pending-badge.js';
 
 export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged, ready, onViewChanged, workspace }) {
   const { $ } = dom;
   // Navigation/filter state is local to the UI; it never enters saved profiles.
-  const view = { group: 'server', mode: 'form', advanced: 'table', search: '', unknownOnly: false, unverifiedOnly: false };
+  const view = { group: 'server', mode: 'form', advanced: 'table', search: '', unknownOnly: false, unverifiedOnly: false, pendingKeys: new Set() };
+  let pendingProfileId = null;
   const form = createFormView({ dom, editor, catalog, view, ask, onChanged, onCategory(group) {
     view.group = group;
     view.search = '';
@@ -17,6 +19,7 @@ export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged
   const source = createSourceEditor({ dom, editor, ask, notify, onChanged });
 
   function render() {
+    if (pendingProfileId !== workspace.active?.id) view.pendingKeys.clear();
     $('configuration-editor-content').hidden = !workspace.active;
     $('configuration-empty').hidden = Boolean(workspace.active);
     const origin = workspace.active?.origin || '已有配置';
@@ -88,7 +91,16 @@ export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged
       parameters.render();
     });
   }
-  return { render, setMode(mode) {
+  return { render, setPendingConfiguration(value) {
+    pendingProfileId = workspace.active?.id;
+    view.pendingKeys = new Set(value?.changes.map(change => change.key) ?? []);
+    for (const root of [$('fields-grid'), $('parameter-rows')]) {
+      for (const node of root.querySelectorAll('[data-editor-key]')) {
+        const heading = node.querySelector('.parameter-heading') || node.firstElementChild;
+        updatePendingBadge(dom, heading, view.pendingKeys.has(node.dataset.editorKey));
+      }
+    }
+  }, setMode(mode) {
     if (view.mode === mode) return;
     view.mode = mode;
     render();

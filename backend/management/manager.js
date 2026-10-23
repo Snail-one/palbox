@@ -878,6 +878,37 @@ export class Manager extends EventEmitter {
     this.playerHistoryRecorder.revision++; this.changed();
     return result;
   }
+  async configurationDiff() {
+    const active = this.store.active();
+    if (!active) throw failure('尚无可用配置，请先新建或选择配置。', 409);
+    const revision = this.store.revision;
+    const game = this.runtime.game;
+    const runningSource = game ? this.runtime.runningSource : null;
+    const desired = output(active.source);
+    let disk = null;
+    try { disk = output(await readFile(this.runtime.config, 'utf8')); }
+    catch (error) {
+      if (error.code !== 'ENOENT') throw failure(`无法读取已写入的游戏配置：${error.message}`, 409);
+    }
+    if (this.runtime.game !== game || this.store.revision !== revision) throw failure('配置或游戏进程已变化，请重新查看差异。', 409);
+    const running = runningSource ? output(runningSource) : null;
+    const entries = source => new Map(source === null ? [] : parse(source).entries.map(({ key, raw }) => [key, raw.trim()]));
+    const expected = entries(desired), written = entries(disk), started = entries(running);
+    const changes = [];
+    for (const key of new Set([...expected.keys(), ...written.keys(), ...started.keys()])) {
+      const desiredValue = expected.get(key) ?? null;
+      const writtenValue = written.get(key) ?? null;
+      const runningValue = started.get(key) ?? null;
+      const needsWrite = desiredValue !== writtenValue;
+      const needsRestart = Boolean(game && running !== null && desiredValue !== runningValue);
+      if (needsWrite || needsRestart) changes.push({ key, desiredValue, writtenValue, runningValue, needsWrite, needsRestart });
+    }
+    return {
+      profileId: active.id, profileName: active.name, revision, running: Boolean(game), runningKnown: running !== null,
+      diskExists: disk !== null, changes,
+      formatOnly: !changes.length && (disk !== desired || (running !== null && running !== desired))
+    };
+  }
   async runningConfiguration() {
     const game = this.runtime.game;
     if (!game) return { running: false };

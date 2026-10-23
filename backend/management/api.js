@@ -137,6 +137,7 @@ export function createManagementApi(manager, options = {}) {
         json(200, await manager.status({ scope })); return;
       }
       if (pathname === '/api/running' && request.method === 'GET') { json(200, await manager.runningConfiguration()); return; }
+      if (pathname === '/api/configuration-diff' && request.method === 'GET') { json(200, await manager.configurationDiff()); return; }
       if (pathname === '/api/banned-players' && request.method === 'GET') { json(200, await manager.bannedPlayers()); return; }
       if (pathname === '/api/player-history' && request.method === 'GET') {
         const query = new URL(request.url, 'http://localhost').searchParams;
