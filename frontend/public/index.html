@@ -56,6 +56,7 @@
         <a id="nav-configuration" class="workspace-link sidebar-active" href="#configuration" aria-controls="configuration-page" aria-current="page"><svg class="icon"><use href="#i-grid"/></svg>配置管理</a>
         <nav id="configuration-navigation" class="workspace-subnav" aria-label="配置管理二级菜单">
           <a id="nav-configuration-form" href="#configuration" data-view="editor" aria-controls="configuration-editor">配置编辑</a>
+          <a id="nav-configuration-changes" href="#configuration/changes" data-view="changes" aria-controls="configuration-changes">已修改参数</a>
           <a id="nav-configuration-profiles" href="#configuration/profiles" data-view="profiles" aria-controls="configuration-profiles">配置列表</a>
         </nav>
         <a id="nav-login-logs" class="workspace-link" href="#login-logs" aria-controls="login-logs-page"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg>登录日志</a>
@@ -120,7 +121,14 @@
             <button id="delete-profile" class="button secondary danger-hover" aria-label="删除当前配置"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>删除</button>
           </div>
         </section>
-        <div class="summary-card"><div><span class="summary-label">已修改参数</span><div><strong id="change-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption"><span class="save-status" id="change-caption" role="status" data-state="saved" title="所有有效修改已自动保存到服务器。" aria-label="所有有效修改已自动保存到服务器。">已保存</span></span></div><button type="button" class="summary-card summary-link" id="unknown-summary" aria-label="查看和编辑未识别参数"><div><span class="summary-label">未识别参数</span><div><strong id="unknown-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption">点击集中查看和编辑 →</span></button></div>
+        <button type="button" class="summary-card summary-link" id="modified-summary" aria-label="查看所有已修改参数"><div><span class="summary-label">已修改参数</span><div><strong id="change-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption"><span class="save-status" id="change-caption" role="status" data-state="saved" title="所有有效修改已自动保存到服务器。" aria-label="所有有效修改已自动保存到服务器。">已保存</span></span></button><button type="button" class="summary-card summary-link" id="unknown-summary" aria-label="查看和编辑未识别参数"><div><span class="summary-label">未识别参数</span><div><strong id="unknown-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption">点击集中查看和编辑 →</span></button></div>
+        <section id="configuration-changes" class="management-panel modified-parameters-page" aria-labelledby="modified-parameters-title" hidden>
+          <div class="management-heading"><h2 id="modified-parameters-title">已修改参数</h2><span id="modified-parameters-count" class="subtle-tag" role="status"></span></div>
+          <p id="modified-parameters-note" class="management-note"></p>
+          <label class="search-box modified-parameters-search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="modified-parameters-search" type="search" placeholder="搜索参数名或中文说明…" aria-label="搜索已修改参数"></label>
+          <div id="modified-parameters-list"></div>
+          <p id="modified-parameters-empty" class="management-note" role="status" hidden></p>
+        </section>
         <section id="configuration-profiles" class="configuration-library" aria-labelledby="configuration-library-title" hidden>
           <div class="configuration-library-heading"><div><h2 id="configuration-library-title">我的配置 <span id="profile-count" class="subtle-tag">0</span></h2><p>选择当前配置，点击名称可查看或导入。最多保留 10 套配置（含游戏默认配置）。</p></div><button class="button primary" id="new-profile"><svg class="icon"><use href="#i-plus"/></svg>新建配置</button></div>
           <div id="profile-list" class="profile-list"></div>

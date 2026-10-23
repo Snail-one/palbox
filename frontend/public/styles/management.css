@@ -7,6 +7,9 @@
 }
 .management-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .management-heading h2 { font-size: 17px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.modified-parameters-page .management-heading { flex-wrap: wrap; }
+.modified-parameters-page .modified-parameters-search { width: min(100%,420px); margin: 16px 0; flex-wrap: nowrap; }
+.modified-parameters-page .modified-parameters-search input[type=search] { flex: 1; width: 100%; min-width: 0; margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; }
 .topbar:has(#configuration-actions:not([hidden])) { height: auto; min-height: 73px; flex-wrap: wrap; padding-top: 12px; padding-bottom: 12px; }
 .topbar .page-actions { align-items: center; justify-content: flex-end; }
 .topbar:has(#game-actions:not([hidden])) { height: auto; min-height: 73px; padding-top: 14px; padding-bottom: 14px; gap: 12px; }

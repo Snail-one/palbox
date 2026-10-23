@@ -11,6 +11,7 @@ import { createNavigation } from './ui/navigation.js';
 import { createManagementPanel } from './ui/management-panel.js';
 import { createLoginLogsPanel } from './ui/login-logs-panel.js';
 import { createAccountSecurity } from './ui/account-security.js';
+import { createModifiedParametersPage } from './ui/modified-parameters-page.js';
 
 /** Composition root: connect UI callbacks to domain/application services. */
 export function createApp({ document, window, catalog, repository, clipboard, files, management }) {
@@ -61,6 +62,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
     }
     // Keep the editor and focused control intact, including invalid/source drafts.
     summary.render();
+    modifiedParameters?.render();
     if (success && !automatic) {
       repository.flush().then(saved => notifications.toast(saved ? '所有有效修改已保存到服务器' : repository.error, !saved));
     }
@@ -75,9 +77,12 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
       notifications.toast('完整 INI 配置已复制到剪贴板');
     } catch { notifications.toast('复制失败，请允许剪贴板访问，或在「高级编辑 → 输出源码」中手动复制。', true); }
   }
-  let panel;
+  let panel, modifiedParameters;
   const navigation = createNavigation({ dom, window, isDirty, onSave: save, onConfigurationView: mode => panel?.setMode(mode) });
   panel = createEditorPanel({ dom, editor, catalog, ask, notify: notifications.toast, onChanged: () => save({ automatic: true }), ready, onViewChanged: navigation.openEditor, workspace });
+  modifiedParameters = createModifiedParametersPage({ dom, editor, catalog, workspace });
+  window.addEventListener('hashchange', () => modifiedParameters.render());
+  dom.$('modified-summary').addEventListener('click', () => { window.location.hash = '#configuration/changes'; modifiedParameters.render(); });
   navigation.refresh();
   async function saveProfileSource(id, source, message = '配置源码已保存') {
     if (!workspace.updateSource(id, source)) throw new Error(workspace.message || '保存失败，请复制备份后重试。');
@@ -182,7 +187,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
   });
   dom.$('header-copy-button').addEventListener('click', copy);
   dom.$('copy-output').addEventListener('click', copyOutput);
-  function render() { profiles.render(); panel.render(); summary.render(); }
+  function render() { profiles.render(); panel.render(); summary.render(); modifiedParameters.render(); }
   render();
   notifications.storage(workspace.message);
   const managementPanel = createManagementPanel({ dom, api: management, ask, notify: notifications.toast, onWorkspaceChanged(revision, defaults) {
@@ -194,6 +199,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
   }, onConfigurationDiff(value) {
     if (value && (value.profileId !== workspace.active?.id || value.revision !== repository.revision)) return;
     panel.setPendingConfiguration(value);
+    modifiedParameters.setPendingConfiguration(value);
   }, onDefaultsImported() {
     if (!isDirty() && !document.querySelector('dialog[open]')) window.location.reload();
     else notifications.toast('官方默认配置已导入，请复制当前草稿后刷新页面。');
@@ -207,6 +213,7 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
   repository.subscribe?.(() => {
     notifications.storage(repository.error || workspace.message);
     summary.render();
+    modifiedParameters.render();
     if (!repository.pending && !repository.error) managementPanel?.refresh();
   });
 }

@@ -1,0 +1,82 @@
+'use strict';
+const { chromium, testOutput } = require('../helpers/browser.cjs');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+
+(async () => {
+  const { managementFixture } = await import('../helpers/management-fixture.js');
+  const { applyManagedChanges } = await import('../../shared/domain/config.js');
+  const f = await managementFixture();
+  let browser;
+  try {
+    await f.login(); await f.task('install'); await f.task('start');
+    const snapshot = f.manager.store.snapshot();
+    const active = snapshot.workspace.profiles.find(profile => profile.id === snapshot.workspace.activeId);
+    active.source = applyManagedChanges(active.source, new Map([
+      ['ExpRate', '2.5'], ['PalCaptureRate', '3'], ['AdminPassword', '"modified-private-password"'],
+      ['ServerName', '"<img src=x onerror=alert(1)>"'], ['UnknownFlag', '(Enabled=True,Rate=7)']
+    ]));
+    await f.manager.store.update(snapshot.workspace, snapshot.revision);
+    browser = await chromium.launch({ headless: true });
+    const context = await browser.newContext({ viewport: { width: 1280, height: 1000 } });
+    await context.request.post(f.base + '/api/login', { data: { username: f.username, password: f.password } });
+    const page = await context.newPage();
+    const errors = []; page.on('pageerror', error => errors.push(error.message));
+    await page.goto(f.base + '/#configuration/changes');
+    const changes = page.locator('#configuration-changes');
+    const card = key => changes.locator(`[data-modified-key="${key}"]`);
+    await card('PalCaptureRate').locator('.pending-badge').waitFor();
+    assert.equal(await page.title(), 'PalBox · 配置管理 · 已修改参数');
+    assert.equal(await page.locator('#configuration-editor').isVisible(), false);
+    assert.equal(await page.locator('#configuration-profiles').isVisible(), false);
+    assert.equal(await page.locator('#nav-configuration-changes').getAttribute('aria-current'), 'page');
+    const count = Number(await page.locator('#change-count').textContent());
+    assert.equal(await changes.locator('[data-modified-key]').count(), count);
+    assert.match(await card('ExpRate').locator('[data-diff-value="original"]').textContent(), /1\.000000/);
+    assert.match(await card('ExpRate').locator('[data-diff-value="current"]').textContent(), /2\.500000/);
+    assert.match(await card('UnknownFlag').locator('[data-diff-value="original"]').textContent(), /未设置/);
+    assert.match(await card('UnknownFlag').textContent(), /Enabled=True,Rate=7/);
+    assert.equal(await changes.locator('img').count(), 0);
+    const password = card('AdminPassword').locator('[data-diff-value="current"] input');
+    assert.equal(await password.getAttribute('type'), 'password');
+    await card('AdminPassword').locator('[data-diff-value="current"] button').click();
+    assert.equal(await password.getAttribute('type'), 'text');
+    const search = page.locator('#modified-parameters-search');
+    await search.fill('捕捉');
+    assert.equal(await changes.locator('[data-modified-key]').count(), 1);
+    assert.match(await changes.textContent(), /帕鲁捕捉倍率/);
+    await search.fill('modified-private-password');
+    assert.equal(await changes.locator('[data-modified-key]').count(), 0, '搜索不匹配密码值');
+    await search.fill('');
+    const output = testOutput('modified-parameters'); await fs.mkdir(output, { recursive: true });
+    await page.screenshot({ path: path.join(output, 'desktop.png'), animations: 'disabled' });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: path.join(output, 'mobile.png'), animations: 'disabled' });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.evaluate(() => { location.hash = '#game'; });
+    await changes.waitFor({ state: 'hidden' });
+    assert.equal(await changes.locator('input[type="password"], input[type="text"]').count(), 0);
+    await page.evaluate(() => { location.hash = '#configuration'; });
+    await page.locator('#configuration-editor').waitFor();
+    await page.locator('#modified-summary').click();
+    await card('ExpRate').waitFor();
+    await card('ExpRate').locator('.pending-badge').waitFor();
+    const applied = await f.task('apply', { revision: f.manager.store.revision, profileId: active.id });
+    assert.equal(applied.state, 'succeeded');
+    await page.waitForFunction(() => !document.querySelector('#configuration-changes .pending-badge'));
+    assert.equal(await changes.locator('[data-modified-key]').count(), count, '应用后仍保留相对初始配置的全部修改');
+    await page.reload(); await card('PalCaptureRate').waitFor();
+    assert.equal(await changes.locator('[data-modified-key]').count(), count);
+    const reset = f.manager.store.snapshot();
+    const working = reset.workspace.profiles.find(profile => profile.id === reset.workspace.activeId);
+    working.source = working.initialSource;
+    await f.manager.store.update(reset.workspace, reset.revision);
+    await page.reload();
+    await page.locator('#modified-parameters-empty').waitFor();
+    assert.equal(await changes.locator('[data-modified-key]').count(), 0);
+    assert.match(await page.locator('#modified-parameters-empty').textContent(), /没有相对初始基准的修改/);
+    assert.deepEqual(errors, []);
+    console.log('PASS 已修改参数独立页面、统计卡入口、全部修改与原值对比、待生效状态、搜索、未知参数、密码遮挡、离开清空、应用后保留、刷新恢复、空状态和手机布局');
+  } finally { await browser?.close(); await f.close(); }
+})().catch(error => { console.error(error); process.exitCode = 1; });
