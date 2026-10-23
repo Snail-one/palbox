@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { detectArchive, detectSnapshot, SaveImports } from '../../backend/management/save-imports.js';
-import { NativeBackups } from '../../backend/management/native-backups.js';
 import { mkdtemp, mkdir, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -113,7 +112,7 @@ test('拒绝穿越、绝对路径、反斜杠、重复路径和文件作为父�
 async function importFixture(t, limits = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'palbox-import-limits-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const imports = new SaveImports({ directory, native: new NativeBackups('', directory), limits });
+  const imports = new SaveImports({ directory, limits });
   await imports.initialize();
   const source = path.join(directory, 'source');
   await mkdir(source);

@@ -94,7 +94,6 @@ export function detectSnapshot(entries) {
   if (!level || !meta) throw failure('世界存档不完整，需要 Level.sav 和 LevelMeta.sav。');
   if (!level.size || !meta.size) throw failure('世界存档文件为空，无法导入。');
   const copy = [...files.keys()].filter(name => name.startsWith(prefix) && (root || !/^(?:Config|Logs)\//.test(name))).map(name => name.slice(prefix.length));
-  if (!copy.includes('Level.sav') || !copy.includes('LevelMeta.sav')) throw failure('世界存档不完整。');
   return { kind: 'world', root, layout, worldId, copy, ...(configurationPath ? { configurationPath } : {}) };
 }
 
