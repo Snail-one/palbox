@@ -1,4 +1,3 @@
-import { decodeString } from '../../../../shared/domain/config.js';
 import { savedTime } from '../dom.js';
 
 export function createSummary({ dom, editor, workspace, catalog, isDirty, persistence = {} }) {
@@ -32,7 +31,7 @@ export function createSummary({ dom, editor, workspace, catalog, isDirty, persis
       badge.title = status.detail;
       badge.setAttribute('aria-label', status.detail);
       $('profile-title').textContent = profile?.name ?? '暂无可用配置';
-      $('profile-server').textContent = profile ? decodeString(editor.raw('ServerName') || 'PalWorldSettings.ini') : '请安装服务端或手动新建配置';
+      $('profile-title').title = $('profile-title').textContent;
       $('profile-updated').textContent = profile ? savedTime(profile.updatedAt) : '';
       document.title = `${isDirty() ? '● ' : ''}${document.title.replace(/^● /, '')}`;
     }

@@ -107,18 +107,24 @@
           </section>
         </section>
         <section id="configuration-page" aria-label="配置管理">
-        <div class="summary-grid"><div class="summary-card"><div><span class="summary-label">配置参数</span><div><strong id="parameter-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption" id="recognition-summary">官方说明与社区解释分别标注</span></div><div class="summary-card"><div><span class="summary-label">最大在线人数</span><div><strong id="player-count">—</strong><span class="summary-unit">人</span></div></div><span class="summary-caption">一起探索这个世界</span></div>
+        <div class="summary-grid">
+        <button type="button" class="summary-card summary-link" id="parameter-summary" aria-label="打开可视化编辑" aria-controls="view-form" title="打开可视化编辑"><div><span class="summary-label">配置参数</span><div><strong id="parameter-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption" id="recognition-summary">官方说明与社区解释分别标注</span></button>
+        <div class="summary-card"><div><span class="summary-label">最大在线人数</span><div><strong id="player-count">—</strong><span class="summary-unit">人</span></div></div><span class="summary-caption">一起探索这个世界</span></div>
         <section class="profile-overview" aria-labelledby="profile-title">
           <div class="profile-info">
-            <div class="profile-title-row"><h2 id="profile-title"></h2><span class="tag">INI 配置</span></div>
-            <div class="profile-details"><span id="profile-server"></span><span class="detail-separator" aria-hidden="true">·</span><span id="profile-origin">来源：—</span><span class="detail-separator" aria-hidden="true">·</span><span id="profile-updated"></span></div>
-            <span id="profile-default-status" class="profile-default-status" hidden></span>
-            <div class="profile-save-state"><span class="save-status" id="change-caption" role="status" data-state="saved" title="所有有效修改已自动保存到服务器。" aria-label="所有有效修改已自动保存到服务器。">已保存</span></div>
+            <div class="profile-heading">
+              <div class="profile-title-row"><h2 id="profile-title"></h2><span class="tag">INI 配置</span></div>
+              <span class="save-status" id="change-caption" role="status" data-state="saved" title="所有有效修改已自动保存到服务器。" aria-label="所有有效修改已自动保存到服务器。">已保存</span>
+            </div>
+            <div class="profile-details"><span id="profile-origin">来源：—</span><span id="profile-updated"></span></div>
+            <div class="profile-statuses">
+              <span id="profile-default-status" class="profile-default-status" hidden></span>
+            </div>
           </div>
           <div class="profile-tools" role="group" aria-label="当前配置操作">
             <button id="view-profile-source" class="button secondary" aria-label="查看配置源码" title="查看当前配置的输入源码"><svg class="icon" aria-hidden="true"><use href="#i-code"/></svg>查看</button>
             <button id="rename-profile" class="button secondary" aria-label="重命名配置"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg>重命名</button>
-            <button id="copy-profile" class="button secondary" aria-label="创建当前配置的副本"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg>创建副本</button>
+            <button id="copy-profile" class="button secondary" aria-label="创建当前配置的副本"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg>副本</button>
             <button id="delete-profile" class="button secondary danger-hover" aria-label="删除当前配置"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>删除</button>
           </div>
         </section>

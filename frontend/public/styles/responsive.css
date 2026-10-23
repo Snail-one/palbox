@@ -147,16 +147,8 @@
     font-size: 24px;
   }
 
-  .profile-overview {
-    padding: 18px;
-  }
-
   .profile-title-row h2 {
     font-size: 16px;
-  }
-
-  .profile-details {
-    font-size: 9px;
   }
 
   .summary-grid {
@@ -214,14 +206,6 @@
 
   h1 {
     font-size: 24px;
-  }
-
-  .profile-overview {
-    gap: 12px;
-  }
-
-  .profile-details {
-    gap: 3px;
   }
 
   .summary-caption {
@@ -338,26 +322,12 @@
     letter-spacing: -.7px;
   }
 
-  .profile-overview {
-    padding: 16px 12px;
-    gap: 10px;
-  }
-
   .profile-title-row {
     gap: 7px;
   }
 
   .profile-title-row h2 {
     font-size: 16px;
-  }
-
-  .profile-details {
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .profile-details .detail-separator {
-    display: none;
   }
 
   .profile-tools .icon {

@@ -285,19 +285,13 @@ h1 {
 }
 
 .summary-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(240px, 1.65fr) repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(280px, 2.4fr) repeat(2, minmax(0, 1fr));
   align-items: stretch;
+  gap: 12px;
 }
 
-.summary-grid > .profile-overview { max-width: none; min-width: 0; margin: 0; padding: 16px; gap: 12px; justify-content: center; }
-.summary-grid > .profile-overview .profile-title-row { gap: 6px; }
-.summary-grid > .profile-overview h2 { font-size: 14px; }
-.summary-grid > .profile-overview .profile-details { flex-direction: column; gap: 3px; }
-.summary-grid > .profile-overview .detail-separator { display: none; }
-.summary-grid > .profile-overview .profile-tools { padding-top: 8px; gap: 6px; }
-.summary-grid > .profile-overview .profile-tools .button { padding: 5px 6px; gap: 5px; font-size: 10px; }
-.summary-grid > .profile-overview .profile-tools .icon { width: 12px; height: 12px; }
-.summary-grid > .summary-card { min-width: 0; align-items: center; }
+.summary-grid > .profile-overview { min-width: 0; }
+.summary-grid > .summary-card { min-width: 0; align-items: center; padding: 12px; gap: 6px; }
 .summary-grid > .summary-card > div { width: 100%; min-width: 0; }
 .summary-grid > .summary-card .summary-caption { padding-left: 0; margin-top: 0; white-space: normal; }
 
@@ -375,7 +369,7 @@ h1 {
   .summary-grid {
     grid-template-columns: repeat(2,minmax(0,1fr));
   }
-  .summary-grid > .profile-overview { grid-column: 1 / -1; }
+  .summary-grid > .profile-overview { grid-column: 1 / -1; grid-row: 1; }
 }
 
 #configuration-page:has(#configuration-editor[hidden]) .summary-grid { display: none; }

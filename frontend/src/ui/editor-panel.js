@@ -53,12 +53,14 @@ export function createEditorPanel({ dom, editor, catalog, ask, notify, onChanged
     else source.render();
   }
 
-  for (const mode of ['form', 'advanced']) $('editor-mode-' + mode).addEventListener('click', () => {
+  function selectMode(mode) {
     if (view.mode === mode) return;
     view.mode = mode;
     render();
     onViewChanged(mode);
-  });
+  }
+  for (const mode of ['form', 'advanced']) $('editor-mode-' + mode).addEventListener('click', () => selectMode(mode));
+  $('parameter-summary').addEventListener('click', () => selectMode('form'));
 
   for (const mode of ['table', 'source', 'output']) $('mode-' + mode).addEventListener('click', () => {
     if (view.advanced === mode) return;
