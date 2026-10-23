@@ -73,20 +73,20 @@
       <header class="topbar">
         <button id="mobile-menu" class="icon-button mobile-only" aria-label="打开导航菜单" aria-expanded="false" aria-controls="sidebar"><svg class="icon"><use href="#i-menu"/></svg></button>
         <div id="game-actions" class="game-topbar-actions"></div>
-        <div class="page-actions" id="configuration-actions">
-          <div id="configuration-apply" class="configuration-apply" role="group" aria-label="配置应用" hidden>
-            <div class="configuration-state"><span id="game-config-state" class="save-status" data-state="pending" role="status" aria-label="正在读取游戏配置状态" title="正在读取游戏配置状态">连接中</span></div>
-            <button id="show-pending-config" class="button secondary" type="button" aria-haspopup="dialog" hidden>查看差异</button>
-            <button class="button primary" data-action="apply" aria-describedby="configuration-apply-description" title="应用到游戏；运行中的服务器会先存档、停服，再应用并重启，不创建备份。" disabled>应用配置</button>
-            <span id="configuration-apply-description" class="sr-only">有效修改自动保存到服务器。应用后写入游戏；运行中的服务器会先存档、停服，再应用并重启，不创建备份。</span>
-          </div>
-          <div class="configuration-tools" role="group" aria-label="配置工具">
-            <button type="button" class="button secondary" id="import-button" aria-label="导入配置" title="导入 INI 文件或粘贴配置"><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg>导入</button>
-            <button type="button" class="button secondary" id="restore-input-button" aria-label="恢复输入配置" title="恢复为这套配置的初始基准"><svg class="icon" aria-hidden="true"><use href="#i-restore"/></svg>恢复原始</button>
-            <button type="button" class="button secondary" id="header-copy-button" aria-label="复制配置" title="复制当前完整 INI 配置到剪贴板"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg>复制 INI</button>
-          </div>
-        </div>
       </header>
+      <div class="page-actions" id="configuration-actions" role="region" aria-label="配置快捷操作">
+        <div id="configuration-apply" class="configuration-apply" role="group" aria-label="配置应用" hidden>
+          <div class="configuration-state"><span id="game-config-state" class="save-status" data-state="pending" role="status" aria-label="正在读取游戏配置状态" title="正在读取游戏配置状态">连接中</span></div>
+          <button id="show-pending-config" class="button secondary" type="button" aria-haspopup="dialog" hidden>查看差异</button>
+          <button class="button primary" data-action="apply" aria-describedby="configuration-apply-description" title="应用到游戏；运行中的服务器会先存档、停服，再应用并重启，不创建备份。" disabled>应用配置</button>
+          <span id="configuration-apply-description" class="sr-only">有效修改自动保存到服务器。应用后写入游戏；运行中的服务器会先存档、停服，再应用并重启，不创建备份。</span>
+        </div>
+        <div class="configuration-tools" role="group" aria-label="配置工具">
+          <button type="button" class="button secondary" id="import-button" aria-label="导入配置" title="导入 INI 文件或粘贴配置"><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg>导入</button>
+          <button type="button" class="button secondary" id="restore-input-button" aria-label="恢复输入配置" title="恢复为这套配置的初始基准"><svg class="icon" aria-hidden="true"><use href="#i-restore"/></svg>恢复原始</button>
+          <button type="button" class="button secondary" id="header-copy-button" aria-label="复制配置" title="复制当前完整 INI 配置到剪贴板"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg>复制 INI</button>
+        </div>
+      </div>
       <main id="main" tabindex="-1">
         <div id="storage-error" class="alert error" role="alert" hidden></div>
         <section id="game-page" aria-label="游戏管理" hidden>
