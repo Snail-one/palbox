@@ -13,7 +13,10 @@ export function createSummary({ dom, editor, workspace, catalog, isDirty, persis
       $('unknown-count').textContent = unknownCount;
       $('unknown-summary').setAttribute('aria-label', `查看和编辑 ${unknownCount} 项未识别参数`);
       $('player-count').textContent = editor.raw('ServerPlayerMaxNum') ?? '—';
-      $('change-count').textContent = editor.changedKeys().length;
+      const modifiedCount = editor.changedKeys().length;
+      $('change-count').textContent = modifiedCount;
+      $('modified-summary-count').textContent = modifiedCount;
+      $('modified-summary').setAttribute('aria-label', `查看和编辑 ${modifiedCount} 项已修改参数`);
       let status = isDirty()
         ? { state: 'pending', label: '未保存', detail: '当前修改尚未保存到服务器。' }
         : { state: 'saved', label: '已保存', detail: '所有有效修改已自动保存到服务器。' };

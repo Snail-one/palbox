@@ -80,7 +80,9 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
   let panel, modifiedParameters;
   const navigation = createNavigation({ dom, window, isDirty, onSave: save, onConfigurationView: mode => panel?.setMode(mode) });
   panel = createEditorPanel({ dom, editor, catalog, ask, notify: notifications.toast, onChanged: () => save({ automatic: true }), ready, onViewChanged: navigation.openEditor, workspace });
-  modifiedParameters = createModifiedParametersDialog({ dom, editor, catalog, workspace });
+  modifiedParameters = createModifiedParametersDialog({ dom, editor, catalog, workspace, ask, onChanged() {
+    const saved = save({ automatic: true }); panel.render(); return saved;
+  } });
   navigation.refresh();
   async function saveProfileSource(id, source, message = '配置源码已保存') {
     if (!workspace.updateSource(id, source)) throw new Error(workspace.message || '保存失败，请复制备份后重试。');

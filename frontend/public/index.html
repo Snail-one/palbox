@@ -122,7 +122,8 @@
             <button id="delete-profile" class="button secondary danger-hover" aria-label="删除当前配置"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>删除</button>
           </div>
         </section>
-        <button type="button" class="summary-card summary-link" id="unknown-summary" aria-label="查看和编辑未识别参数"><div><span class="summary-label">未识别参数</span><div><strong id="unknown-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption">点击集中查看和编辑 →</span></button></div>
+        <button type="button" class="summary-card summary-link" id="unknown-summary" aria-label="查看和编辑未识别参数"><div><span class="summary-label">未识别参数</span><div><strong id="unknown-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption">点击集中查看和编辑 →</span></button>
+        <button type="button" class="summary-card summary-link" id="modified-summary" aria-label="查看和编辑已修改参数" aria-controls="modified-parameters-dialog" aria-haspopup="dialog"><div><span class="summary-label">已修改</span><div><strong id="modified-summary-count">0</strong><span class="summary-unit">项</span></div></div><span class="summary-caption">点击查看和编辑 →</span></button></div>
         <section id="configuration-profiles" class="configuration-library" aria-labelledby="configuration-library-title" hidden>
           <div class="configuration-library-heading"><div><h2 id="configuration-library-title">我的配置 <span id="profile-count" class="subtle-tag">0</span></h2><p>选择当前配置，点击名称可查看或导入。最多保留 10 套配置（含游戏默认配置）。</p></div><button class="button primary" id="new-profile"><svg class="icon"><use href="#i-plus"/></svg>新建配置</button></div>
           <div id="profile-list" class="profile-list"></div>
@@ -171,7 +172,7 @@
     <div class="dialog-heading"><span class="dialog-icon"><svg class="icon"><use href="#i-edit"/></svg></span><button id="modified-parameters-close" type="button" class="icon-button" aria-label="关闭已修改参数"><svg class="icon"><use href="#i-close"/></svg></button></div>
     <h2 id="modified-parameters-title">已修改 <span id="change-count" class="subtle-tag">0</span></h2>
     <p id="modified-parameters-note" class="management-note"></p>
-    <div class="modified-parameters-tools"><label class="search-box modified-parameters-search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="modified-parameters-search" type="search" placeholder="搜索参数名或中文说明…" aria-label="搜索已修改参数"></label><span id="modified-parameters-count" class="management-note" role="status"></span></div>
+    <div class="modified-parameters-tools"><label class="search-box modified-parameters-search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="modified-parameters-search" type="search" placeholder="搜索参数名或中文说明…" aria-label="搜索已修改参数"></label><span id="modified-parameters-count" class="management-note" role="status"></span><span id="modified-parameters-save" class="save-status" role="status"></span></div>
     <div id="modified-parameters-list" class="pending-config-list"></div>
     <p id="modified-parameters-empty" class="management-note" role="status" hidden></p>
     <div class="dialog-actions"><button id="modified-parameters-done" type="button" class="button secondary">关闭</button></div>

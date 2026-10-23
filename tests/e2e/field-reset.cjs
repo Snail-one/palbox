@@ -7,10 +7,13 @@ const path = require('node:path');
 (async () => {
   const { managementFixture } = await import('../helpers/management-fixture.js');
   const { parse, decodeString } = await import('../../shared/domain/config.js');
-  const f = await managementFixture();
+  const { createProfile } = await import('../../shared/domain/workspace.js');
+  // This case restores an imported baseline; an official default would replace it.
+  const f = await managementFixture({ officialDefaults: false, editable: false });
   const source = '; 保留注释\nOptionSettings=(ExpRate=7.000000,ServerName="基准世界",ServerDescription="原描述",ServerPlayerMaxNum=32,AdminPassword="baseline-secret",DeathPenalty=All,bIsPvP=False,CrossplayPlatforms=(Steam,Xbox),FutureSetting=(A=1,B="原值"))\n';
-  const profile = f.manager.store.active();
-  profile.source = profile.initialSource = source;
+  const profile = createProfile('自定义基准', source);
+  f.manager.store.workspace.profiles.push(profile);
+  f.manager.store.workspace.activeId = profile.id;
   await f.manager.store.persist();
   let browser;
   try {
