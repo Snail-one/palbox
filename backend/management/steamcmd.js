@@ -14,6 +14,7 @@ import { createTransaction, finishTransaction } from './transactions.js';
 const DOWNLOAD_URL = 'https://client-update.steamstatic.com/installer/steamcmd_linux.tar.gz';
 const MAX_DOWNLOAD = 64 * 1024 * 1024;
 const READY_FILE = '.palbox-ready';
+const downloadSize = bytes => bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 export const defaultSteamcmd = directory => path.resolve(directory, 'steamcmd/steamcmd.sh');
 export const managedSteamcmd = runtime => path.resolve(runtime.steamcmd) === defaultSteamcmd(runtime.directory);
 
@@ -118,12 +119,23 @@ export async function installSteamcmd(runtime, { onProgress = () => {}, fetch: d
         await response.body?.cancel();
         throw failure(`SteamCMD 下载失败（HTTP ${response.status}），请稍后重试。`, 502);
       }
-      let bytes = 0;
+      const declared = Number(response.headers.get('content-length'));
+      const encoding = response.headers.get('content-encoding');
+      // Fetch may decompress HTTP content, making its wire length unsuitable for a percentage.
+      const total = Number.isSafeInteger(declared) && declared > 0 && declared <= MAX_DOWNLOAD && (!encoding || encoding === 'identity') ? declared : null;
+      let bytes = 0, reportedAt = performance.now();
+      const report = () => phase('steamcmd-downloading', `正在下载 SteamCMD 安装包：${downloadSize(bytes)}${total ? ` / ${downloadSize(total)}（${Math.min(99, Math.floor(bytes / total * 100))}%）` : '（总大小未知）'}。`);
+      report();
       const limit = new Transform({ transform(chunk, _encoding, callback) {
         bytes += chunk.length;
-        callback(bytes > MAX_DOWNLOAD ? failure('SteamCMD 下载文件过大，已停止安装。', 502) : null, chunk);
+        if (bytes > MAX_DOWNLOAD) { callback(failure('SteamCMD 下载文件过大，已停止安装。', 502)); return; }
+        const now = performance.now();
+        // Report from incoming data, at most once per second; no polling timer.
+        if (now - reportedAt >= 1000) { reportedAt = now; report(); }
+        callback(null, chunk);
       } });
       await pipeline(Readable.fromWeb(response.body), limit, createWriteStream(archive, { flags: 'wx', mode: 0o600 }), { signal });
+      phase('steamcmd-downloading', `SteamCMD 安装包下载完成：${downloadSize(bytes)}${total === bytes ? '（100%）' : ''}。`);
     } catch (error) {
       if (error.status) throw error;
       throw failure(`SteamCMD 下载失败，请检查服务器访问 Valve 的网络后重试：${networkFailureText(error)}`, 502);

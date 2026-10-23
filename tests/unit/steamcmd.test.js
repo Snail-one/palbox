@@ -28,15 +28,73 @@ test('SteamCMD 下载、解压和初始化后才标记就绪，使用独立 HOME
       assert.ok(signal instanceof AbortSignal);
       return new Response(archive);
     },
-    onProgress(phase) { phases.push(phase); }
+    onProgress(phase) { if (phases.at(-1) !== phase) phases.push(phase); }
   });
   assert.deepEqual(phases, ['steamcmd-downloading', 'steamcmd-installing', 'steamcmd-initializing', 'steamcmd-ready']);
   assert.equal((await runtime.steamcmdStatus()).installed, true);
   assert.equal(runtime.childEnvironment().HOME, path.join(directory, 'steam-home'));
   assert.equal(await readlink(path.join(directory, 'steam-home/.steam/sdk64/steamclient.so')), path.join(directory, 'steamcmd/linux64/steamclient.so'));
   assert.match(await runtime.logs('steamcmd'), /SteamCMD fixture initialization/);
+  const downloadLog = (await runtime.logs('steamcmd')).split('\n').filter(line => line.includes('SteamCMD 安装包'));
+  assert.match(downloadLog[0], /0 B（总大小未知）/);
+  assert.match(downloadLog.at(-1), /安装包下载完成/);
+  assert.ok(downloadLog.every(line => !/%|NaN|Infinity/.test(line)), '缺少总大小时只显示实际已下载量');
   assert.equal((await readdir(directory)).some(name => name.startsWith('.steamcmd-')), false);
   await installSteamcmd(runtime, { fetch() { throw new Error('不得重复下载'); } });
+});
+
+test('SteamCMD 安装包下载过程中实时记录大小和百分比，限频且写完文件后才报告完成', linux, async t => {
+  const { directory, runtime } = await fixture(t);
+  const archive = await steamcmdArchive(directory);
+  let now = 0, controller, started, advanced;
+  t.mock.method(performance, 'now', () => now);
+  const start = new Promise(resolve => { started = resolve; });
+  const partial = new Promise(resolve => { advanced = resolve; });
+  const messages = [];
+  const body = new ReadableStream({ start(stream) { controller = stream; } });
+  const installing = installSteamcmd(runtime, {
+    fetch: async () => new Response(body, { headers: { 'Content-Length': String(archive.length) } }),
+    onProgress(phase, message) {
+      if (phase !== 'steamcmd-downloading') return;
+      messages.push(message);
+      if (message.includes('0 B /')) started();
+      if (message.includes('50%')) advanced();
+    }
+  });
+  try {
+    await start;
+    const half = Math.ceil(archive.length / 2);
+    // A burst of chunks must not create a log entry for each one.
+    for (let offset = 0; offset < half - 1; offset++) controller.enqueue(archive.subarray(offset, offset + 1));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(messages.filter(message => message.includes('正在下载 SteamCMD 安装包')).length, 1);
+    now = 1000;
+    controller.enqueue(archive.subarray(half - 1, half));
+    await partial;
+    const log = await runtime.logs('steamcmd');
+    assert.match(log, /正在下载 SteamCMD 安装包：.*50%/);
+    assert.doesNotMatch(log, /安装包下载完成|正在解压/);
+    assert.equal((await runtime.steamcmdStatus()).installed, false);
+    now = 2000;
+    controller.enqueue(archive.subarray(half)); controller.close();
+    await installing;
+    const completeLog = await runtime.logs('steamcmd');
+    assert.match(completeLog, /安装包下载完成：.*100%/);
+    assert.ok(completeLog.indexOf('安装包下载完成') < completeLog.indexOf('正在解压'));
+    assert.equal((await runtime.steamcmdStatus()).installed, true);
+  } finally {
+    try { controller.close(); } catch { /* Already closed. */ }
+    await installing.catch(() => {});
+  }
+});
+
+test('SteamCMD 下载流中断不报告下载完成或进入解压', linux, async t => {
+  const { runtime } = await fixture(t);
+  const body = new ReadableStream({ start(controller) { controller.error(new Error('下载连接中断')); } });
+  runtime.run = async () => { throw new Error('不得解压中断的下载'); };
+  await assert.rejects(installSteamcmd(runtime, { fetch: async () => new Response(body, { headers: { 'Content-Length': '100' } }) }), /下载连接中断/);
+  assert.doesNotMatch(await runtime.logs('steamcmd'), /安装包下载完成|正在解压|100%/);
+  assert.equal((await runtime.steamcmdStatus()).installed, false);
 });
 
 test('初始化失败保留游戏数据、清理暂存且允许再次安装', linux, async t => {
