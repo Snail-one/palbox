@@ -1,5 +1,5 @@
 import { createWriteStream } from 'node:fs';
-import { access, mkdir, rm, symlink, lstat, writeFile } from 'node:fs/promises';
+import { access, mkdir, symlink, lstat, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { lookup } from 'node:dns/promises';
 import diagnostics_channel from 'node:diagnostics_channel';
@@ -9,7 +9,7 @@ import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 import { failure } from './files.js';
 import { replaceDirectory } from './replace-directory.js';
-import { createTransaction } from './transactions.js';
+import { createTransaction, finishTransaction } from './transactions.js';
 
 const DOWNLOAD_URL = 'https://client-update.steamstatic.com/installer/steamcmd_linux.tar.gz';
 const MAX_DOWNLOAD = 64 * 1024 * 1024;
@@ -101,7 +101,7 @@ export async function installSteamcmd(runtime, { onProgress = () => {}, fetch: d
   try {
     await mkdir(runtime.directory, { recursive: true, mode: 0o700 });
     await access(runtime.directory, constants.R_OK | constants.W_OK | constants.X_OK);
-    temporary = await createTransaction(runtime.directory, runtime.directory, '.steamcmd-');
+    temporary = await createTransaction(runtime.directory, runtime.directory, '.steamcmd-', { recoverable: false });
     const archive = path.join(temporary, 'steamcmd.tar.gz');
     const unpacked = path.join(temporary, 'installation');
     await mkdir(unpacked);
@@ -167,6 +167,6 @@ export async function installSteamcmd(runtime, { onProgress = () => {}, fetch: d
   } finally {
     signal.removeEventListener('abort', abortCommand);
     runtime.steamcmdAbort = null;
-    if (temporary) await rm(temporary, { recursive: true, force: true });
+    if (temporary) await finishTransaction(temporary, { onCleanupError: error => runtime.log('steamcmd', `安装暂存清理失败：${error.message}\n`) });
   }
 }

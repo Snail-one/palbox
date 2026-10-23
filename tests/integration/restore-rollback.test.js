@@ -59,7 +59,7 @@ test('恢复和导入在配置库写入失败时回滚世界、游戏配置和�
       await unchanged();
       assert.equal(f.runtime.game, null);
       assert.equal((await fs.readdir(path.dirname(world.world))).some(name => name.startsWith('.import-')), false);
-      assert.equal((await fs.readdir(path.join(f.directory, 'palbox/transactions'))).some(name => name.startsWith('.configuration-')), false);
+      assert.equal((await fs.readdir(path.join(f.directory, 'palbox/transactions')).catch(error => { if (error.code === 'ENOENT') return []; throw error; })).some(name => name.startsWith('.configuration-')), false);
       f.manager.store.persist = persist;
       // The failed transaction must leave the write queue usable.
       if (operation === 'restore') assert.equal((await f.task('restore', { id })).state, 'succeeded');

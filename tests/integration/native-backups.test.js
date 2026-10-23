@@ -241,7 +241,7 @@ test('不完整、链接、越界和其他世界的官方备份不能恢复，�
   };
   await assert.rejects(f.manager.native.export(backup.id), /正在写入/);
   assert.equal(f.runtime.game.pid, pid);
-  assert.equal((await readdir(path.join(f.directory, 'palbox/transactions'))).some(name => name.startsWith('.official-')), false);
+  assert.equal((await readdir(path.join(f.directory, 'palbox/transactions')).catch(error => { if (error.code === 'ENOENT') return []; throw error; })).some(name => name.startsWith('.official-')), false);
 });
 
 test('启动移除旧备份分类与保留设置，旧归档不再展示且文件保留', async t => {

@@ -14,7 +14,7 @@ import { PlayerHistory, PlayerHistoryRecorder } from './player-history.js';
 import { ManagementStore } from './store.js';
 import { atomicWrite, readJson, jsonWrite, failure } from './files.js';
 import { validateManagedConfiguration } from './game-configuration.js';
-import { createTransaction } from './transactions.js';
+import { createTransaction, finishTransaction, cleanupTransactions } from './transactions.js';
 import { normalizeUsername, passwordRecord, validUsername } from './auth.js';
 import { validTotpRecord } from './totp.js';
 import { backupDirectory, BACKUP_CATEGORIES as categories } from './backup-paths.js';
@@ -164,6 +164,8 @@ export class Manager extends EventEmitter {
     await this.store.initialize();
     await this.playerHistory.initialize();
     await this.runtime.initialize();
+    const onCleanupError = error => this.runtime.log('palbox', `事务暂存清理：${error.message}\n`);
+    await cleanupTransactions(this.directory, { startup: true, onCleanupError });
     try { await this.imports.initialize(); }
     catch (error) { this.runtime.log('palbox', `导入暂存目录初始化失败：${error.message}\n`); }
     this.tasks = await readJson(this.tasksFile, []);
@@ -171,6 +173,10 @@ export class Manager extends EventEmitter {
     for (const task of this.tasks) if (task.state === 'running') { task.state = 'interrupted'; task.message = '面板重启，任务已中断，请检查日志后重试。'; }
     await this.saveTasks();
     await this.playerHistoryRecorder.start();
+    this.transactionCleanup = setInterval(() => {
+      this.transactionCleanupWork = cleanupTransactions(this.directory, { onCleanupError }).catch(onCleanupError);
+    }, 60_000);
+    this.transactionCleanup.unref();
   }
   settingsError() {
     return `settings.json 中的管理员记录或备份设置损坏。请先备份数据目录，再删除 ${this.settingsFile} 后重新启动，并在网页中重新初始化管理员。`;
@@ -386,7 +392,7 @@ export class Manager extends EventEmitter {
         catch (error) { throw failure(`配置已应用，但游戏服启动失败：${error.message}`, 500); }
       }
     } finally {
-      if (!preserve) await rm(stage, { recursive: true, force: true }).catch(error => this.runtime.log('palbox', `应用配置临时文件清理失败：${error.message}\n`));
+      await finishTransaction(stage, { preserve, onCleanupError: error => this.runtime.log('palbox', `应用配置临时文件清理失败：${error.message}\n`) });
     }
   }
   async execute(action, payload, task) {
@@ -647,7 +653,7 @@ export class Manager extends EventEmitter {
     }
     const id = `${category}/${Date.now()}-${randomUUID()}.tar.gz`;
     const file = path.join(this.directory, 'backups', id);
-    const stage = await createTransaction(this.directory, directory, 'backup-');
+    const stage = await createTransaction(this.directory, directory, 'backup-', { recoverable: false });
     const temporary = path.join(stage, 'archive.tar.gz');
     try {
       const packedDir = path.join(stage, 'packed');
@@ -663,7 +669,7 @@ export class Manager extends EventEmitter {
       await backupDirectory(this.directory, category);
       await rename(temporary, file);
       await recordBackupWorld(file, worldDir ? worldId : null);
-    } finally { await rm(stage, { recursive: true, force: true }); }
+    } finally { await finishTransaction(stage, { onCleanupError: error => this.runtime.log('palbox', `备份临时文件清理失败：${error.message}\n`) }); }
     const list = (await this.backups()).filter(b => b.category === category);
     for (const old of list.slice(this.backupRetentions[category])) if (old.id !== protectedId) await this.deleteBackup(old.id);
     return id;
@@ -787,11 +793,11 @@ export class Manager extends EventEmitter {
     if (mode !== undefined && mode !== 'world') throw failure('恢复方式已统一为当前世界恢复，请刷新页面后重试。');
     const archive = await this.inspectBackup(id);
     this.assertRestoreTarget(expectedWorldId, archive.currentWorld);
-    const stage = await createTransaction(this.directory, path.join(this.directory, 'palbox'), 'restore-');
+    const stage = await createTransaction(this.directory, path.join(this.directory, 'palbox'), 'restore-', { recoverable: false });
     try {
       if (archive.sourcePrefix) await this.runtime.run('tar', ['-xzf', archive.file, '--no-same-owner', '--no-same-permissions', '-C', stage, '--', archive.sourcePrefix]);
       await this.restoreWorldBackup(id, archive.sourcePrefix ? path.join(stage, archive.sourcePrefix) : null, archive.configuration, archive.currentWorld);
-    } finally { await rm(stage, { recursive: true, force: true }).catch(error => this.runtime.log('palbox', `恢复临时文件清理失败：${error.message}\n`)); }
+    } finally { await finishTransaction(stage, { onCleanupError: error => this.runtime.log('palbox', `恢复临时文件清理失败：${error.message}\n`) }); }
   }
   async restoreWorldBackup(id, source, configuration, currentWorld) {
     if (!source && configuration == null) throw failure('备份中没有可恢复的世界或游戏配置。', 409);
@@ -1091,6 +1097,8 @@ export class Manager extends EventEmitter {
   }
   async close() {
     this.closing = true;
+    clearInterval(this.transactionCleanup);
+    await this.transactionCleanupWork;
     await this.runtime.close();
     await this.playerHistoryRecorder.close();
     await this.operation;

@@ -30,7 +30,7 @@ test('重置目录安装失败时还原世界和玩家文件，不出现半删�
   assert.equal(await fs.readFile(path.join(world.world, 'Level.sav'), 'utf8'), 'current-world');
   assert.equal(await fs.readFile(path.join(world.world, 'Players/current.sav'), 'utf8'), 'current-player');
   assert.equal(await fs.readFile(path.join(world.snapshot, 'Level.sav'), 'utf8'), 'official-world');
-  assert.deepEqual(await fs.readdir(transactions), []);
+  await assert.rejects(fs.lstat(transactions), { code: 'ENOENT' });
 });
 
 test('重置提交后清理失败只保留暂存，不把完整空世界误报为失败', async t => {
@@ -82,8 +82,8 @@ test('官方恢复按目标设备选择事务目录，跨盘只复制，不执�
   assert.equal(await fs.readFile(path.join(world.world, 'Players/original.sav'), 'utf8'), 'official-player');
   assert.equal(await fs.readFile(path.join(world.world, 'WorldOption.sav'), 'utf8'), 'current-options');
   assert.equal(await fs.readFile(path.join(world.snapshot, 'Level.sav'), 'utf8'), 'official-world');
-  assert.deepEqual(await fs.readdir(transactions), []);
-  assert.deepEqual(await fs.readdir(path.join(path.dirname(world.world), '.palbox-transactions')), []);
+  await assert.rejects(fs.lstat(transactions), { code: 'ENOENT' });
+  await assert.rejects(fs.lstat(path.join(path.dirname(world.world), '.palbox-transactions')), { code: 'ENOENT' });
 });
 
 test('事务目录为链接时拒绝操作，原存档保持不变', async t => {

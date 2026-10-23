@@ -8,7 +8,7 @@ import {
 } from '../../shared/domain/workspace.js';
 import { atomicWrite, jsonWrite, readJson, failure } from './files.js';
 import { validateManagedConfiguration } from './game-configuration.js';
-import { createTransaction } from './transactions.js';
+import { createTransaction, finishTransaction } from './transactions.js';
 
 export function managedTemplate(port, source, { password } = {}) {
   return applyManagedChanges(source, new Map([
@@ -290,7 +290,7 @@ export class ManagementStore {
         this.workspace = candidate;
         this.revision = next.revision;
       } finally {
-        if (!preserve) await rm(stage, { recursive: true, force: true }).catch(onCleanupError);
+        await finishTransaction(stage, { preserve, onCleanupError });
       }
       return merged;
     });

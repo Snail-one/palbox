@@ -1,6 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { failure } from './files.js';
+import { finishTransaction } from './transactions.js';
 
 /** Prepare the entire replacement before moving the old directory out of the way. */
 export async function replaceDirectory(source, target, { stageDirectory, beforeReplace = async () => {}, afterReplace = async () => {}, onCleanupError = () => {} } = {}) {
@@ -37,6 +38,6 @@ export async function replaceDirectory(source, target, { stageDirectory, beforeR
   } finally {
     // A cleanup failure after commit must not turn a successful replacement
     // into a failed task whose data has already changed.
-    if (!preserve) await fs.rm(stage, { recursive: true, force: true }).catch(onCleanupError);
+    await finishTransaction(stage, { preserve, onCleanupError });
   }
 }

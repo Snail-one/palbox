@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import { failure } from './files.js';
 import { createBackupDownloadFilename } from './backup-downloads.js';
 import { backupDirectory } from './backup-paths.js';
-import { createTransaction } from './transactions.js';
+import { createTransaction, finishTransaction } from './transactions.js';
 import { replaceDirectory } from './replace-directory.js';
 
 const run = promisify(execFile);
@@ -52,8 +52,7 @@ export class NativeBackups {
     if (!entries.length) return 0;
     const stage = await createTransaction(this.directory, path.dirname(root), 'reset-');
     await replaceDirectory(null, root, {
-      stageDirectory: stage, beforeReplace: assertStopped,
-      onCleanupError: error => onCleanupError(new Error(`${error.message}；暂存目录：${stage}`, { cause: error }))
+      stageDirectory: stage, beforeReplace: assertStopped, onCleanupError
     });
     return entries.length;
   }
@@ -210,8 +209,8 @@ export class NativeBackups {
   async export(id, { timeZone = 'UTC' } = {}) {
     const downloadFilename = createBackupDownloadFilename(timeZone);
     await backupDirectory(this.directory);
-    const stage = await createTransaction(this.directory, path.join(this.directory, 'palbox'), '.official-export-');
-    const cleanup = () => rm(stage, { recursive: true, force: true });
+    const stage = await createTransaction(this.directory, path.join(this.directory, 'palbox'), '.official-export-', { recoverable: false });
+    const cleanup = () => finishTransaction(stage, { onCleanupError: error => { throw error; } });
     try {
       const snapshot = path.join(stage, 'snapshot');
       const backup = await this.copy(id, snapshot);
@@ -273,14 +272,14 @@ export class NativeBackups {
         }
         throw error;
       }
-    } finally { if (!preserve) await rm(stage, { recursive: true, force: true }).catch(onCleanupError); }
+    } finally { await finishTransaction(stage, { preserve, onCleanupError }); }
   }
 
   async restore(id, beforeReplace, { onCleanupError = () => {} } = {}) {
     const backup = await this.get(id);
     if (backup.worldId !== await this.configuredWorld()) throw failure('无法确认该备份属于 GameUserSettings.ini 指定的当前世界，拒绝恢复。', 409);
     const world = await this.safeDirectory(['SaveGames', '0', backup.worldId]);
-    const stage = await createTransaction(this.directory, path.dirname(world), '.official-restore-');
+    const stage = await createTransaction(this.directory, path.dirname(world), '.official-restore-', { recoverable: false });
     try {
       const source = path.join(stage, 'save');
       await this.copy(id, source);
@@ -288,6 +287,6 @@ export class NativeBackups {
         await beforeReplace();
         if (backup.worldId !== await this.configuredWorld()) throw failure('当前世界已改变，请刷新后重试。', 409);
       } });
-    } finally { await rm(stage, { recursive: true, force: true }).catch(onCleanupError); }
+    } finally { await finishTransaction(stage, { onCleanupError }); }
   }
 }
