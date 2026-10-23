@@ -51,9 +51,9 @@ sudo bash ./install.sh
 | 启动／停止／重启 | `sudo systemctl start palbox` ／ `sudo systemctl stop palbox` ／ `sudo systemctl restart palbox` |
 | 取消开机启动并立即停止 | `sudo systemctl disable --now palbox` |
 | 恢复开机启动并立即启动 | `sudo systemctl enable --now palbox` |
-| 卸载后台服务 | `sudo bash ./install.sh --uninstall` |
+| 卸载后台服务 | `sudo bash ./uninstall.sh` |
 
-卸载会停止服务、取消开机启动并移除本项目的 `palbox.service`，保留程序、`data/`、`.palbox.env` 和 `.runtime/`。重新安装执行 `sudo bash ./install.sh`。需要彻底删除时，先备份，再手动删除项目目录及自行配置的其他数据目录。
+独立卸载脚本会停止服务、取消开机启动并移除本项目的 `palbox.service`，保留程序、`data/`、`.palbox.env` 和 `.runtime/`。重新安装执行 `sudo bash ./install.sh`。需要彻底删除时，先备份，再手动删除项目目录及自行配置的其他数据目录。
 
 ### 更新面板
 

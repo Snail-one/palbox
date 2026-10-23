@@ -22,7 +22,7 @@ async function fixture(t) {
   const bin = path.join(directory, 'bin');
   await mkdir(app);
   await mkdir(bin);
-  await Promise.all(['backend', 'frontend', 'shared', 'scripts', 'package.json', 'dev.sh', 'install.sh'].map(entry => cp(path.join(root, entry), path.join(app, entry), { recursive: true })));
+  await Promise.all(['backend', 'frontend', 'shared', 'scripts', 'package.json', 'dev.sh', 'install.sh', 'uninstall.sh'].map(entry => cp(path.join(root, entry), path.join(app, entry), { recursive: true })));
   const nodeArchive = 'node-v24.0.0-linux-x64.tar.xz';
   const nodeSource = path.join(directory, 'node-v24.0.0-linux-x64/bin');
   await mkdir(nodeSource, { recursive: true });
@@ -50,7 +50,7 @@ name, args = pathlib.Path(sys.argv[0]).name, sys.argv[1:]
 with (root / 'commands').open('a') as log:
     log.write(name + ' ' + ' '.join(args) + '\\n')
 if name == 'id':
-    if args == ['-u']: print('0')
+    if args == ['-u']: print('1000' if (root / 'non-root').exists() else '0')
     elif args == ['-u', 'deployer']: print('1000')
     elif args == ['-u', 'root']: print('0')
     elif args == ['-gn', 'deployer']: print('deployer')
@@ -85,7 +85,9 @@ elif name == 'systemctl':
     if action == 'is-active': sys.exit(0 if active.exists() else 1)
     elif action == 'is-enabled': sys.exit(0 if enabled.exists() else 1)
     elif action == 'start': active.touch()
-    elif action == 'stop': active.unlink(missing_ok=True)
+    elif action == 'stop':
+        if (root / 'fail-stop').exists(): sys.exit(1)
+        active.unlink(missing_ok=True)
     elif action == 'enable': enabled.touch()
     elif action == 'disable': enabled.unlink(missing_ok=True)
 elif name == 'journalctl': print('fixture: service failed to start')
@@ -98,7 +100,8 @@ else: raise RuntimeError('Unexpected mock command: ' + name)
   const data = path.join(app, 'data');
   const env = { ...process.env, PATH: `${bin}:/usr/bin:/bin`, SUDO_USER: '', PALBOX_NATIVE_TEST_DIR: directory, PALBOX_SYSTEMD_DIR: systemd };
   const invoke = (...args) => run('/bin/bash', [path.join(app, 'install.sh'), ...args], { env, timeout: 10000 });
-  return { directory, app, config, systemd, data, env, invoke };
+  const uninstall = (...args) => run('/bin/bash', [path.join(app, 'uninstall.sh'), ...args], { env, timeout: 10000 });
+  return { directory, app, config, systemd, data, env, invoke, uninstall };
 }
 
 test('就地安装使用项目属主和 data，不创建用户或搬迁程序，SteamCMD 由网页安装', linux, async t => {
@@ -230,7 +233,7 @@ test('卸载停止并移除本项目服务，保留 data、配置和程序', lin
   const f = await fixture(t);
   await f.invoke();
   await writeFile(path.join(f.data, 'world.sav'), 'world-content');
-  const removed = await f.invoke('--uninstall');
+  const removed = await f.uninstall();
   assert.match(removed.stdout, /已停止并取消开机启动/);
   assert.match(removed.stdout, /配置、存档、备份和程序仍在以上目录/);
   assert.ok(removed.stdout.includes(`已移除：${path.join(f.systemd, 'palbox.service')}`));
@@ -245,7 +248,7 @@ test('卸载停止并移除本项目服务，保留 data、配置和程序', lin
   assert.match(commands, /systemctl disable palbox\.service\n/);
   assert.match(commands, /systemctl daemon-reload\n/);
   assert.doesNotMatch(commands, /apt-get remove|userdel/);
-  const again = await f.invoke('--uninstall');
+  const again = await f.uninstall();
   assert.match(again.stdout, /没有已注册的开机服务/);
   assert.equal(await readFile(path.join(f.data, 'world.sav'), 'utf8'), 'world-content');
   assert.match((await f.invoke()).stdout, /安装完成/);
@@ -255,8 +258,9 @@ test('卸载停止并移除本项目服务，保留 data、配置和程序', lin
 
 test('卸载拒绝其他部署和其他选项，尚未注册时直接结束', linux, async t => {
   const f = await fixture(t);
-  await assert.rejects(f.invoke('--uninstall', '--port', '9000'), /卸载不接受其他选项/);
-  const absent = await f.invoke('--uninstall');
+  await assert.rejects(f.uninstall('--port', '9000'), /卸载不接受其他选项/);
+  await assert.rejects(f.invoke('--uninstall'), /卸载请单独执行 sudo bash \.\/uninstall\.sh/);
+  const absent = await f.uninstall();
   assert.match(absent.stdout, /没有已注册的开机服务/);
   await assert.rejects(access(f.data), { code: 'ENOENT' });
   assert.doesNotMatch(await readFile(path.join(f.directory, 'commands'), 'utf8'), /apt-get|systemctl stop/);
@@ -264,19 +268,66 @@ test('卸载拒绝其他部署和其他选项，尚未注册时直接结束', li
   await mkdir(f.systemd);
   await writeFile(unit, 'WorkingDirectory=/another/project\n');
   await writeFile(path.join(f.directory, 'active'), '');
-  await assert.rejects(f.invoke('--uninstall'), /已有 palbox 服务运行在/);
+  await assert.rejects(f.uninstall(), /已有 palbox 服务运行在/);
   await access(path.join(f.directory, 'active'));
   assert.equal(await readFile(unit, 'utf8'), 'WorkingDirectory=/another/project\n');
   await writeFile(unit, '# unmanaged\n');
-  await assert.rejects(f.invoke('--uninstall'), /无法确认 palbox 服务属于当前项目/);
+  await assert.rejects(f.uninstall(), /无法确认 palbox 服务属于当前项目/);
   assert.match(await readFile(unit, 'utf8'), /unmanaged/);
   await access(path.join(f.directory, 'active'));
   await writeFile(unit, `WorkingDirectory=${f.app}\n`);
   await writeFile(path.join(f.directory, 'root-owner'), 'root');
-  const removed = await f.invoke('--uninstall');
+  const removed = await f.uninstall();
   assert.match(removed.stdout, /已停止并取消开机启动/);
   await assert.rejects(access(unit), { code: 'ENOENT' });
   await assert.rejects(access(path.join(f.directory, 'active')), { code: 'ENOENT' });
+});
+
+test('独立卸载不依赖安装脚本、应用文件、Node 或安装依赖，保留数据和配置', linux, async t => {
+  const f = await fixture(t);
+  await f.invoke();
+  await writeFile(path.join(f.data, 'world.sav'), 'preserved');
+  const config = await readFile(f.config, 'utf8');
+  for (const name of ['backend', 'frontend', 'shared', 'scripts', '.runtime', 'package.json', 'dev.sh', 'install.sh']) {
+    await rm(path.join(f.app, name), { recursive: true, force: true });
+  }
+  const commands = path.join(f.directory, 'commands');
+  await writeFile(commands, '');
+  assert.match((await f.uninstall()).stdout, /已停止并取消开机启动/);
+  assert.equal(await readFile(path.join(f.data, 'world.sav'), 'utf8'), 'preserved');
+  assert.equal(await readFile(f.config, 'utf8'), config);
+  assert.doesNotMatch(await readFile(commands, 'utf8'), /apt-get|curl|dpkg|runuser|useradd|chown/);
+  await access(path.join(f.app, 'uninstall.sh'));
+});
+
+test('卸载停服失败时不禁用或移除服务，保留数据并可重试', linux, async t => {
+  const f = await fixture(t);
+  await f.invoke();
+  await writeFile(path.join(f.data, 'world.sav'), 'preserved');
+  await writeFile(path.join(f.directory, 'fail-stop'), 'fail');
+  const commands = path.join(f.directory, 'commands');
+  await writeFile(commands, '');
+  await assert.rejects(f.uninstall());
+  await access(path.join(f.systemd, 'palbox.service'));
+  await access(path.join(f.directory, 'active'));
+  await access(path.join(f.directory, 'enabled'));
+  assert.equal(await readFile(path.join(f.data, 'world.sav'), 'utf8'), 'preserved');
+  assert.doesNotMatch(await readFile(commands, 'utf8'), /systemctl (disable|daemon-reload)/);
+  await rm(path.join(f.directory, 'fail-stop'));
+  assert.match((await f.uninstall()).stdout, /已停止并取消开机启动/);
+});
+
+test('两个脚本的帮助无需 root，卸载实际执行前要求 root', linux, async t => {
+  const f = await fixture(t);
+  await writeFile(path.join(f.directory, 'non-root'), 'yes');
+  const install = await f.invoke('--help');
+  const uninstall = await f.uninstall('--help');
+  assert.match(install.stdout, /用法：sudo bash \.\/install\.sh/);
+  assert.doesNotMatch(install.stdout, /--uninstall/);
+  assert.match(uninstall.stdout, /用法：sudo bash \.\/uninstall\.sh/);
+  await assert.rejects(access(path.join(f.directory, 'commands')), { code: 'ENOENT' });
+  await assert.rejects(f.uninstall(), /请使用 sudo bash \.\/uninstall\.sh/);
+  assert.doesNotMatch(await readFile(path.join(f.directory, 'commands'), 'utf8'), /systemctl/);
 });
 
 test('终端启动实际使用项目 Node 和相同配置，错误运行用户会被拒绝', linux, async t => {
