@@ -1,6 +1,6 @@
 const path = require('node:path');
-const { prepare } = require('../../scripts/test-dependencies.cjs');
-const locations = prepare();
+const { dataPaths } = require('../../shared/data-paths.cjs');
+const locations = dataPaths();
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= locations.browsers;
 process.env.TMPDIR = locations.temporary;
 module.exports = {

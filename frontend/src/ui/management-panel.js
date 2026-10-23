@@ -951,12 +951,13 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     syncLogs(); syncStatus();
     if (stopped || !pageActive || document.hidden) return;
     const scope = options.scope || currentScope();
-    if (refreshing) { pendingRefresh = { scope }; return; }
+    if (refreshing) { pendingRefresh = { scope, syncDefaults: options.syncDefaults || pendingRefresh?.syncDefaults }; return; }
     refreshing = true;
     $('refresh-status').disabled = true;
     let statusReceived = false;
     try {
       if (scope === 'players') void loadBans();
+      if (options.syncDefaults) await api.request('workspace');
       const value = await api.request(`status?scope=${scope}`);
       renderStatus(value);
       statusReceived = true;
@@ -1130,9 +1131,9 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     if (userid === null) return;
     action('unban', { userid }, false);
   });
-  $('refresh-status').addEventListener('click', () => { void refresh(); });
+  $('refresh-status').addEventListener('click', () => { void refresh({ syncDefaults: true }); });
   document.addEventListener('visibilitychange', () => { void refresh(); });
-  window.addEventListener('hashchange', () => { void refresh(); });
+  window.addEventListener('hashchange', () => { void refresh({ syncDefaults: window.location.hash.startsWith('#configuration') }); });
   window.addEventListener('pagehide', () => { pageActive = false; clearTimeout(playerHistorySearchTimer); stopLogs(); stopStatus(); });
   window.addEventListener('pageshow', event => { if (event.persisted) { pageActive = true; void refresh(); } });
   refresh();

@@ -40,6 +40,10 @@ function prepare() {
   for (const [name, destination] of [['test-results', locations.testResults], ['playwright-report', path.join(locations.root, 'playwright-report')], ['.cache', path.join(locations.cache, 'legacy-project')]]) {
     if (fs.existsSync(path.join(projectRoot, name))) moveGenerated(path.join(projectRoot, name), fs.existsSync(destination) ? destination + '-legacy-' + Date.now() : destination);
   }
+  return locations;
+}
+
+function copyBrowserCache(locations) {
   const browsers = path.join(os.homedir(), '.cache/ms-playwright');
   if (fs.existsSync(browsers)) {
     for (const entry of fs.readdirSync(browsers)) {
@@ -48,12 +52,22 @@ function prepare() {
       if (!fs.existsSync(destination)) fs.cpSync(path.join(browsers, entry), destination, { recursive: true });
     }
   }
-  return locations;
+}
+
+function cleanupPreviousDependencies(locations) {
+  for (const name of fs.readdirSync(locations.dependencies)) {
+    if (!/^previous-node_modules-\d+$/.test(name)) continue;
+    const previous = path.join(locations.dependencies, name);
+    if (!fs.lstatSync(previous).isDirectory()) continue;
+    try { fs.rmSync(previous, { recursive: true }); }
+    catch (error) { console.warn(`旧依赖副本清理失败，已保留 ${previous}：${error.message}`); }
+  }
 }
 
 if (require.main === module) {
   const locations = prepare();
   if (!process.argv.includes('--migrate-only')) {
+    copyBrowserCache(locations);
     const manifest = require('../package.json');
     fs.writeFileSync(path.join(locations.dependencies, 'package.json'), JSON.stringify({ private: true, dependencies: manifest.devDependencies }, null, 2) + '\n');
     const environment = { ...process.env, TMPDIR: locations.temporary, PLAYWRIGHT_BROWSERS_PATH: locations.browsers };
@@ -64,6 +78,7 @@ if (require.main === module) {
     const cli = path.resolve(path.dirname(packageFile), browserPackage.bin.playwright);
     const browser = spawnSync(process.execPath, [cli, 'install', 'chromium'], { env: environment, stdio: 'inherit' });
     if (browser.status !== 0) process.exit(browser.status || 1);
+    cleanupPreviousDependencies(locations);
   }
   console.log(`开发测试依赖：${locations.dependencies}\n浏览器缓存：${locations.browsers}`);
 }

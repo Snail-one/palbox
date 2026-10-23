@@ -902,7 +902,6 @@ export class Manager extends EventEmitter {
   async status({ scope = 'overview' } = {}) {
     if (!['overview', 'players', 'local'].includes(scope)) throw failure('状态读取范围无效。', 400);
     const stateRevision = this.stateRevision;
-    await this.store.syncDefaultProfile();
     const installed = await this.runtime.installed();
     const steamcmd = await this.runtime.steamcmdStatus();
     const installedBuild = installed ? await this.installedBuild() : null;

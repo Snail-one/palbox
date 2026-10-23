@@ -248,7 +248,7 @@ export async function streamLogs({ request, response, runtime, auth, channel, pa
     });
     watcher.on('error', () => { watcher.close(); });
   } catch { /* The periodic check also handles a temporarily missing directory. */ }
-  timer = setInterval(refresh, 1000);
+  timer = setInterval(refresh, 5000);
   response.on('drain', refresh);
   heartbeat = setInterval(() => {
     if (!closed && !response.writableNeedDrain) response.write(': heartbeat\n\n');

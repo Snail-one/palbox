@@ -486,7 +486,7 @@ test('旧版官方来源配置迁移为可编辑副本，并自动补充只读�
   assert.equal(locked.origin, OFFICIAL_DEFAULT_ORIGIN);
 });
 
-test('空配置库仍可查询服务状态，拒绝写入或应用空配置，状态轮询能检测官方文件', async t => {
+test('状态查询不触发配置同步，显式同步后才采用新发现的官方文件', async t => {
   const { directory, file } = await fixture(t);
   const manager = new Manager({ directory });
   await manager.initialize();
@@ -496,6 +496,15 @@ test('空配置库仍可查询服务状态，拒绝写入或应用空配置，�
   await assert.rejects(manager.execute('apply', { revision: manager.store.revision, profileId: null }), { status: 409, message: /尚无可用配置/ });
   await assert.rejects(readFile(manager.runtime.config), { code: 'ENOENT' });
   await writeFile(file, official);
+  const before = manager.store.snapshot();
+  const source = await readFile(manager.store.file, 'utf8');
+  const sync = t.mock.method(manager.store, 'syncDefaultProfile', () => { throw new Error('状态读取不能触发同步'); });
+  for (const scope of ['local', 'overview', 'players']) assert.equal((await manager.status({ scope })).hasConfiguration, false);
+  assert.equal(sync.mock.callCount(), 0);
+  assert.deepEqual(manager.store.snapshot(), before);
+  assert.equal(await readFile(manager.store.file, 'utf8'), source);
+  sync.mock.restore();
+  await manager.store.syncDefaultProfile();
   assert.equal((await manager.status()).hasConfiguration, true);
   assert.equal(manager.store.workspace.profiles.length, 1);
 });
