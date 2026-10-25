@@ -104,7 +104,7 @@ const path = require('node:path');
       const worldId = await card.locator('.native-backup-world-id').textContent();
       await card.getByRole('button', { name: '恢复', exact: true }).click();
       await page.locator('#save-import-details').waitFor();
-      assert.equal(await page.locator('#save-import-mode').inputValue(), 'source-world');
+      assert.equal(await page.locator('#save-import-mode [data-restore-mode="source-world"]').getAttribute('aria-pressed'), 'true');
       assert.ok((await page.locator('#save-import-details').textContent()).includes(`SaveGames/0/${worldId}`));
       await page.locator('#save-import-cancel').click();
     }

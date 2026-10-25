@@ -11,15 +11,15 @@ export function createSaveImportDialog({ dom, api, onRestore }) {
   const details = $('save-import-details');
   const progress = $('save-import-progress');
   const status = $('save-import-status');
-  const mode = $('save-import-mode');
-  let file = null, candidate = null, preview = null, busy = false, submitting = false, generation = 0;
+  const modeButtons = [...$('save-import-mode').querySelectorAll('button')];
+  let file = null, candidate = null, preview = null, busy = false, submitting = false, generation = 0, mode = 'world';
 
   function showError(message) { error.textContent = message; error.hidden = !message; }
   function controls() {
     confirm.disabled = busy || (!candidate && !file);
     confirm.textContent = preview ? '确认导入恢复' : busy ? '正在检测…' : '重新检测';
     input.disabled = busy;
-    mode.disabled = busy;
+    for (const button of modeButtons) button.disabled = busy;
     $('save-import-cancel').disabled = submitting;
     $('save-import-close').disabled = submitting;
     drop.setAttribute('aria-disabled', String(busy));
@@ -29,7 +29,7 @@ export function createSaveImportDialog({ dom, api, onRestore }) {
     generation++;
     file = null; candidate = null; preview = null; busy = false; submitting = false;
     input.value = ''; drop.hidden = false;
-    mode.value = 'world'; $('save-import-mode-label').hidden = false;
+    mode = 'world'; $('save-import-mode-label').hidden = false;
     updateModeDescription();
     $('save-import-name').textContent = ''; status.textContent = '';
     details.replaceChildren(); details.hidden = true;
@@ -37,7 +37,12 @@ export function createSaveImportDialog({ dom, api, onRestore }) {
     showError(''); controls();
   }
   function updateModeDescription() {
-    $('save-import-mode-description').textContent = mode.value === 'source-world'
+    for (const button of modeButtons) {
+      const selected = button.dataset.restoreMode === mode;
+      button.classList.toggle('selected', selected);
+      button.setAttribute('aria-pressed', String(selected));
+    }
+    $('save-import-mode-description').textContent = mode === 'source-world'
       ? '恢复到备份原来的世界 ID，并切换服务器加载该世界；已有同 ID 世界会被覆盖。'
       : '保留当前世界 ID，将存档内容恢复到当前世界。';
   }
@@ -83,7 +88,7 @@ export function createSaveImportDialog({ dom, api, onRestore }) {
         candidate = { action: 'import-save', id: staged.id };
       }
       status.textContent = '正在检测存档、配置和恢复目标…';
-      const value = await api.request('restore-preview', { method: 'POST', body: { ...candidate, mode: mode.value }, timeout: 300000 });
+      const value = await api.request('restore-preview', { method: 'POST', body: { ...candidate, mode }, timeout: 300000 });
       if (version !== generation) return;
       preview = value; render(value);
     } catch (caught) { if (version === generation) { status.textContent = '检测未完成，未执行恢复。'; showError(caught.message); } }
@@ -117,7 +122,7 @@ export function createSaveImportDialog({ dom, api, onRestore }) {
     $('save-import-mode-description').hidden = false;
     if (selection) {
       candidate = { action: selection.action, id: selection.id };
-      mode.value = selection.mode || (selection.action === 'restore-native' ? 'source-world' : 'world'); updateModeDescription();
+      mode = selection.mode || (selection.action === 'restore-native' ? 'source-world' : 'world'); updateModeDescription();
       drop.hidden = true;
       $('save-import-name').textContent = selection.label || selection.id;
       void detect();
@@ -128,7 +133,11 @@ export function createSaveImportDialog({ dom, api, onRestore }) {
     event.preventDefault(); input.click();
   });
   input.addEventListener('change', () => select(input.files[0]));
-  mode.addEventListener('change', () => { updateModeDescription(); preview = null; details.hidden = true; controls(); void detect(); });
+  for (const button of modeButtons) button.addEventListener('click', () => {
+    if (busy || mode === button.dataset.restoreMode) return;
+    mode = button.dataset.restoreMode;
+    updateModeDescription(); preview = null; details.hidden = true; controls(); void detect();
+  });
   for (const type of ['dragenter', 'dragover']) drop.addEventListener(type, event => event.preventDefault());
   drop.addEventListener('drop', event => { event.preventDefault(); select(event.dataTransfer?.files?.[0]); });
   confirm.addEventListener('click', submit);

@@ -280,6 +280,7 @@ dialog>p,
 .dialog-choice-buttons { display: flex; width: 100%; margin-top: 7px; }
 .dialog-choice-buttons button { flex: 1; min-height: 44px; padding: 10px 14px; font-size: 15px; font-weight: 600; }
 .segmented.dialog-choice-buttons button.selected { color: #fff; background: var(--accent); box-shadow: none; }
+#save-import-mode button { min-width: 0; padding: 10px 8px; font-size: 13px; text-wrap: balance; }
 
 .dialog-actions {
   display: flex;
