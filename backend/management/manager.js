@@ -328,34 +328,21 @@ export class Manager extends EventEmitter {
   async adoptRestoredSettings(source, worldId = null) {
     if (!worldId) return this.adoptImportedConfig(source);
     if (!worldName.test(worldId)) throw failure('备份中的世界 ID 无效。');
-    const directory = await this.native.safeDirectory(['Config', 'LinuxServer']);
-    const file = path.join(directory, 'GameUserSettings.ini');
-    let original = null;
-    try {
-      if (!(await lstat(file)).isFile()) throw failure('GameUserSettings.ini 不能是链接或特殊文件。');
-      original = await readFile(file);
-    } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    const settings = original?.toString('utf8') ?? '';
-    const newline = settings.includes('\r\n') ? '\r\n' : '\n';
+    const { file, original } = await this.readWorldSettings();
+    const directory = path.dirname(file);
+    const settings = original.toString('utf8');
     const assignment = `DedicatedServerName=${worldId}`;
-    const section = '[/Script/Pal.PalGameLocalSettings]';
-    let updated;
-    if (/^[\t ]*DedicatedServerName[\t ]*=/m.test(settings)) {
-      updated = settings.replace(/^[\t ]*DedicatedServerName[\t ]*=[^\r\n]*/gm, assignment);
-    } else if (/^\[\/Script\/Pal\.PalGameLocalSettings\][\t ]*\r?$/m.test(settings)) {
-      updated = settings.replace(/^(\[\/Script\/Pal\.PalGameLocalSettings\][\t ]*)(\r?\n|$)/m, (_, heading, ending) => heading + newline + assignment + (ending ? newline : ''));
-    } else updated = settings + (settings && !settings.endsWith('\n') ? newline : '') + section + newline + assignment + newline;
+    const updated = settings.replace(/^[\t ]*DedicatedServerName[\t ]*=[^\r\n]*/gm, assignment);
     const stage = await createTransaction(this.directory, directory, '.world-settings-');
     let preserve = false;
     try {
-      if (original !== null) await atomicWrite(path.join(stage, 'GameUserSettings.ini'), original);
+      await atomicWrite(path.join(stage, 'GameUserSettings.ini'), original);
       try {
         await atomicWrite(file, updated);
         await this.adoptImportedConfig(source);
       } catch (error) {
         try {
-          if (original === null) await unlink(file).catch(caught => { if (caught.code !== 'ENOENT') throw caught; });
-          else await atomicWrite(file, original);
+          await atomicWrite(file, original);
         } catch (caught) {
           preserve = true;
           const rollback = failure(`${error.message}；世界 ID 回滚失败，原文件副本已保留在 ${stage}：${caught.message}`, 500);
@@ -823,7 +810,21 @@ export class Manager extends EventEmitter {
     if (!worldId && configuration == null) throw failure('备份中没有可恢复的世界或游戏配置。', 409);
     return { file, worldId, currentWorld, configuration, sourcePrefix: worldId ? (legacy ? `${prefix}SaveGames/0/${worldId}` : worldId) : null };
   }
+  async readWorldSettings() {
+    try {
+      const directory = await this.native.safeDirectory(['Config', 'LinuxServer']);
+      const file = path.join(directory, 'GameUserSettings.ini');
+      if (!(await lstat(file)).isFile()) throw failure('GameUserSettings.ini 不能是链接或特殊文件。');
+      const original = await readFile(file);
+      if (!/^[\t ]*DedicatedServerName[\t ]*=/m.test(original.toString('utf8'))) throw failure('未找到配置：GameUserSettings.ini 中缺少 DedicatedServerName 参数，请先启动一次服务端生成配置后重试。', 409);
+      return { file, original };
+    } catch (error) {
+      if (error.code === 'ENOENT') throw failure('尚未生成 GameUserSettings.ini，请先启动一次服务端，待配置文件生成后再导入或恢复存档。', 409);
+      throw error;
+    }
+  }
   async restoreDestination(sourceWorldId, hasWorld, mode) {
+    if (hasWorld) await this.readWorldSettings();
     if (mode === 'source-world') {
       if (!hasWorld || !worldName.test(sourceWorldId || '')) throw failure('存档未提供有效的来源世界 ID，无法按备份世界 ID 恢复。', 409);
       return sourceWorldId;

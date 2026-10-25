@@ -120,7 +120,7 @@ test('未知当前世界 ID 时拒绝导入；已有游戏配置 ID 时使用该
     const staged = await (await f.upload('/api/save-import', bytes)).json();
     const task = await f.task('import-save', { id: staged.id });
     assert.equal(task.state, 'failed');
-    assert.match(task.message, /无法确定游戏运行的世界 ID/);
+    assert.match(task.message, /GameUserSettings.ini.*请先启动一次服务端/);
     await assert.rejects(readdir(path.join(saved(f), 'SaveGames/0')), { code: 'ENOENT' });
   }
   await writeFile(path.join(saved(f), 'Config/LinuxServer/GameUserSettings.ini'), 'DedicatedServerName=GAMEID\n');
