@@ -100,6 +100,14 @@ const path = require('node:path');
     await page.setViewportSize({ width: 1440, height: 1100 });
     await page.locator('#nav-saves-native').click();
     await page.locator('.native-backup-card').first().waitFor();
+    for (const card of await page.locator('.native-backup-card').all()) {
+      const worldId = await card.locator('.native-backup-world-id').textContent();
+      await card.getByRole('button', { name: '恢复', exact: true }).click();
+      await page.locator('#save-import-details').waitFor();
+      assert.equal(await page.locator('#save-import-mode').inputValue(), 'source-world');
+      assert.ok((await page.locator('#save-import-details').textContent()).includes(`SaveGames/0/${worldId}`));
+      await page.locator('#save-import-cancel').click();
+    }
     const columns = () => page.locator('.native-backup-grid').evaluate(grid => getComputedStyle(grid).gridTemplateColumns.split(' ').length);
     assert.equal(await columns(), 3);
     await page.screenshot({ path: path.join(output, 'native-desktop.png'), fullPage: true });
@@ -110,7 +118,7 @@ const path = require('node:path');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({ path: path.join(output, 'native-mobile.png'), fullPage: true });
     assert.deepEqual(errors, []);
-    console.log('PASS 世界备份每页 5 条、历史世界 ID、独立分页和删除回退；官方备份宽屏三列、窄屏两列、手机单列');
+    console.log('PASS 世界备份分页和删除回退；官方备份默认按所属世界 ID 恢复，当前世界和其他世界均正确；响应式布局正常');
   } finally {
     await browser?.close();
     await f.close();

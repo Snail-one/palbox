@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { EventEmitter } from 'node:events';
 import { Runtime, DEFAULT_SHUTDOWN_MESSAGE } from './runtime.js';
-import { NativeBackups, configuredWorldId } from './native-backups.js';
+import { NativeBackups, configuredWorldId, worldName } from './native-backups.js';
 import { SaveImports } from './save-imports.js';
 import { replaceDirectory } from './replace-directory.js';
 import { readBanList } from './banned-players.js';
@@ -39,6 +39,10 @@ function configurationState(desired, written, started, running) {
 }
 const backupId = /^[a-z0-9-]+\.tar\.gz$(?![\s\S])/;
 const MISSING = Symbol('missing');
+function restoreMode(mode) {
+  if (mode !== undefined && mode !== 'world' && mode !== 'source-world') throw failure('恢复方式无效，请选择恢复到当前世界或按备份世界 ID 恢复。');
+  return mode ?? 'world';
+}
 const MAX_GAME_ARGS = 32;
 const MAX_BACKUP_RETENTION = 20;
 const MAX_GAME_ARG_LENGTH = 200;
@@ -276,7 +280,7 @@ export class Manager extends EventEmitter {
     const allowed = ['install-steamcmd', 'install', 'update', 'start', 'stop', 'force-stop', 'restart', 'apply', 'backup', 'delete-backup', 'restore', 'restore-native', 'import-save', 'reset-save', 'save-world', 'announce', 'kick', 'ban', 'unban'];
     if (!allowed.includes(action)) throw failure('管理操作不存在。', 404);
     if (action === 'backup' && payload.category && payload.category !== 'manual') throw failure('定时备份已交由游戏官方机制，面板仅支持手动创建世界备份。');
-    if (action === 'restore' && payload.mode !== undefined && payload.mode !== 'world') throw failure('恢复方式已统一为当前世界恢复，请刷新页面后重试。');
+    if (['restore', 'restore-native', 'import-save'].includes(action)) restoreMode(payload.mode);
     if (this.closing) throw failure('管理服务正在关闭。', 503);
     if (this.busy) throw failure('已有任务正在执行，请稍后再试。', 409);
     if (action === 'install-steamcmd' && this.runtime.game) throw failure('请先停止游戏服再安装 SteamCMD。', 409);
@@ -320,6 +324,49 @@ export class Manager extends EventEmitter {
       configFile: this.runtime.config,
       onCleanupError: error => this.runtime.log('palbox', `配置事务临时文件清理失败：${error.message}\n`)
     });
+  }
+  async adoptRestoredSettings(source, worldId = null) {
+    if (!worldId) return this.adoptImportedConfig(source);
+    if (!worldName.test(worldId)) throw failure('备份中的世界 ID 无效。');
+    const directory = await this.native.safeDirectory(['Config', 'LinuxServer']);
+    const file = path.join(directory, 'GameUserSettings.ini');
+    let original = null;
+    try {
+      if (!(await lstat(file)).isFile()) throw failure('GameUserSettings.ini 不能是链接或特殊文件。');
+      original = await readFile(file);
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    const settings = original?.toString('utf8') ?? '';
+    const newline = settings.includes('\r\n') ? '\r\n' : '\n';
+    const assignment = `DedicatedServerName=${worldId}`;
+    const section = '[/Script/Pal.PalGameLocalSettings]';
+    let updated;
+    if (/^[\t ]*DedicatedServerName[\t ]*=/m.test(settings)) {
+      updated = settings.replace(/^[\t ]*DedicatedServerName[\t ]*=[^\r\n]*/gm, assignment);
+    } else if (/^\[\/Script\/Pal\.PalGameLocalSettings\][\t ]*\r?$/m.test(settings)) {
+      updated = settings.replace(/^(\[\/Script\/Pal\.PalGameLocalSettings\][\t ]*)(\r?\n|$)/m, (_, heading, ending) => heading + newline + assignment + (ending ? newline : ''));
+    } else updated = settings + (settings && !settings.endsWith('\n') ? newline : '') + section + newline + assignment + newline;
+    const stage = await createTransaction(this.directory, directory, '.world-settings-');
+    let preserve = false;
+    try {
+      if (original !== null) await atomicWrite(path.join(stage, 'GameUserSettings.ini'), original);
+      try {
+        await atomicWrite(file, updated);
+        await this.adoptImportedConfig(source);
+      } catch (error) {
+        try {
+          if (original === null) await unlink(file).catch(caught => { if (caught.code !== 'ENOENT') throw caught; });
+          else await atomicWrite(file, original);
+        } catch (caught) {
+          preserve = true;
+          const rollback = failure(`${error.message}；世界 ID 回滚失败，原文件副本已保留在 ${stage}：${caught.message}`, 500);
+          rollback.rollbackFailed = true;
+          throw rollback;
+        }
+        throw error;
+      }
+    } finally {
+      await finishTransaction(stage, { preserve, onCleanupError: error => this.runtime.log('palbox', `世界 ID 事务清理失败：${error.message}\n`) });
+    }
   }
   async ensureConfig() {
     try { await stat(this.runtime.config); }
@@ -441,14 +488,21 @@ export class Manager extends EventEmitter {
       case 'delete-backup': await this.deleteBackup(payload.id); break;
       case 'restore': await this.restore(payload.id, { mode: payload.mode, expectedWorldId: payload.targetWorldId }); break;
       case 'restore-native': {
-        this.assertRestoreTarget(payload.targetWorldId, await this.targetWorld());
+        const mode = restoreMode(payload.mode);
+        const snapshot = await this.native.get(payload.id);
+        const target = await this.restoreDestination(snapshot.worldId, true, mode);
+        this.assertRestoreTarget(payload.targetWorldId, target);
         const running = Boolean(this.runtime.game);
         try {
           await this.native.restore(payload.id, async () => {
             if (running) await this.stopGame({ requireSave: true });
-            await this.backup('before-restore');
+            await this.backup('before-restore', null, { targetWorldId: mode === 'source-world' ? target : undefined });
             this.servicePhase('restoring', '正在恢复官方备份中的世界和玩家存档。');
-          }, { onCleanupError: error => this.runtime.log('palbox', `官方恢复临时文件清理失败：${error.message}\n`) });
+          }, {
+            allowWorldSwitch: mode === 'source-world',
+            afterReplace: () => this.adoptRestoredSettings(null, mode === 'source-world' ? target : null),
+            onCleanupError: error => this.runtime.log('palbox', `官方恢复临时文件清理失败：${error.message}\n`)
+          });
         } catch (error) {
           // A failed swap keeps the server down only when the previous files could not be put back.
           if (running && !error.rollbackFailed && !this.runtime.game && !this.closing) {
@@ -460,7 +514,7 @@ export class Manager extends EventEmitter {
         if (running) await this.startGame();
         break;
       }
-      case 'import-save': await this.restoreImported(payload.id, task, payload.targetWorldId); break;
+      case 'import-save': await this.restoreImported(payload.id, task, payload.targetWorldId, payload.mode); break;
       case 'reset-save': {
         this.requireResetAllowed(payload);
         const worldId = await this.targetWorld();
@@ -525,7 +579,8 @@ export class Manager extends EventEmitter {
     if (payload.confirmation !== 'delete') throw failure('请输入 delete 确认重置存档。', 400);
     if (this.runtime.game) throw failure('请先停止游戏服务器，再重置存档。', 409);
   }
-  async restoreImported(id, task, expectedWorldId) {
+  async restoreImported(id, task, expectedWorldId, requestedMode) {
+    const mode = restoreMode(requestedMode);
     const imported = await this.imports.get(id);
     if (!(await this.runtime.installed())) throw failure('请先安装帕鲁服务端。', 409);
     const wasRunning = Boolean(this.runtime.game);
@@ -537,20 +592,21 @@ export class Manager extends EventEmitter {
       const hasWorld = imported.kind === 'world';
       const importedConfig = imported.configurationSource;
       if (importedConfig != null) await this.requireImportableConfig(importedConfig);
-      const worldId = hasWorld ? await this.targetWorld() : null;
+      const worldId = await this.restoreDestination(imported.worldId, hasWorld, mode);
+      const configured = hasWorld ? (mode === 'world' ? worldId : await this.native.configuredWorld()) : null;
       this.assertRestoreTarget(expectedWorldId, worldId);
       if (wasRunning) await this.stopGame({ requireSave: true });
-      if (hasWorld && worldId !== await this.targetWorld()) throw failure('当前世界已改变，请刷新后重试。', 409);
+      if (hasWorld) this.assertRestoreTarget(configured, mode === 'world' ? await this.targetWorld() : await this.native.configuredWorld());
       task.message = '正在创建导入前备份';
-      task.backup = await this.backup('before-import', null, { configurationOnly: !hasWorld });
+      task.backup = await this.backup('before-import', null, { configurationOnly: !hasWorld, targetWorldId: mode === 'source-world' ? worldId : undefined });
       if (hasWorld) {
-        if (await this.targetWorld() !== worldId) throw failure('当前世界已改变，请刷新后重试。', 409);
+        this.assertRestoreTarget(configured, mode === 'world' ? await this.targetWorld() : await this.native.configuredWorld());
         const ensured = await this.native.ensureWorld(worldId);
         if (ensured.created) created = ensured.directory;
-        this.servicePhase('restoring', '正在恢复当前世界存档和包内的游戏配置。');
+        this.servicePhase('restoring', '正在恢复目标世界存档和包内的游戏配置。');
         await replaceDirectory(imported.snapshot, ensured.directory, {
           stageDirectory: await createTransaction(this.directory, path.dirname(ensured.directory), 'import-'),
-          afterReplace: () => this.adoptImportedConfig(importedConfig),
+          afterReplace: () => this.adoptRestoredSettings(importedConfig, mode === 'source-world' ? worldId : null),
           onCleanupError: error => this.runtime.log('palbox', `导入事务临时文件清理失败：${error.message}\n`)
         });
       } else {
@@ -616,8 +672,9 @@ export class Manager extends EventEmitter {
     }
     return false;
   }
-  async backupWorldId() {
-    const configured = await this.native.configuredWorld();
+  async backupWorldId({ worldId } = {}) {
+    const configured = worldId ?? await this.native.configuredWorld();
+    if (configured && !worldName.test(configured)) throw failure('世界 ID 无效。');
     const readable = async id => {
       try {
         const level = await lstat(path.join(this.runtime.saved, 'SaveGames', '0', id, 'Level.sav'));
@@ -641,7 +698,7 @@ export class Manager extends EventEmitter {
     if (worlds.length > 1) throw failure('无法确定当前世界，不能创建世界备份。', 409);
     return worlds[0] ?? null;
   }
-  async backup(category, protectedId = null, { worldId: expectedWorldId, configurationOnly = false } = {}) {
+  async backup(category, protectedId = null, { worldId: expectedWorldId, configurationOnly = false, targetWorldId } = {}) {
     const directory = await backupDirectory(this.directory, category);
     this.servicePhase('backing', '正在备份当前世界和游戏配置。');
     // Stop the process before archiving so world/player files belong to one save.
@@ -649,7 +706,7 @@ export class Manager extends EventEmitter {
     try { await this.native.safeDirectory([]); }
     catch (error) { if (error.code === 'ENOENT') return null; throw error; }
     if (!(await this.savedHasPackableContent(this.runtime.saved))) return null;
-    const worldId = configurationOnly ? null : await this.backupWorldId();
+    const worldId = configurationOnly ? null : await this.backupWorldId({ worldId: targetWorldId });
     this.assertRestoreTarget(expectedWorldId, worldId);
     const worldDir = worldId ? path.join(this.runtime.saved, 'SaveGames', '0', worldId) : null;
     if (!worldDir) {
@@ -740,7 +797,7 @@ export class Manager extends EventEmitter {
     const worlds = [...new Set(names.map(name => (legacy
       ? /^Pal\/Saved\/SaveGames\/0\/([A-Za-z0-9_-]{1,128})\/Level\.sav$/
       : /^([A-Za-z0-9_-]{1,128})\/Level\.sav$/).exec(name)?.[1]).filter(Boolean))];
-    const currentWorld = worlds.length ? await this.targetWorld() : null;
+    const currentWorld = worlds.length ? await this.native.configuredWorld() : null;
     let worldId = worlds[0] ?? null;
     const selection = prefix + 'Config/LinuxServer/GameUserSettings.ini';
     if (legacy && names.includes(selection)) {
@@ -766,28 +823,41 @@ export class Manager extends EventEmitter {
     if (!worldId && configuration == null) throw failure('备份中没有可恢复的世界或游戏配置。', 409);
     return { file, worldId, currentWorld, configuration, sourcePrefix: worldId ? (legacy ? `${prefix}SaveGames/0/${worldId}` : worldId) : null };
   }
-  async previewRestore(action, id) {
+  async restoreDestination(sourceWorldId, hasWorld, mode) {
+    if (mode === 'source-world') {
+      if (!hasWorld || !worldName.test(sourceWorldId || '')) throw failure('存档未提供有效的来源世界 ID，无法按备份世界 ID 恢复。', 409);
+      return sourceWorldId;
+    }
+    return hasWorld ? this.targetWorld() : null;
+  }
+  async previewRestore(action, id, requestedMode) {
+    const mode = restoreMode(requestedMode);
     if (this.closing) throw failure('管理服务正在关闭。', 503);
     if (this.busy) throw failure('已有任务正在执行，请稍后再试。', 409);
     let sourceWorldId, targetWorldId, hasWorld, configuration = null;
     if (action === 'restore') {
       const archive = await this.inspectBackup(id);
-      sourceWorldId = archive.worldId; targetWorldId = archive.currentWorld;
+      sourceWorldId = archive.worldId;
       hasWorld = Boolean(archive.sourcePrefix); configuration = archive.configuration;
     } else if (action === 'import-save') {
       const imported = await this.imports.get(id);
       sourceWorldId = imported.worldId;
       hasWorld = imported.kind === 'world';
-      targetWorldId = hasWorld ? await this.targetWorld() : null;
       configuration = imported.configurationSource;
       if (configuration != null) await this.requireImportableConfig(configuration);
     } else if (action === 'restore-native') {
       const snapshot = await this.native.get(id);
-      sourceWorldId = snapshot.worldId; targetWorldId = await this.targetWorld(); hasWorld = true;
-      if (sourceWorldId !== targetWorldId) throw failure('无法确认该官方备份属于当前世界，拒绝恢复。', 409);
+      sourceWorldId = snapshot.worldId; hasWorld = true;
     } else throw failure('恢复操作不存在。', 404);
+    targetWorldId = await this.restoreDestination(sourceWorldId, hasWorld, mode);
+    if (action === 'restore-native' && mode === 'world' && sourceWorldId !== targetWorldId) throw failure('无法确认该官方备份属于当前世界，拒绝恢复。', 409);
+    let targetExists = false;
+    if (hasWorld) {
+      try { const target = await this.native.safeDirectory(['SaveGames', '0', targetWorldId]); targetExists = (await readdir(target)).length > 0; }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
     return {
-      action, id, hasWorld, sourceWorldId: sourceWorldId ?? null, targetWorldId,
+      action, id, mode, hasWorld, sourceWorldId: sourceWorldId ?? null, targetWorldId, targetExists,
       targetDirectory: hasWorld ? path.join(this.runtime.saved, 'SaveGames/0', targetWorldId) : null,
       hasConfiguration: configuration != null, configurationProfile: configuration != null ? '游戏默认配置' : null,
       selectConfiguration: configuration != null, scope: hasWorld ? 'world' : 'configuration',
@@ -796,16 +866,17 @@ export class Manager extends EventEmitter {
     };
   }
   async restore(id, { mode, expectedWorldId } = {}) {
-    if (mode !== undefined && mode !== 'world') throw failure('恢复方式已统一为当前世界恢复，请刷新页面后重试。');
+    mode = restoreMode(mode);
     const archive = await this.inspectBackup(id);
-    this.assertRestoreTarget(expectedWorldId, archive.currentWorld);
+    const target = await this.restoreDestination(archive.worldId, Boolean(archive.sourcePrefix), mode);
+    this.assertRestoreTarget(expectedWorldId, target);
     const stage = await createTransaction(this.directory, path.join(this.directory, 'palbox'), 'restore-', { recoverable: false });
     try {
       if (archive.sourcePrefix) await this.runtime.run('tar', ['-xzf', archive.file, '--no-same-owner', '--no-same-permissions', '-C', stage, '--', archive.sourcePrefix]);
-      await this.restoreWorldBackup(id, archive.sourcePrefix ? path.join(stage, archive.sourcePrefix) : null, archive.configuration, archive.currentWorld);
+      await this.restoreWorldBackup(id, archive.sourcePrefix ? path.join(stage, archive.sourcePrefix) : null, archive.configuration, target, mode);
     } finally { await finishTransaction(stage, { onCleanupError: error => this.runtime.log('palbox', `恢复临时文件清理失败：${error.message}\n`) }); }
   }
-  async restoreWorldBackup(id, source, configuration, currentWorld) {
+  async restoreWorldBackup(id, source, configuration, currentWorld, mode = 'world') {
     if (!source && configuration == null) throw failure('备份中没有可恢复的世界或游戏配置。', 409);
     if (source) {
       if (!(await this.checkBackupFiles(source))) throw failure('备份中没有可恢复的文件。');
@@ -814,20 +885,21 @@ export class Manager extends EventEmitter {
     }
     if (configuration != null) await this.requireImportableConfig(configuration);
     const running = Boolean(this.runtime.game);
+    const configured = source ? await this.native.configuredWorld() : null;
     let created = null;
     try {
       if (running) await this.stopGame({ requireSave: true });
-      if (source && currentWorld !== await this.targetWorld()) throw failure('当前世界已改变，请刷新后重试。', 409);
-      await this.backup('before-restore', id, { configurationOnly: !source });
+      if (source) this.assertRestoreTarget(mode === 'world' ? currentWorld : configured, mode === 'world' ? await this.targetWorld() : await this.native.configuredWorld());
+      await this.backup('before-restore', id, { configurationOnly: !source, targetWorldId: mode === 'source-world' ? currentWorld : undefined });
       await this.checkedBackupFile(id);
-      this.servicePhase('restoring', source ? '正在恢复当前世界的存档和备份中的游戏配置。' : '正在恢复备份中的游戏配置。');
+      this.servicePhase('restoring', source ? '正在恢复目标世界的存档和备份中的游戏配置。' : '正在恢复备份中的游戏配置。');
       if (source) {
-        this.assertRestoreTarget(currentWorld, await this.targetWorld());
+        this.assertRestoreTarget(mode === 'world' ? currentWorld : configured, mode === 'world' ? await this.targetWorld() : await this.native.configuredWorld());
         const ensured = await this.native.ensureWorld(currentWorld);
         if (ensured.created) created = ensured.directory;
         await replaceDirectory(source, ensured.directory, {
           stageDirectory: await createTransaction(this.directory, path.dirname(ensured.directory), 'world-restore-'),
-          afterReplace: () => this.adoptImportedConfig(configuration),
+          afterReplace: () => this.adoptRestoredSettings(configuration, mode === 'source-world' ? currentWorld : null),
           onCleanupError: error => this.runtime.log('palbox', `恢复事务临时文件清理失败：${error.message}\n`)
         });
       } else await this.adoptImportedConfig(configuration);

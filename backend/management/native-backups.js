@@ -224,7 +224,7 @@ export class NativeBackups {
     } catch (error) { await cleanup(); throw error; }
   }
 
-  async replaceWorld(worldId, source, { beforeSwap, onCleanupError = () => {} } = {}) {
+  async replaceWorld(worldId, source, { beforeSwap, afterReplace = async () => {}, onCleanupError = () => {} } = {}) {
     if (!worldName.test(worldId || '')) throw failure('世界 ID 无效。');
     await this.inspect(source, { requirePlayers: false });
     const names = await readdir(source);
@@ -258,6 +258,7 @@ export class NativeBackups {
           await rename(path.join(source, name), target);
           entry.installed = true;
         }
+        await afterReplace();
       } catch (error) {
         try {
           for (const entry of moved.reverse()) {
@@ -275,17 +276,18 @@ export class NativeBackups {
     } finally { await finishTransaction(stage, { preserve, onCleanupError }); }
   }
 
-  async restore(id, beforeReplace, { onCleanupError = () => {} } = {}) {
+  async restore(id, beforeReplace, { allowWorldSwitch = false, afterReplace, onCleanupError = () => {} } = {}) {
     const backup = await this.get(id);
-    if (backup.worldId !== await this.configuredWorld()) throw failure('无法确认该备份属于 GameUserSettings.ini 指定的当前世界，拒绝恢复。', 409);
+    const configured = await this.configuredWorld();
+    if (!allowWorldSwitch && backup.worldId !== configured) throw failure('无法确认该备份属于 GameUserSettings.ini 指定的当前世界，拒绝恢复。', 409);
     const world = await this.safeDirectory(['SaveGames', '0', backup.worldId]);
     const stage = await createTransaction(this.directory, path.dirname(world), '.official-restore-', { recoverable: false });
     try {
       const source = path.join(stage, 'save');
       await this.copy(id, source);
-      await this.replaceWorld(backup.worldId, source, { onCleanupError, beforeSwap: async () => {
+      await this.replaceWorld(backup.worldId, source, { onCleanupError, afterReplace, beforeSwap: async () => {
         await beforeReplace();
-        if (backup.worldId !== await this.configuredWorld()) throw failure('当前世界已改变，请刷新后重试。', 409);
+        if (configured !== await this.configuredWorld()) throw failure('当前世界已改变，请刷新后重试。', 409);
       } });
     } finally { await finishTransaction(stage, { onCleanupError }); }
   }

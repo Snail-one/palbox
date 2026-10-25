@@ -58,7 +58,7 @@ test('拒绝已移除的完整恢复方式；当前世界 ID 缺失时保留运�
     const response = await f.request('/api/tasks', { method: 'POST', body: { action: 'restore', id, mode } });
     assert.equal(response.status, 400);
   }
-  await assert.rejects(f.manager.restore(id, { mode: 'full' }), /恢复方式已统一/);
+  await assert.rejects(f.manager.restore(id, { mode: 'full' }), /恢复方式无效/);
   assert.equal(f.manager.tasks.length, count);
   await rm(path.join(f.runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'));
   for (const payload of [{ id }, { id, mode: 'world' }]) {

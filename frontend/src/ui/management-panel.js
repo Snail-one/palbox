@@ -17,8 +17,8 @@ const BACKUP_GROUPS = {
 };
 const BACKUP_GROUP_DETAILS = {
   manual: ['file', '手动创建，用于日常留档', '停止游戏后，可创建第一份世界备份。'],
-  'before-restore': ['restore', '恢复备份前自动保存当前世界和配置', '恢复备份时，会先在这里保留当前世界目录和 PalWorldSettings.ini。'],
-  'before-import': ['upload', '导入外部存档前自动保存当前世界和配置', '导入存档时，会先在这里保留当前世界目录和 PalWorldSettings.ini。'],
+  'before-restore': ['restore', '恢复备份前自动保存目标世界和配置', '恢复备份时，会先在这里保留被覆盖的目标世界目录和 PalWorldSettings.ini。'],
+  'before-import': ['upload', '导入外部存档前自动保存目标世界和配置', '导入存档时，会先在这里保留被覆盖的目标世界目录和 PalWorldSettings.ini。'],
   'before-reset': ['shield', '清空世界存档前自动保存当前世界和配置', '重置存档时，会先在这里保留当前世界目录和 PalWorldSettings.ini。']
 };
 
@@ -141,7 +141,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   saves.className = 'management-panel save-management';
   saves.setAttribute('aria-labelledby', 'save-management-title');
   saves.innerHTML = `
-    <div class="management-heading backup-page-heading"><div><h2 id="save-management-title">世界备份</h2><p class="management-note">手动、恢复前、导入前和重置前备份都打包当前世界目录和 PalWorldSettings.ini，结构与官方备份下载相同。没有可读世界时，自动保护备份只保存这份配置。时间按本地时区显示（${timeFormat.timeZone}）。</p></div><div class="management-actions"><button class="button primary" data-action="backup" disabled><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>创建世界备份</button></div></div>
+    <div class="management-heading backup-page-heading"><div><h2 id="save-management-title">世界备份</h2><p class="management-note">手动和重置前备份保存当前世界，恢复前和导入前备份保存被覆盖的目标世界，均包含 PalWorldSettings.ini。没有可读世界时，自动保护备份只保存这份配置。时间按本地时区显示（${timeFormat.timeZone}）。</p></div><div class="management-actions"><button class="button primary" data-action="backup" disabled><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>创建世界备份</button></div></div>
     <div class="backup-overview"><div class="backup-stat"><span>全部归档</span><strong id="save-backup-summary" role="status">正在读取…</strong></div><div class="backup-stat"><span>最近备份</span><span id="save-backup-latest">正在读取…</span></div><div class="backup-stat"><span>保留策略</span><span>各分类单独设置 · 每类最多 20 份</span></div></div>
     <p id="complete-backup-note" class="backup-status-note management-note"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><span id="complete-backup-status">创建手动备份前，请先停止游戏服务。</span></p>
     <div id="manager-backups">正在读取世界备份…</div>`;
@@ -213,7 +213,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     }
   }
   async function action(name, payload = {}, confirm = true) {
-    if (['restore', 'restore-native'].includes(name)) { saveImport.open({ action: name, id: payload.id }); return; }
+    if (['restore', 'restore-native'].includes(name)) { saveImport.open({ action: name, id: payload.id, mode: payload.mode }); return; }
     if (confirm && ['stop', 'force-stop', 'restart', 'update', 'apply', 'backup', 'reset-save', 'kick'].includes(name)) {
       const descriptions = {
         apply: '将当前配置写入游戏，不创建备份。游戏服正在运行时会先存档、停服，再应用并重启。',
@@ -473,7 +473,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     const badge = $('native-backup-state');
     badge.textContent = value.enabled === null ? '尚未配置' : value.enabled ? '已启用' : '未启用';
     badge.dataset.state = value.enabled ? 'saved' : 'pending';
-    $('native-backup-note').textContent = value.enabled === false ? '当前游戏配置未启用官方自动备份，可前往配置管理开启；已有备份仍可下载。' : value.activeWorld ? '下载无需停服；恢复前会保存、停服，并将当前世界备份到“恢复前备份”。仅可恢复当前世界的快照。' : '世界尚未生成或无法确认当前世界；可下载已有备份，暂不允许恢复。';
+    $('native-backup-note').textContent = value.enabled === false ? '当前游戏配置未启用官方自动备份，可前往配置管理开启；已有备份仍可下载和恢复。' : value.activeWorld ? '下载无需停服；恢复前会保存、停服，并备份目标世界。其他世界的快照可按备份世界 ID 恢复并切换加载。' : '无法确认当前世界；可下载已有备份，或按备份世界 ID 恢复并切换加载。';
     const nativeBytes = value.backups.reduce((total, backup) => total + backup.bytes, 0);
     $('native-backup-summary').textContent = `${value.backups.length} 份 · ${formatBytes(nativeBytes)}`;
     $('native-backup-summary').title = `${nativeBytes} 字节`;
@@ -515,8 +515,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
       const worldValue = document.createElement('dd'); worldValue.className = 'native-backup-world-id'; worldValue.textContent = backup.worldId;
       world.append(worldLabel, worldValue); details.append(size, world);
       const download = document.createElement('a'); download.className = 'button secondary'; download.textContent = '下载'; download.href = `/api/native-backup?${new URLSearchParams({ id: backup.id, timeZone: timeFormat.timeZone })}`; download.setAttribute('download', '');
-      const restore = document.createElement('button'); restore.className = 'button secondary'; restore.textContent = '恢复'; restore.disabled = Boolean(lastStatus?.task) || !backup.canRestore;
-      if (!backup.canRestore) restore.title = '只能恢复已确认的当前世界备份';
+      const restore = document.createElement('button'); restore.className = 'button secondary'; restore.textContent = '恢复'; restore.disabled = Boolean(lastStatus?.task);
       restore.addEventListener('click', () => action('restore-native', { id: backup.id }));
       const actions = document.createElement('div'); actions.className = 'native-backup-actions'; actions.append(download, restore);
       card.append(header, details, actions); grid.append(card);

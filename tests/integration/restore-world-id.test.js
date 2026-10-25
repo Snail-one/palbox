@@ -1,0 +1,189 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
+import path from 'node:path';
+import { managementFixture } from '../helpers/management-fixture.js';
+import { nativeBackupFixture } from '../helpers/native-backup-fixture.js';
+
+async function fixture(t, action = 'restore') {
+  const f = await managementFixture(); t.after(() => f.close()); await f.login();
+  assert.equal((await f.task('install')).state, 'succeeded');
+  const source = await nativeBackupFixture(f.runtime.saved, { worldId: 'SOURCE' });
+  let id = action === 'restore-native' ? source.id : await f.manager.backup('manual');
+  if (action === 'import-save') {
+    const upload = await f.upload('/api/save-import', await fs.readFile(f.manager.backupFile(id)));
+    assert.equal(upload.status, 201); id = (await upload.json()).id;
+  }
+  await fs.writeFile(path.join(source.world, 'Level.sav'), 'previous-source-data');
+  const current = await nativeBackupFixture(f.runtime.saved, { worldId: 'CURRENT' });
+  await fs.writeFile(path.join(current.world, 'Level.sav'), 'keep-current-data');
+  const settings = path.join(f.runtime.saved, 'Config/LinuxServer/GameUserSettings.ini');
+  await fs.appendFile(settings, 'OtherSetting=keep\n');
+  return { f, id, source, current, settings, action };
+}
+
+test('按备份世界 ID 恢复、导入及官方快照：保护被覆盖世界、切换加载 ID、保留其他世界及运行状态', async t => {
+  for (const action of ['restore', 'import-save', 'restore-native']) {
+    await t.test(action, async t => {
+      const { f, id, source, current, settings } = await fixture(t, action);
+      const running = action !== 'import-save';
+      if (running) assert.equal((await f.task('start')).state, 'succeeded');
+      const response = await f.request('/api/restore-preview', { method: 'POST', body: { action, id, mode: 'source-world' } });
+      assert.equal(response.status, 200);
+      const preview = await response.json();
+      assert.equal(preview.targetWorldId, 'SOURCE');
+      assert.equal(preview.targetExists, true);
+      assert.equal(preview.mode, 'source-world');
+      assert.equal(preview.targetDirectory, source.world);
+      assert.equal(await f.manager.targetWorld(), 'CURRENT');
+      const task = await f.task(action, { id, mode: 'source-world', targetWorldId: preview.targetWorldId });
+      assert.equal(task.state, 'succeeded', task.message);
+      assert.equal(await f.manager.targetWorld(), 'SOURCE');
+      assert.match(await fs.readFile(settings, 'utf8'), /OtherSetting=keep/);
+      assert.equal(await fs.readFile(path.join(source.world, 'Level.sav'), 'utf8'), action === 'restore-native' ? 'official-world' : 'current-world');
+      assert.equal(await fs.readFile(path.join(current.world, 'Level.sav'), 'utf8'), 'keep-current-data');
+      assert.equal(Boolean(f.runtime.game), running);
+      const category = action === 'import-save' ? 'before-import' : 'before-restore';
+      const [backup] = (await f.manager.backups({ includeWorldId: true })).filter(backup => backup.category === category);
+      assert.equal(backup.worldId, 'SOURCE');
+      const result = await f.runtime.run('tar', ['-xOzf', f.manager.backupFile(backup.id), '--', 'SOURCE/Level.sav']);
+      assert.equal(result, 'previous-source-data');
+      if (action === 'restore-native') assert.equal(await fs.readFile(path.join(source.snapshot, 'Level.sav'), 'utf8'), 'official-world');
+    });
+  }
+});
+
+test('没有当前世界 ID 时可按来源 ID 创建世界，并保留其他配置及换行格式', async t => {
+  for (const action of ['restore', 'import-save']) for (const settingsSource of [null, '[/Script/Pal.PalGameLocalSettings]\r\nOtherSetting=keep\r\n']) {
+    await t.test(`${action} / ${settingsSource === null ? '缺少设置文件' : '缺少 ID'}`, async t => {
+      const { f, id, source, current, settings } = await fixture(t, action);
+      await fs.rm(source.world, { recursive: true });
+      if (settingsSource === null) await fs.rm(current.world, { recursive: true });
+      if (settingsSource === null) await fs.rm(settings);
+      else await fs.writeFile(settings, settingsSource);
+      const response = await f.request('/api/restore-preview', { method: 'POST', body: { action, id, mode: 'source-world' } });
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).targetExists, false);
+      const task = await f.task(action, { id, mode: 'source-world', targetWorldId: 'SOURCE' });
+      assert.equal(task.state, 'succeeded', task.message);
+      assert.equal(await f.manager.targetWorld(), 'SOURCE');
+      assert.equal(await fs.readFile(path.join(source.world, 'Level.sav'), 'utf8'), 'current-world');
+      if (settingsSource !== null) assert.equal(await fs.readFile(settings, 'utf8'), '[/Script/Pal.PalGameLocalSettings]\r\nDedicatedServerName=SOURCE\r\nOtherSetting=keep\r\n');
+      if (settingsSource !== null) assert.equal(await fs.readFile(path.join(current.world, 'Level.sav'), 'utf8'), 'keep-current-data');
+      assert.equal(f.runtime.game, null);
+    });
+  }
+});
+
+test('按世界 ID 恢复的配置提交失败时回滚加载 ID、目标存档、游戏配置及配置选择', async t => {
+  for (const action of ['restore', 'import-save']) {
+    await t.test(action, async t => {
+      const { f, id, source, current, settings } = await fixture(t, action);
+      const beforeSettings = await fs.readFile(settings);
+      const beforeConfig = await fs.readFile(f.runtime.config);
+      const beforeWorkspace = f.manager.store.snapshot();
+      const persist = f.manager.store.persist.bind(f.manager.store);
+      f.manager.store.persist = async candidate => {
+        assert.equal(await f.manager.targetWorld(), 'SOURCE');
+        await persist(candidate);
+        throw new Error('模拟配置提交后失败');
+      };
+      const task = await f.task(action, { id, mode: 'source-world' });
+      assert.equal(task.state, 'failed');
+      assert.match(task.message, /模拟配置提交后失败/);
+      assert.deepEqual(await fs.readFile(settings), beforeSettings);
+      assert.deepEqual(await fs.readFile(f.runtime.config), beforeConfig);
+      assert.deepEqual(f.manager.store.snapshot(), beforeWorkspace);
+      assert.equal(await fs.readFile(path.join(source.world, 'Level.sav'), 'utf8'), 'previous-source-data');
+      assert.equal(await fs.readFile(path.join(current.world, 'Level.sav'), 'utf8'), 'keep-current-data');
+    });
+  }
+});
+
+test('世界 ID 写入失败时回滚目标世界，不改动游戏配置', async t => {
+  for (const action of ['restore', 'import-save', 'restore-native']) {
+    await t.test(action, async t => {
+      const { f, id, source, settings } = await fixture(t, action);
+      const before = await fs.readFile(settings);
+      const config = await fs.readFile(f.runtime.config);
+      const rename = fs.rename;
+      let attempted = false;
+      t.mock.method(fs, 'rename', async (from, to) => {
+        if (to === settings && !attempted) { attempted = true; throw new Error('模拟世界 ID 写入失败'); }
+        return rename(from, to);
+      });
+      syncBuiltinESMExports();
+      t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+      const task = await f.task(action, { id, mode: 'source-world' });
+      assert.equal(task.state, 'failed');
+      assert.match(task.message, /模拟世界 ID 写入失败/);
+      assert.equal(attempted, true);
+      assert.deepEqual(await fs.readFile(settings), before);
+      assert.deepEqual(await fs.readFile(f.runtime.config), config);
+      assert.equal(await fs.readFile(path.join(source.world, 'Level.sav'), 'utf8'), 'previous-source-data');
+    });
+  }
+});
+
+test('缺少来源 ID、仅配置和非法恢复方式不能按世界 ID 恢复', async t => {
+  const { f } = await fixture(t);
+  const configOnly = await f.manager.backup('before-import', null, { configurationOnly: true });
+  const loose = path.join(f.directory, 'loose');
+  await fs.mkdir(loose);
+  await fs.writeFile(path.join(loose, 'Level.sav'), 'level');
+  await fs.writeFile(path.join(loose, 'LevelMeta.sav'), 'meta');
+  const archive = path.join(f.directory, 'loose.tar.gz');
+  await f.runtime.run('tar', ['-czf', archive, '-C', loose, '--', 'Level.sav', 'LevelMeta.sav']);
+  const uploaded = await f.upload('/api/save-import', await fs.readFile(archive));
+  const staged = await uploaded.json();
+  for (const [action, id] of [['restore', configOnly], ['import-save', staged.id]]) {
+    const preview = await f.request('/api/restore-preview', { method: 'POST', body: { action, id, mode: 'source-world' } });
+    assert.equal(preview.status, 409);
+    assert.match(await preview.text(), /来源世界 ID/);
+    assert.equal((await f.task(action, { id, mode: 'source-world' })).state, 'failed');
+  }
+  for (const action of ['restore', 'import-save', 'restore-native']) {
+    const preview = await f.request('/api/restore-preview', { method: 'POST', body: { action, id: configOnly, mode: 'full' } });
+    assert.equal(preview.status, 400);
+    const task = await f.request('/api/tasks', { method: 'POST', body: { action, id: configOnly, mode: 'full' } });
+    assert.equal(task.status, 400);
+  }
+  assert.equal(await f.manager.targetWorld(), 'CURRENT');
+});
+
+test('新建世界恢复失败时移除新目录及新建的世界设置文件', async t => {
+  const { f, id, source, settings } = await fixture(t);
+  await fs.rm(source.world, { recursive: true });
+  await fs.rm(settings);
+  f.manager.store.persist = async () => { throw new Error('模拟配置提交失败'); };
+  const task = await f.task('restore', { id, mode: 'source-world' });
+  assert.equal(task.state, 'failed');
+  assert.match(task.message, /模拟配置提交失败/);
+  await assert.rejects(fs.access(settings), { code: 'ENOENT' });
+  await assert.rejects(fs.access(source.world), { code: 'ENOENT' });
+});
+
+test('世界 ID 回滚失败时保留设置副本、回滚存档并保持停服', async t => {
+  const { f, id, source, settings } = await fixture(t);
+  const original = await fs.readFile(settings);
+  assert.equal((await f.task('start')).state, 'succeeded');
+  f.manager.store.persist = async () => { throw new Error('模拟配置提交失败'); };
+  const rename = fs.rename;
+  let writes = 0;
+  t.mock.method(fs, 'rename', async (from, to) => {
+    if (to === settings && ++writes > 1) throw new Error('模拟设置回滚失败');
+    return rename(from, to);
+  });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  const task = await f.task('restore', { id, mode: 'source-world' });
+  assert.equal(task.state, 'failed');
+  assert.match(task.message, /世界 ID 回滚失败.*原文件副本已保留在/);
+  assert.equal(f.runtime.game, null);
+  assert.equal(await fs.readFile(path.join(source.world, 'Level.sav'), 'utf8'), 'previous-source-data');
+  const transactions = path.join(f.directory, 'palbox/transactions');
+  const stage = (await fs.readdir(transactions)).find(name => name.startsWith('.world-settings-'));
+  assert.ok(stage);
+  assert.deepEqual(await fs.readFile(path.join(transactions, stage, 'GameUserSettings.ini')), original);
+});

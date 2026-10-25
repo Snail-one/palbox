@@ -216,7 +216,7 @@ h1 {
 .field-input,
 .raw-input,
 #import-text,
-.dialog-name-label input {
+.dialog-name-label input, .dialog-name-label select {
   background-color: var(--input-bg);
   border-color: #d5d7da;
 }
@@ -437,6 +437,7 @@ legend,
 .raw-input,
 #import-text,
 .dialog-name-label input,
+.dialog-name-label select,
 .input-unit,
 .platform-choice,
 .platform-choice:has(input:checked),

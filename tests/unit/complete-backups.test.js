@@ -117,7 +117,7 @@ test('仅含世界的旧备份需要有效的当前世界，存在时可恢复�
   const id = 'manual/legacy.tar.gz';
   await runtime.run('tar', ['-czf', manager.backupFile(id), '-C', legacy, '--', 'Pal/Saved/SaveGames/0/BACKUP_WORLD']);
   assert.equal((await manager.backups({ includeWorldId: true }))[0].worldId, 'BACKUP_WORLD');
-  await assert.rejects(manager.restore(id, { mode: 'full' }), /恢复方式已统一/);
+  await assert.rejects(manager.restore(id, { mode: 'full' }), /恢复方式无效/);
   await assert.rejects(readdir(path.join(runtime.saved, 'SaveGames/0')), { code: 'ENOENT' });
   await manager.ensureConfig();
   const config = await readFile(runtime.config, 'utf8');

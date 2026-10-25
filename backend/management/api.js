@@ -112,7 +112,7 @@ export function createManagementApi(manager, options = {}) {
       }
       if (pathname === '/api/restore-preview' && request.method === 'POST') {
         const input = await body(request, 4096);
-        json(200, await manager.previewRestore(input.action, input.id)); return;
+        json(200, await manager.previewRestore(input.action, input.id, input.mode)); return;
       }
       if (pathname === '/api/save-import' && request.method === 'POST') {
         if (manager.closing) throw failure('管理服务正在关闭。', 503);
