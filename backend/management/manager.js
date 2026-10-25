@@ -331,6 +331,7 @@ export class Manager extends EventEmitter {
     const { file, original } = await this.readWorldSettings();
     const directory = path.dirname(file);
     const settings = original.toString('utf8');
+    if (configuredWorldId(settings) === worldId) return this.adoptImportedConfig(source);
     const assignment = `DedicatedServerName=${worldId}`;
     const updated = settings.replace(/^[\t ]*DedicatedServerName[\t ]*=[^\r\n]*/gm, assignment);
     const stage = await createTransaction(this.directory, directory, '.world-settings-');

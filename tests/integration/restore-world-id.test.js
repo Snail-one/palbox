@@ -54,6 +54,27 @@ test('按备份世界 ID 恢复、导入及官方快照：保护被覆盖世界�
   }
 });
 
+test('世界 ID 相同时不重写设置文件，仍恢复存档及包内游戏配置', async t => {
+  for (const action of ['restore', 'import-save', 'restore-native']) {
+    await t.test(action, async t => {
+      const { f, id, source, current, settings } = await fixture(t, action);
+      const original = '[/Script/Pal.PalGameLocalSettings]\r\n  DedicatedServerName = "SOURCE"\r\nOtherSetting=keep\r\n';
+      await fs.writeFile(settings, original);
+      const info = await fs.stat(settings);
+      await fs.writeFile(f.runtime.config, (await fs.readFile(f.runtime.config, 'utf8')).replace('ExpRate=1.000000', 'ExpRate=9.000000'));
+      const task = await f.task(action, { id, mode: 'source-world', targetWorldId: 'SOURCE' });
+      assert.equal(task.state, 'succeeded', task.message);
+      assert.equal(await fs.readFile(settings, 'utf8'), original);
+      const after = await fs.stat(settings);
+      assert.equal(after.ino, info.ino);
+      assert.equal(after.mtimeMs, info.mtimeMs);
+      assert.equal(await fs.readFile(path.join(source.world, 'Level.sav'), 'utf8'), action === 'restore-native' ? 'official-world' : 'current-world');
+      assert.equal(await fs.readFile(path.join(current.world, 'Level.sav'), 'utf8'), 'keep-current-data');
+      assert.match(await fs.readFile(f.runtime.config, 'utf8'), action === 'restore-native' ? /ExpRate=9\.000000/ : /ExpRate=1\.000000/);
+    });
+  }
+});
+
 test('按来源 ID 创建目标世界时只更新已有参数，保留其他设置及换行格式', async t => {
   for (const action of ['restore', 'import-save']) {
     await t.test(action, async t => {
