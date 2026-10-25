@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { EventEmitter } from 'node:events';
 import { Runtime, DEFAULT_SHUTDOWN_MESSAGE } from './runtime.js';
-import { NativeBackups, configuredWorldId, worldName } from './native-backups.js';
+import { NativeBackups, configuredWorldId, worldIdSettings, worldName } from './native-backups.js';
 import { SaveImports } from './save-imports.js';
 import { replaceDirectory } from './replace-directory.js';
 import { readBanList } from './banned-players.js';
@@ -328,12 +328,12 @@ export class Manager extends EventEmitter {
   async adoptRestoredSettings(source, worldId = null) {
     if (!worldId) return this.adoptImportedConfig(source);
     if (!worldName.test(worldId)) throw failure('备份中的世界 ID 无效。');
-    const { file, original } = await this.readWorldSettings();
+    const { file, original, entry } = await this.readWorldSettings();
     const directory = path.dirname(file);
     const settings = original.toString('utf8');
-    if (configuredWorldId(settings) === worldId) return this.adoptImportedConfig(source);
-    const assignment = `DedicatedServerName=${worldId}`;
-    const updated = settings.replace(/^[\t ]*DedicatedServerName[\t ]*=[^\r\n]*/gm, assignment);
+    if (entry.worldId === worldId) return this.adoptImportedConfig(source);
+    const value = entry.quoted ? `"${worldId}"` : worldId;
+    const updated = settings.slice(0, entry.start) + value + settings.slice(entry.end);
     const stage = await createTransaction(this.directory, directory, '.world-settings-');
     let preserve = false;
     try {
@@ -484,7 +484,9 @@ export class Manager extends EventEmitter {
         try {
           await this.native.restore(payload.id, async () => {
             if (running) await this.stopGame({ requireSave: true });
+            await this.readWorldSettings();
             await this.backup('before-restore', null, { targetWorldId: mode === 'source-world' ? target : undefined });
+            await this.readWorldSettings();
             this.servicePhase('restoring', '正在恢复官方备份中的世界和玩家存档。');
           }, {
             allowWorldSwitch: mode === 'source-world',
@@ -499,7 +501,10 @@ export class Manager extends EventEmitter {
           }
           throw error;
         }
-        if (running) await this.startGame();
+        if (running) {
+          try { await this.startGame(); }
+          catch (error) { throw failure(`官方存档已恢复，但游戏服启动失败：${error.message}`, 500); }
+        }
         break;
       }
       case 'import-save': await this.restoreImported(payload.id, task, payload.targetWorldId, payload.mode); break;
@@ -584,11 +589,11 @@ export class Manager extends EventEmitter {
       const configured = hasWorld ? (mode === 'world' ? worldId : await this.native.configuredWorld()) : null;
       this.assertRestoreTarget(expectedWorldId, worldId);
       if (wasRunning) await this.stopGame({ requireSave: true });
-      if (hasWorld) this.assertRestoreTarget(configured, mode === 'world' ? await this.targetWorld() : await this.native.configuredWorld());
+      if (hasWorld) await this.assertConfiguredWorld(configured);
       task.message = '正在创建导入前备份';
       task.backup = await this.backup('before-import', null, { configurationOnly: !hasWorld, targetWorldId: mode === 'source-world' ? worldId : undefined });
       if (hasWorld) {
-        this.assertRestoreTarget(configured, mode === 'world' ? await this.targetWorld() : await this.native.configuredWorld());
+        await this.assertConfiguredWorld(configured);
         const ensured = await this.native.ensureWorld(worldId);
         if (ensured.created) created = ensured.directory;
         this.servicePhase('restoring', '正在恢复目标世界存档和包内的游戏配置。');
@@ -817,8 +822,11 @@ export class Manager extends EventEmitter {
       const file = path.join(directory, 'GameUserSettings.ini');
       if (!(await lstat(file)).isFile()) throw failure('GameUserSettings.ini 不能是链接或特殊文件。');
       const original = await readFile(file);
-      if (!/^[\t ]*DedicatedServerName[\t ]*=/m.test(original.toString('utf8'))) throw failure('未找到配置：GameUserSettings.ini 中缺少 DedicatedServerName 参数，请先启动一次服务端生成配置后重试。', 409);
-      return { file, original };
+      const entries = worldIdSettings(original.toString('utf8'));
+      if (!entries.length) throw failure('未找到配置：GameUserSettings.ini 中缺少 DedicatedServerName 参数，请先启动一次服务端生成配置后重试。', 409);
+      if (entries.length !== 1) throw failure('GameUserSettings.ini 中 DedicatedServerName 参数重复，无法确定世界 ID，请修复配置后重试。', 409);
+      if (!entries[0].worldId) throw failure('GameUserSettings.ini 中 DedicatedServerName 的世界 ID 无效，请修复配置后重试。', 409);
+      return { file, original, entry: entries[0] };
     } catch (error) {
       if (error.code === 'ENOENT') throw failure('尚未生成 GameUserSettings.ini，请先启动一次服务端，待配置文件生成后再导入或恢复存档。', 409);
       throw error;
@@ -831,6 +839,10 @@ export class Manager extends EventEmitter {
       return sourceWorldId;
     }
     return hasWorld ? this.targetWorld() : null;
+  }
+  async assertConfiguredWorld(expectedWorldId) {
+    const { entry } = await this.readWorldSettings();
+    this.assertRestoreTarget(expectedWorldId, entry.worldId);
   }
   async previewRestore(action, id, requestedMode) {
     const mode = restoreMode(requestedMode);
@@ -891,12 +903,12 @@ export class Manager extends EventEmitter {
     let created = null;
     try {
       if (running) await this.stopGame({ requireSave: true });
-      if (source) this.assertRestoreTarget(mode === 'world' ? currentWorld : configured, mode === 'world' ? await this.targetWorld() : await this.native.configuredWorld());
+      if (source) await this.assertConfiguredWorld(mode === 'world' ? currentWorld : configured);
       await this.backup('before-restore', id, { configurationOnly: !source, targetWorldId: mode === 'source-world' ? currentWorld : undefined });
       await this.checkedBackupFile(id);
       this.servicePhase('restoring', source ? '正在恢复目标世界的存档和备份中的游戏配置。' : '正在恢复备份中的游戏配置。');
       if (source) {
-        this.assertRestoreTarget(mode === 'world' ? currentWorld : configured, mode === 'world' ? await this.targetWorld() : await this.native.configuredWorld());
+        await this.assertConfiguredWorld(mode === 'world' ? currentWorld : configured);
         const ensured = await this.native.ensureWorld(currentWorld);
         if (ensured.created) created = ensured.directory;
         await replaceDirectory(source, ensured.directory, {

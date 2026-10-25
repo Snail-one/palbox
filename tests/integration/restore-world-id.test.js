@@ -75,6 +75,44 @@ test('世界 ID 相同时不重写设置文件，仍恢复存档及包内游戏�
   }
 });
 
+test('按世界 ID 恢复只读取和更新世界配置段，不改其他段的同名参数', async t => {
+  for (const action of ['restore', 'import-save', 'restore-native']) {
+    await t.test(action, async t => {
+      const { f, id, settings } = await fixture(t, action);
+      const original = '\uFEFF[Other]\r\nDedicatedServerName=SOURCE\r\n[/Script/Pal.PalGameLocalSettings]\r\n  DedicatedServerName = "CURRENT"  \r\nOtherSetting=keep\r\n';
+      await fs.writeFile(settings, original);
+      const preview = await f.manager.previewRestore(action, id, 'source-world');
+      assert.equal(preview.targetWorldId, 'SOURCE');
+      assert.equal(await f.manager.targetWorld(), 'CURRENT');
+      const restored = await f.task(action, { id, mode: 'source-world' });
+      assert.equal(restored.state, 'succeeded', restored.message);
+      assert.equal(await fs.readFile(settings, 'utf8'), original.replace('"CURRENT"', '"SOURCE"'));
+      assert.equal(await f.manager.targetWorld(), 'SOURCE');
+    });
+  }
+});
+
+test('其他段的同名参数、重复参数和无效值在替换存档前拒绝恢复', async t => {
+  for (const [name, configuration, expected] of [
+    ['其他配置段', '[Other]\nDedicatedServerName=CURRENT\n', /未找到配置/],
+    ['重复参数', '[/Script/Pal.PalGameLocalSettings]\nDedicatedServerName=CURRENT\nDedicatedServerName=SOURCE\n', /参数重复/],
+    ['空值', '[/Script/Pal.PalGameLocalSettings]\nDedicatedServerName=\n', /世界 ID 无效/]
+  ]) await t.test(name, async t => {
+    const { f, id, source, current, settings } = await fixture(t);
+    await fs.writeFile(settings, configuration);
+    const preview = await f.request('/api/restore-preview', { method: 'POST', body: { action: 'restore', id, mode: 'source-world' } });
+    assert.equal(preview.status, 409);
+    assert.match(await preview.text(), expected);
+    const restored = await f.task('restore', { id, mode: 'source-world' });
+    assert.equal(restored.state, 'failed');
+    assert.match(restored.message, expected);
+    assert.equal(await fs.readFile(settings, 'utf8'), configuration);
+    assert.equal(await fs.readFile(path.join(source.world, 'Level.sav'), 'utf8'), 'previous-source-data');
+    assert.equal(await fs.readFile(path.join(current.world, 'Level.sav'), 'utf8'), 'keep-current-data');
+    assert.equal((await f.manager.backups()).some(backup => backup.category === 'before-restore'), false);
+  });
+});
+
 test('按来源 ID 创建目标世界时只更新已有参数，保留其他设置及换行格式', async t => {
   for (const action of ['restore', 'import-save']) {
     await t.test(action, async t => {
@@ -243,4 +281,16 @@ test('世界 ID 回滚失败时保留设置副本、回滚存档并保持停服'
   const stage = (await fs.readdir(transactions)).find(name => name.startsWith('.world-settings-'));
   assert.ok(stage);
   assert.deepEqual(await fs.readFile(path.join(transactions, stage, 'GameUserSettings.ini')), original);
+});
+
+test('官方快照恢复完成后启动失败时明确提示数据已恢复', async t => {
+  const { f, id, source } = await fixture(t, 'restore-native');
+  assert.equal((await f.task('start')).state, 'succeeded');
+  f.manager.startGame = async () => { throw new Error('模拟启动失败'); };
+  const task = await f.task('restore-native', { id, mode: 'source-world' });
+  assert.equal(task.state, 'failed');
+  assert.match(task.message, /官方存档已恢复，但游戏服启动失败.*模拟启动失败/);
+  assert.equal(await fs.readFile(path.join(source.world, 'Level.sav'), 'utf8'), 'official-world');
+  assert.equal(await f.manager.targetWorld(), 'SOURCE');
+  assert.equal(f.runtime.game, null);
 });

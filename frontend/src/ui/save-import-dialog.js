@@ -97,6 +97,8 @@ export function createSaveImportDialog({ dom, api, onRestore }) {
   function select(selected) {
     if (busy || !selected) return;
     file = null; candidate = null; preview = null; details.hidden = true; controls();
+    $('save-import-mode-label').hidden = false;
+    $('save-import-mode-description').hidden = false;
     if (!/\.(?:tar\.gz|tgz|zip|7z)$/i.test(selected.name)) { showError('请选择 .tar.gz、.tgz、.zip 或 .7z 格式的存档。'); return; }
     if (selected.size > 1024 ** 3) { showError('存档压缩包不能超过 1 GB。'); return; }
     file = selected;

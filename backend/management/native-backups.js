@@ -17,9 +17,30 @@ const signature = info => `${info.ino}:${info.size}:${info.mtimeMs}:${info.ctime
 const changing = () => failure('官方备份正在写入或已被轮换，请刷新后重试。', 409);
 const snapshotDate = timestamp => new Date(`${timestamp.slice(0, 10).replaceAll('.', '-')}T${timestamp.slice(11).replaceAll('.', ':')}Z`);
 
+export function worldIdSettings(settings) {
+  const unsectioned = [], world = [];
+  let section = null, hasSections = false;
+  for (const line of settings.matchAll(/^[^\r\n]+/gm)) {
+    const heading = line[0].trim().match(/^\[([^\]]+)\]/);
+    if (heading) { section = heading[1]; hasSections = true; continue; }
+    const assignment = line[0].match(/^([\t ]*DedicatedServerName[\t ]*=[\t ]*)([^\r\n]*?)[\t ]*$/);
+    if (!assignment) continue;
+    const raw = assignment[2];
+    const value = raw.match(/^(?:"([A-Za-z0-9_-]+)"|([A-Za-z0-9_-]+))$/);
+    const id = value?.[1] ?? value?.[2];
+    const start = line.index + assignment[1].length;
+    const entry = { start, end: start + raw.length, worldId: id && worldName.test(id) ? id : null, quoted: raw.startsWith('"') };
+    if (section === '/Script/Pal.PalGameLocalSettings') world.push(entry);
+    else if (section === null) unsectioned.push(entry);
+  }
+  // Keep supporting old files without section headers, but never use keys
+  // belonging to another section as the active world's configuration.
+  return hasSections ? world : unsectioned;
+}
+
 export function configuredWorldId(settings) {
-  const configured = settings.match(/^\s*DedicatedServerName\s*=\s*"?([A-Za-z0-9_-]+)"?\s*$/m)?.[1];
-  return configured && worldName.test(configured) ? configured : null;
+  const entries = worldIdSettings(settings);
+  return entries.length === 1 ? entries[0].worldId : null;
 }
 
 /** Read the game's backup/world snapshots; never schedule or create game backups. */
