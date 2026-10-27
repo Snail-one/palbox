@@ -1042,14 +1042,14 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
   $('check-update').addEventListener('click', async () => {
     if (checkingUpdate) return;
     checkingUpdate = true;
-    showUpdateStatus('正在检查 Steam 最新版本…');
+    showUpdateStatus('正在检查游戏服务端最新版本…');
     $('check-update').disabled = true;
     try {
       // SteamCMD may need longer than the default API timeout.
       const value = await api.request('update-check', { timeout: 150000 });
       if (!value.installed) showUpdateStatus('服务端尚未安装。');
       else if (value.error) showUpdateStatus(`更新检查失败：${value.error}`, { error: true });
-      else if (value.updateAvailable) showUpdateStatus(`发现新版本：已安装 build ${value.installedBuild}，Steam 最新 build ${value.latestBuild}。可在停服后点击「更新服务端」。`);
+      else if (value.updateAvailable) showUpdateStatus(`发现游戏服务端新版本：已安装 build ${value.installedBuild}，最新 build ${value.latestBuild}。可在停服后点击「更新服务端」。`);
       else showUpdateStatus(`已是最新版本（build ${value.installedBuild}）。`);
     } catch (caught) { showUpdateStatus(`更新检查失败：${caught.message}`, { error: true }); }
     finally {
