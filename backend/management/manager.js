@@ -302,7 +302,7 @@ export class Manager extends EventEmitter {
     this.operation = (async () => {
       try {
         await this.execute(action, payload, task);
-        task.state = 'succeeded'; task.message = '执行完成';
+        task.state = 'succeeded'; task.message = task.noChanges ? '配置一致，无需应用。' : '执行完成';
       } catch (error) {
         task.state = 'failed'; task.message = error.message;
         this.runtime.log('palbox', `[${action}] ${error.message}\n`);
@@ -386,6 +386,14 @@ export class Manager extends EventEmitter {
   }
   async applyConfiguration(source) {
     validateManagedConfiguration(source, this.configurationOptions);
+    let original = null;
+    try { original = await readFile(this.runtime.config); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    const configuration = configurationState(
+      configurationValues(source), configurationValues(original === null ? null : original.toString('utf8')),
+      configurationValues(this.runtime.runningSource || null), Boolean(this.runtime.game)
+    );
+    if (configuration === 'applied') return false;
     const directory = path.dirname(this.runtime.config);
     await mkdir(directory, { recursive: true, mode: 0o700 });
     const stage = await createTransaction(this.directory, directory, '.apply-');
@@ -393,9 +401,6 @@ export class Manager extends EventEmitter {
     const previous = path.join(stage, 'previous.ini');
     let preserve = false;
     try {
-      let original = null;
-      try { original = await readFile(this.runtime.config); }
-      catch (error) { if (error.code !== 'ENOENT') throw error; }
       if (original !== null) await atomicWrite(previous, original);
       // Finish allocation and fsync before stopping a running game.
       await atomicWrite(next, source);
@@ -432,6 +437,7 @@ export class Manager extends EventEmitter {
         try { await this.startGame(); }
         catch (error) { throw failure(`配置已应用，但游戏服启动失败：${error.message}`, 500); }
       }
+      return true;
     } finally {
       await finishTransaction(stage, { preserve, onCleanupError: error => this.runtime.log('palbox', `应用配置临时文件清理失败：${error.message}\n`) });
     }
@@ -464,7 +470,7 @@ export class Manager extends EventEmitter {
         if (payload.revision !== snapshot.revision || payload.profileId !== snapshot.workspace.activeId) throw failure('配置已变更，请等待自动保存完成后重新应用。', 409);
         const active = this.store.active();
         if (!active) throw failure('尚无可用配置，请先安装服务端或手动新建配置。', 409);
-        await this.applyConfiguration(output(active.source));
+        if (!(await this.applyConfiguration(output(active.source)))) task.noChanges = true;
         break;
       }
       case 'backup': {

@@ -909,7 +909,15 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
         button.disabled ||= value.running || noSave;
         button.title = value.running ? '请先停止游戏服再创建世界备份。' : noSave ? '尚无可备份的世界存档，请先启动游戏并生成存档。' : '';
       }
-      if (name === 'apply') { button.textContent = value.running ? '应用并重启' : '应用配置'; button.disabled ||= value.hasConfiguration === false; }
+      if (name === 'apply') {
+        const noChanges = value.hasConfiguration !== false && value.configuration === 'applied';
+        button.textContent = noChanges ? '无需应用' : value.running ? '应用并重启' : '应用配置';
+        button.disabled ||= value.hasConfiguration === false || noChanges;
+        button.title = value.hasConfiguration === false ? '请先安装服务端或手动新建配置。'
+          : noChanges ? value.running ? '当前配置已用于本次启动，无需重复应用。' : '当前配置已写入游戏文件，启动服务器后生效，无需重复应用。'
+          : value.running ? '应用到游戏；服务器会先存档、停服，再应用并重启，不创建备份。' : '将当前配置写入游戏文件，启动服务器后生效，不创建备份。';
+        $('configuration-apply-description').textContent = `有效修改自动保存到服务器。${button.title}`;
+      }
     }
     $('show-running-config').disabled = !value.running;
     $('check-update').disabled = checkingUpdate || !value.installed || Boolean(value.task);

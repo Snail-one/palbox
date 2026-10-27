@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdir, access, symlink, utimes, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, access, symlink, utimes, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { managementFixture } from '../helpers/management-fixture.js';
 import { parse } from '../../shared/domain/config.js';
@@ -310,6 +310,39 @@ test('世界目录缺失时可恢复到配置指定的当前世界，并正常�
   assert.equal(f.runtime.ready, true);
 });
 
+test('直接重复调用应用 API 在配置一致时不写文件或重启，仍校验版本和配置 ID', { skip: process.platform !== 'linux' }, async t => {
+  const f = await managementFixture(); t.after(() => f.close()); await f.login();
+  assert.equal((await f.task('install')).state, 'succeeded');
+  assert.equal((await f.task('start')).state, 'succeeded');
+  const payload = { revision: f.manager.store.revision, profileId: f.manager.store.active().id };
+  const formatted = '; formatting only\r\n' + (await readFile(f.runtime.config, 'utf8')).replace(/\r?\n/g, '\r\n');
+  await writeFile(f.runtime.config, formatted);
+  for (const running of [true, false]) {
+    if (!running) assert.equal((await f.task('stop')).state, 'succeeded');
+    const game = f.runtime.game;
+    const before = await stat(f.runtime.config, { bigint: true });
+    for (let repeat = 0; repeat < 2; repeat++) {
+      const task = await f.task('apply', payload);
+      assert.equal(task.state, 'succeeded', task.message);
+      assert.equal(task.noChanges, true);
+      assert.equal(task.message, '配置一致，无需应用。');
+      assert.equal(f.runtime.game, game, '重复请求保留同一进程或停服状态');
+      assert.equal(await readFile(f.runtime.config, 'utf8'), formatted);
+      const after = await stat(f.runtime.config, { bigint: true });
+      assert.equal(after.ino, before.ino);
+      assert.equal(after.mtimeNs, before.mtimeNs);
+      const status = await (await f.request('/api/status?scope=local')).json();
+      assert.equal(status.tasks[0].noChanges, true, 'API 返回的任务记录说明无需应用');
+    }
+  }
+  for (const stale of [{ ...payload, revision: payload.revision - 1 }, { ...payload, profileId: 'wrong-profile' }]) {
+    const task = await f.task('apply', stale);
+    assert.equal(task.state, 'failed');
+    assert.match(task.message, /配置已变更/);
+    assert.equal(task.noChanges, undefined);
+  }
+});
+
 test('SteamCMD、进程、配置应用、备份恢复与故障状态真实联动', { skip: process.platform !== 'linux' }, async t => {
   const f = await managementFixture(); t.after(() => f.close()); await f.login();
   assert.equal((await f.manager.status()).installed, false);
@@ -413,6 +446,10 @@ test('SteamCMD、进程、配置应用、备份恢复与故障状态真实联动
   assert.equal((await f.task('start')).state, 'succeeded');
   await writeFile(path.join(f.runtime.saved, 'fail-save'), 'fail');
   const diskBefore = await readFile(f.runtime.config, 'utf8');
+  const pending = f.manager.store.snapshot();
+  const pendingProfile = pending.workspace.profiles.find(profile => profile.id === pending.workspace.activeId);
+  pendingProfile.source = pendingProfile.source.replace(/ExpRate=[^,)]+/, 'ExpRate=3');
+  await f.manager.store.update(pending.workspace, pending.revision);
   const failed = await f.task('apply', { revision: f.manager.store.revision, profileId: f.manager.store.active().id });
   assert.equal(failed.state, 'failed');
   assert.equal(await readFile(f.runtime.config, 'utf8'), diskBefore);

@@ -109,3 +109,44 @@ test('校验和正常停服失败时不提交新配置', async t => {
   assert.equal(await fs.readFile(runtime.config, 'utf8'), original);
   assert.deepEqual(await fs.readdir(directory), ['config.ini', 'palbox']);
 });
+
+test('参数一致时应用配置不写文件、不创建事务，也不停止或启动游戏', async t => {
+  for (const running of [true, false]) {
+    await t.test(`running=${running}`, async t => {
+      const { directory, runtime, manager, calls } = await fixture(t, { running });
+      runtime.runningSource = original;
+      const formatted = '; formatting only\r\nOptionSettings=(RESTAPIPort=8212,AdminPassword="old",RESTAPIEnabled=True)\r\n';
+      await fs.writeFile(runtime.config, formatted);
+      const before = await fs.stat(runtime.config, { bigint: true });
+      assert.equal(await manager.applyConfiguration(original), false);
+      assert.deepEqual(calls, []);
+      assert.equal(await fs.readFile(runtime.config, 'utf8'), formatted);
+      const after = await fs.stat(runtime.config, { bigint: true });
+      assert.equal(after.ino, before.ino);
+      assert.equal(after.mtimeNs, before.mtimeNs);
+      assert.deepEqual(await fs.readdir(directory), ['config.ini']);
+    });
+  }
+});
+
+test('文件一致但启动配置不同或未知时，应用仍会写入并重启', async t => {
+  for (const started of [original, null]) {
+    await t.test(`started=${started === null ? 'unknown' : 'different'}`, async t => {
+      const { runtime, manager, calls } = await fixture(t);
+      await fs.writeFile(runtime.config, next);
+      runtime.runningSource = started;
+      runtime.expectedSource = next;
+      assert.equal(await manager.applyConfiguration(next), true);
+      assert.deepEqual(calls, ['stop', 'start']);
+    });
+  }
+});
+
+test('启动配置一致但文件被修改时，应用仍恢复目标文件并重启', async t => {
+  const { runtime, manager, calls } = await fixture(t);
+  runtime.runningSource = next;
+  runtime.expectedSource = next;
+  assert.equal(await manager.applyConfiguration(next), true);
+  assert.equal(await fs.readFile(runtime.config, 'utf8'), next);
+  assert.deepEqual(calls, ['stop', 'start']);
+});
