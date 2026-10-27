@@ -230,7 +230,7 @@ test('手动、恢复前、导入前和重置前备份独立保留，恢复保�
   assert.equal(archives.length, 4);
   const selected = archives.find(entry => entry.category === 'before-restore');
   await writeFile(level, 'world-v2');
-  await manager.submit('restore', { id: selected.id });
+  await manager.submit('restore', { id: selected.id, targetWorldId: 'WORLD1' });
   await manager.operation;
   assert.equal(manager.tasks[0].state, 'succeeded', manager.tasks[0].message);
   assert.equal(await readFile(level, 'utf8'), 'world-v1');

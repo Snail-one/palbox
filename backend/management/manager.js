@@ -43,6 +43,16 @@ function restoreMode(mode) {
   if (mode !== undefined && mode !== 'world' && mode !== 'source-world') throw failure('恢复方式无效，请选择恢复到当前世界或按备份世界 ID 恢复。');
   return mode ?? 'world';
 }
+function requireRestoreTarget(payload) {
+  if (!Object.hasOwn(payload, 'targetWorldId') || (payload.targetWorldId !== null && (typeof payload.targetWorldId !== 'string' || !worldName.test(payload.targetWorldId)))) {
+    throw failure('请先检测恢复详情，并提交确认的目标世界 ID；仅恢复配置时请提交 null。', 400);
+  }
+}
+const NO_CHANGE_MESSAGES = {
+  apply: '配置一致，无需应用。',
+  install: '服务端已安装，无需重复安装。',
+  ban: '玩家已封禁，无需重复封禁。'
+};
 const MAX_GAME_ARGS = 32;
 const MAX_BACKUP_RETENTION = 20;
 const MAX_GAME_ARG_LENGTH = 200;
@@ -283,6 +293,7 @@ export class Manager extends EventEmitter {
     if (['restore', 'restore-native', 'import-save'].includes(action)) restoreMode(payload.mode);
     if (this.closing) throw failure('管理服务正在关闭。', 503);
     if (this.busy) throw failure('已有任务正在执行，请稍后再试。', 409);
+    if (['restore', 'restore-native', 'import-save'].includes(action)) requireRestoreTarget(payload);
     if (action === 'install-steamcmd' && this.runtime.game) throw failure('请先停止游戏服再安装 SteamCMD。', 409);
     if (action === 'update' && this.runtime.game) throw failure('请先停止游戏服再更新服务端。', 409);
     if (action === 'backup' && this.runtime.game) throw failure('请先停止游戏服再创建世界备份。', 409);
@@ -302,7 +313,7 @@ export class Manager extends EventEmitter {
     this.operation = (async () => {
       try {
         await this.execute(action, payload, task);
-        task.state = 'succeeded'; task.message = task.noChanges ? '配置一致，无需应用。' : '执行完成';
+        task.state = 'succeeded'; task.message = task.noChanges ? NO_CHANGE_MESSAGES[action] : '执行完成';
       } catch (error) {
         task.state = 'failed'; task.message = error.message;
         this.runtime.log('palbox', `[${action}] ${error.message}\n`);
@@ -389,11 +400,14 @@ export class Manager extends EventEmitter {
     let original = null;
     try { original = await readFile(this.runtime.config); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
-    const configuration = configurationState(
-      configurationValues(source), configurationValues(original === null ? null : original.toString('utf8')),
-      configurationValues(this.runtime.runningSource || null), Boolean(this.runtime.game)
-    );
-    if (configuration === 'applied') return false;
+    let unchanged = false;
+    try {
+      unchanged = configurationState(
+        configurationValues(source), configurationValues(original === null ? null : original.toString('utf8')),
+        configurationValues(this.runtime.runningSource || null), Boolean(this.runtime.game)
+      ) === 'applied';
+    } catch { /* Malformed old configuration must remain replaceable with valid settings. */ }
+    if (unchanged) return false;
     const directory = path.dirname(this.runtime.config);
     await mkdir(directory, { recursive: true, mode: 0o700 });
     const stage = await createTransaction(this.directory, directory, '.apply-');
@@ -443,11 +457,13 @@ export class Manager extends EventEmitter {
     }
   }
   async execute(action, payload, task) {
+    if (['restore', 'restore-native', 'import-save'].includes(action)) requireRestoreTarget(payload);
     switch (action) {
       case 'install-steamcmd':
         await this.runtime.installSteamcmd({ onProgress: (phase, message) => this.servicePhase(phase, message) });
         break;
       case 'install':
+        if (await this.runtime.installed()) { task.noChanges = true; break; }
         await this.installGame();
         task.defaultsImported = await this.store.syncDefaultProfile();
         await this.ensureConfig();
@@ -456,6 +472,7 @@ export class Manager extends EventEmitter {
         if (payload.start) await this.startGame();
         break;
       case 'update': {
+        if (!(await this.runtime.installed())) throw failure('请先安装帕鲁服务端，再更新。', 409);
         await this.installGame();
         try { await this.store.syncDefaultProfile(); } catch (error) { this.runtime.log('palbox', `同步游戏默认配置失败：${error.message}\n`); }
         this.updateCache = null;
@@ -549,6 +566,10 @@ export class Manager extends EventEmitter {
         const fallback = action === 'kick' ? '管理员已将你移出服务器' : '管理员已将你封禁';
         const message = payload.message === undefined || payload.message === null || payload.message === '' ? fallback : payload.message;
         if (typeof message !== 'string' || !message.trim() || message.length > 500) throw failure('操作理由须为 1 到 500 个字符。');
+        if (action === 'ban') {
+          const existing = (await this.bannedPlayers()).players.find(player => player.userId === userId);
+          if (existing) { task.noChanges = true; task.player = { ...existing }; break; }
+        }
         await this.runtime.rest(action, { userid: userId, message: message.trim() });
         if (action === 'ban') task.player = { userId, name: typeof payload.name === 'string' ? payload.name.slice(0, 100) : '', reason: message.trim(), bannedAt: new Date().toISOString() };
         break;

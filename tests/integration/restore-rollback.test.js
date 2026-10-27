@@ -52,7 +52,7 @@ test('恢复和导入在配置库写入失败时回滚世界、游戏配置和�
         if (afterWrite) await persist(candidate);
         throw new Error('模拟配置库提交失败');
       };
-      const failed = await f.task(operation, { id });
+      const failed = await f.task(operation, { id, targetWorldId: 'CURRENT' });
       assert.equal(attempted, true);
       assert.equal(failed.state, 'failed');
       assert.match(failed.message, /模拟配置库提交失败/);
@@ -62,7 +62,7 @@ test('恢复和导入在配置库写入失败时回滚世界、游戏配置和�
       assert.equal((await fs.readdir(path.join(f.directory, 'palbox/transactions')).catch(error => { if (error.code === 'ENOENT') return []; throw error; })).some(name => name.startsWith('.configuration-')), false);
       f.manager.store.persist = persist;
       // The failed transaction must leave the write queue usable.
-      if (operation === 'restore') assert.equal((await f.task('restore', { id })).state, 'succeeded');
+      if (operation === 'restore') assert.equal((await f.task('restore', { id, targetWorldId: 'CURRENT' })).state, 'succeeded');
     });
   }
 });
@@ -83,7 +83,7 @@ test('游戏配置写入失败时恢复旧存档，恢复前运行的游戏重�
   });
   syncBuiltinESMExports();
   t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
-  const failed = await f.task('restore', { id });
+  const failed = await f.task('restore', { id, targetWorldId: 'CURRENT' });
   assert.equal(attempted, true);
   assert.equal(failed.state, 'failed');
   assert.match(failed.message, /模拟游戏配置写入失败/);
@@ -102,7 +102,7 @@ test('配置回滚自身失败时保留原文件副本并保持停服，世界�
   });
   syncBuiltinESMExports();
   t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
-  const failed = await f.task('restore', { id });
+  const failed = await f.task('restore', { id, targetWorldId: 'CURRENT' });
   assert.equal(failed.state, 'failed');
   assert.match(failed.message, /配置回滚失败.*原文件副本已保留在/);
   assert.equal(f.runtime.game, null);
@@ -121,7 +121,7 @@ test('配置合并超限时在停服和替换前拒绝恢复，保留当前游�
   await fs.writeFile(f.runtime.config, before.config);
   assert.equal((await f.task('start')).state, 'succeeded');
   const pid = f.runtime.game.pid;
-  const failed = await f.task('restore', { id });
+  const failed = await f.task('restore', { id, targetWorldId: 'CURRENT' });
   assert.equal(failed.state, 'failed');
   assert.match(failed.message, /合并后的配置内容过长/);
   assert.equal(f.runtime.game.pid, pid);
@@ -154,7 +154,7 @@ test('恢复和两种导入在预览及执行时拒绝无效或冲突 REST 端�
       const preview = await f.request('/api/restore-preview', { method: 'POST', body: { action: operation, id } });
       assert.equal(preview.status, 400);
       assert.match(await preview.text(), /REST API 端口无效/);
-      const failed = await f.task(operation, { id });
+      const failed = await f.task(operation, { id, targetWorldId: 'CURRENT' });
       assert.equal(failed.state, 'failed');
       assert.match(failed.message, /REST API 端口无效/);
       assert.equal(f.runtime.game.pid, pid);

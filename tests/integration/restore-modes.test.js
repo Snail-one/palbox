@@ -25,7 +25,7 @@ test('恢复统一替换当前加载的世界并恢复配置，保留世界 ID�
     if (running) assert.equal((await f.task('start')).state, 'succeeded');
     const pid = f.runtime.game?.pid;
 
-    const restored = await f.task('restore', { id });
+    const restored = await f.task('restore', { id, targetWorldId: 'CURRENT_WORLD' });
     assert.equal(restored.state, 'succeeded', restored.message);
     assert.equal(await f.manager.targetWorld(), 'CURRENT_WORLD');
     assert.equal(await readFile(path.join(current.world, 'Level.sav'), 'utf8'), 'current-world');
@@ -62,7 +62,7 @@ test('拒绝已移除的完整恢复方式；当前世界 ID 缺失时保留运�
   assert.equal(f.manager.tasks.length, count);
   await rm(path.join(f.runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'));
   for (const payload of [{ id }, { id, mode: 'world' }]) {
-    const task = await f.task('restore', payload);
+    const task = await f.task('restore', { ...payload, targetWorldId: 'SAVED_WORLD' });
     assert.equal(task.state, 'failed');
     assert.match(task.message, /GameUserSettings.ini/);
     assert.equal(f.runtime.game.pid, pid);
@@ -77,7 +77,7 @@ test('仅含配置的保护备份可独立恢复，不要求或创建世界 ID',
   const id = await f.manager.backup('before-import');
   const original = await readFile(f.runtime.config, 'utf8');
   await writeFile(f.runtime.config, original.replace('ExpRate=1.000000', 'ExpRate=9.000000'));
-  const restored = await f.task('restore', { id });
+  const restored = await f.task('restore', { id, targetWorldId: null });
   assert.equal(restored.state, 'succeeded', restored.message);
   assert.equal(values(await readFile(f.runtime.config, 'utf8')).get('ExpRate'), '1.000000');
   assert.equal(await f.manager.native.configuredWorld(), null);

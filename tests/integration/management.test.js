@@ -297,7 +297,7 @@ test('世界目录缺失时可恢复到配置指定的当前世界，并正常�
   assert.equal(f.runtime.startedAt, null);
   await mkdir(path.join(f.runtime.saved, 'Config/LinuxServer'), { recursive: true });
   await writeFile(path.join(f.runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'), 'DedicatedServerName=ARCHIVED\n');
-  const restored = await f.task('restore', { id: backup.backup });
+  const restored = await f.task('restore', { id: backup.backup, targetWorldId: 'ARCHIVED' });
   assert.equal(restored.state, 'succeeded', restored.message);
   assert.equal(f.runtime.game, null);
   assert.equal(await f.manager.native.configuredWorld(), 'ARCHIVED');
@@ -393,10 +393,10 @@ test('SteamCMD、进程、配置应用、备份恢复与故障状态真实联动
   await writeFile(path.join(f.directory, 'unsafe/outside'), 'must not extract');
   const unsafePath = path.join(f.directory, 'backups/manual/unsafe-path.tar.gz');
   await f.runtime.run('tar', ['-czf', unsafePath, '-C', path.join(f.directory, 'unsafe'), '--', 'outside']);
-  assert.equal((await f.task('restore', { id: 'manual/unsafe-path.tar.gz' })).state, 'failed');
+  assert.equal((await f.task('restore', { id: 'manual/unsafe-path.tar.gz', targetWorldId: 'test-world' })).state, 'failed');
   await symlink('/etc/passwd', path.join(unsafeDirectory, 'outside-link'));
   await f.runtime.run('tar', ['-czf', path.join(f.directory, 'backups/manual/unsafe-link.tar.gz'), '-C', path.join(f.directory, 'unsafe'), '--', 'Pal/Saved']);
-  assert.equal((await f.task('restore', { id: 'manual/unsafe-link.tar.gz' })).state, 'failed');
+  assert.equal((await f.task('restore', { id: 'manual/unsafe-link.tar.gz', targetWorldId: 'test-world' })).state, 'failed');
   assert.equal(await readFile(world, 'utf8'), 'world-v1');
   assert.ok(f.runtime.game);
   const gameBeforeBackup = f.runtime.game;
@@ -417,7 +417,7 @@ test('SteamCMD、进程、配置应用、备份恢复与故障状态真实联动
   assert.equal((await f.task('start')).state, 'succeeded');
   await writeFile(world, 'world-v2');
   await f.manager.updateSettings({ backupRetention: 1 });
-  const restored = await f.task('restore', { id: backup.backup });
+  const restored = await f.task('restore', { id: backup.backup, targetWorldId: 'test-world' });
   assert.equal(restored.state, 'succeeded', restored.message);
   const afterRestore = await f.manager.backups();
   assert.ok(afterRestore.some(entry => entry.category === 'before-restore'));

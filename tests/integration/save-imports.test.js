@@ -25,6 +25,10 @@ async function archive(base, entries) {
 }
 
 async function waitTask(f, action, payload) {
+  if (action === 'import-save' && !Object.hasOwn(payload, 'targetWorldId')) {
+    const preview = await f.manager.previewRestore(action, payload.id, payload.mode);
+    payload = { ...payload, targetWorldId: preview.targetWorldId };
+  }
   const task = await f.task(action, payload);
   assert.equal(task.state, 'succeeded', task.message);
   return task;
@@ -58,7 +62,7 @@ test('导入根目录官方快照并恢复运行中的世界', { skip: process.p
   assert.equal(staged.layout, 'root');
   assert.equal(staged.worldId, null);
   await rm(selection);
-  const missingSelection = await f.task('import-save', { id: staged.id });
+  const missingSelection = await f.task('import-save', { id: staged.id, targetWorldId: null });
   assert.equal(missingSelection.state, 'failed');
   assert.match(missingSelection.message, /GameUserSettings\.ini/);
   assert.equal(f.runtime.game.pid, oldPid, '缺少世界 ID 时不停止正在运行的游戏');
@@ -118,7 +122,7 @@ test('未知当前世界 ID 时拒绝导入；已有游戏配置 ID 时使用该
     await rm(path.join(tmp, 'source'), { recursive: true, force: true });
     const bytes = await archive(tmp, entries);
     const staged = await (await f.upload('/api/save-import', bytes)).json();
-    const task = await f.task('import-save', { id: staged.id });
+    const task = await f.task('import-save', { id: staged.id, targetWorldId: null });
     assert.equal(task.state, 'failed');
     assert.match(task.message, /GameUserSettings.ini.*请先启动一次服务端/);
     await assert.rejects(readdir(path.join(saved(f), 'SaveGames/0')), { code: 'ENOENT' });
@@ -255,7 +259,7 @@ test('多世界归档拒绝导入，升级前暂存的完整导入记录不能�
   await writeFile(path.join(directory, 'meta.json'), JSON.stringify({ kind: 'full', createdAt: new Date().toISOString() }));
   const preview = await f.request('/api/restore-preview', { method: 'POST', body: { action: 'import-save', id } });
   assert.equal(preview.status, 409); assert.match(await preview.text(), /重新上传/);
-  const failed = await f.task('import-save', { id });
+  const failed = await f.task('import-save', { id, targetWorldId: null });
   assert.equal(failed.state, 'failed'); assert.match(failed.message, /重新上传/);
   assert.deepEqual(await readFile(f.runtime.config), original);
   assert.deepEqual(await f.manager.backups(), []);
@@ -351,7 +355,7 @@ test('没有 GameUserSettings 世界 ID 时拒绝从目录推断导入目标', {
   assert.equal((await f.task('install')).state, 'succeeded');
   const bytes = await archive(tmp, { 'Level.sav': 'new', 'LevelMeta.sav': 'new' });
   const staged = await (await f.upload('/api/save-import', bytes)).json();
-  const task = await f.task('import-save', { id: staged.id });
+  const task = await f.task('import-save', { id: staged.id, targetWorldId: null });
   assert.equal(task.state, 'failed');
   assert.match(task.message, /GameUserSettings\.ini/);
   assert.equal(await readFile(path.join(saved(f), 'SaveGames/0/ONE/Level.sav'), 'utf8'), 'ONE');
@@ -375,7 +379,7 @@ test('拒绝无效上传、恶意归档和非法 ID', { skip: process.platform !
   await run('tar', ['-czf', linkArchive, '-C', linkBase, '.']);
   assert.equal((await f.upload('/api/save-import', await readFile(linkArchive))).status, 400);
   const staged = await (await f.upload('/api/save-import', bytes)).json();
-  assert.equal((await f.task('import-save', { id: '../../etc/passwd' })).state, 'failed');
+  assert.equal((await f.task('import-save', { id: '../../etc/passwd', targetWorldId: null })).state, 'failed');
   assert.equal((await f.upload('/api/save-import', Buffer.concat([Buffer.from([0x1f, 0x8b]), Buffer.alloc(2 * 1024 * 1024)]))).status, 413);
   assert.ok(staged.id);
 });

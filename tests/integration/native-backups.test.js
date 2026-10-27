@@ -83,12 +83,12 @@ test('官方备份恢复先备份停服，替换世界与玩家，保留配置�
   const pid = f.runtime.game.pid;
   const config = await readFile(f.runtime.config, 'utf8');
   await writeFile(path.join(f.runtime.saved, 'fail-save'), 'fail');
-  const failed = await f.task('restore-native', { id: backup.id });
+  const failed = await f.task('restore-native', { id: backup.id, targetWorldId: backup.worldId });
   assert.equal(failed.state, 'failed');
   assert.equal(f.runtime.game.pid, pid);
   assert.equal(await readFile(path.join(backup.world, 'Level.sav'), 'utf8'), 'current-world');
   await rm(path.join(f.runtime.saved, 'fail-save'));
-  const restored = await f.task('restore-native', { id: backup.id });
+  const restored = await f.task('restore-native', { id: backup.id, targetWorldId: backup.worldId });
   assert.equal(restored.state, 'succeeded', restored.message);
   assert.notEqual(f.runtime.game.pid, pid);
   assert.equal(f.runtime.ready, true);
@@ -106,7 +106,7 @@ test('官方备份恢复先备份停服，替换世界与玩家，保留配置�
   await copyFile(path.join(f.directory, `${backup.worldId}/Level.sav`), original);
   assert.equal(await readFile(original, 'utf8'), 'current-world');
   await f.task('stop');
-  assert.equal((await f.task('restore-native', { id: backup.id })).state, 'succeeded');
+  assert.equal((await f.task('restore-native', { id: backup.id, targetWorldId: backup.worldId })).state, 'succeeded');
   assert.equal(f.runtime.game, null);
 });
 
@@ -117,7 +117,7 @@ test('官方备份恢复在保护备份失败后重新启动游戏，世界保�
   await f.task('start');
   const pid = f.runtime.game.pid;
   f.manager.backup = async () => { throw new Error('模拟保护备份失败'); };
-  const task = await f.task('restore-native', { id: backup.id });
+  const task = await f.task('restore-native', { id: backup.id, targetWorldId: backup.worldId });
   assert.equal(task.state, 'failed');
   assert.match(task.message, /保护备份失败/);
   assert.ok(f.runtime.game);
@@ -145,7 +145,7 @@ test('官方恢复成功后两层临时目录清理失败只记录日志，不�
     });
     syncBuiltinESMExports();
     t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
-    const task = await f.task('restore-native', { id: backup.id });
+    const task = await f.task('restore-native', { id: backup.id, targetWorldId: backup.worldId });
     assert.equal(task.state, 'succeeded', task.message);
     assert.equal(cleanupFailures, 2);
     assert.equal(await readFile(path.join(backup.world, 'Level.sav'), 'utf8'), 'official-world');
@@ -180,7 +180,7 @@ test('官方恢复失败后的清理错误不能覆盖原错误或回滚失败�
     });
     syncBuiltinESMExports();
     t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
-    const task = await f.task('restore-native', { id: backup.id });
+    const task = await f.task('restore-native', { id: backup.id, targetWorldId: backup.worldId });
     assert.equal(task.state, 'failed');
     assert.doesNotMatch(task.message, /清理错误/);
     assert.equal(cleanupFailures, rollbackFails ? 1 : 2);
@@ -218,7 +218,7 @@ test('不完整、链接、越界和其他世界的官方备份不能恢复，�
   assert.deepEqual(listed.backups.map(entry => entry.id).sort(), [backup.id, foreign.id].sort());
   assert.equal(listed.backups.find(entry => entry.id === foreign.id).canRestore, false);
   for (const id of ['../../etc/passwd', `${backup.worldId}/../anything`, linked.id, foreign.id]) {
-    const task = await f.task('restore-native', { id });
+    const task = await f.task('restore-native', { id, targetWorldId: backup.worldId });
     assert.equal(task.state, 'failed', id);
     assert.equal(f.runtime.game.pid, pid);
   }
@@ -227,7 +227,7 @@ test('不完整、链接、越界和其他世界的官方备份不能恢复，�
   const withoutSelection = await f.manager.nativeBackups();
   assert.equal(withoutSelection.activeWorld, null);
   assert.equal(withoutSelection.backups.some(entry => entry.canRestore), false);
-  const missingSelection = await f.task('restore-native', { id: backup.id });
+  const missingSelection = await f.task('restore-native', { id: backup.id, targetWorldId: backup.worldId });
   assert.equal(missingSelection.state, 'failed');
   assert.match(missingSelection.message, /GameUserSettings\.ini/);
   assert.equal(f.runtime.game.pid, pid);

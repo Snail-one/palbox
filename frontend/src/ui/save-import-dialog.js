@@ -69,7 +69,7 @@ export function createSaveImportDialog({ dom, api, onRestore }) {
       return [term, description];
     }));
     details.hidden = false;
-    status.textContent = '检测完成，请核对恢复目标和配置处理方式。';
+    status.textContent = '检测完成，请核对恢复目标和配置处理方式；目标变化后需重新检测并确认。';
   }
   async function detect() {
     if (busy || (!file && !candidate)) return;
