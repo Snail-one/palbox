@@ -1,4 +1,4 @@
-import { parse, serialize, validateRaw } from './config.js';
+import { parse, serialize, validateRaw, applyManagedChanges } from './config.js';
 
 /** Config editing state. No DOM, browser storage or UI navigation dependencies. */
 export class EditorSession {
@@ -54,6 +54,27 @@ export class EditorSession {
     if (raw === this.entries.find(entry => entry.key === key).raw) this.#changes.delete(key);
     else this.#changes.set(key, raw);
     return true;
+  }
+  restoreValue(key, raw) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) throw new Error('参数名无效。');
+    const doc = parse(this.source());
+    let source = doc.source;
+    if (raw === null) {
+      const index = doc.entries.findIndex(entry => entry.key === key);
+      if (index !== -1) {
+        const start = index ? source.indexOf(',', doc.entries[index - 1].valueEnd) : doc.open + 1;
+        const end = index ? doc.entries[index].valueEnd : doc.entries.length > 1 ? source.indexOf(',', doc.entries[0].valueEnd) + 1 : doc.end;
+        source = source.slice(0, start) + source.slice(end);
+      }
+    } else {
+      validateRaw(raw);
+      source = applyManagedChanges(source, new Map([[key, raw]]));
+    }
+    // Keep other valid changes and drafts while restoring one trusted snapshot value.
+    this.#doc = parse(source);
+    this.#changes.clear();
+    this.#errors.delete(key);
+    this.#drafts.delete(key);
   }
   source() { return serialize(this.#doc, this.#changes); }
   toIni() {

@@ -31,7 +31,7 @@ function uptimeLabel(seconds) {
   return `${Math.floor(hours / 24)}天${hours % 24 ? `${hours % 24}小时` : ''}`;
 }
 
-export function createManagementPanel({ dom, api, ask, notify, getConfiguration, onDefaultsImported, onWorkspaceChanged, onConfigurationDiff }) {
+export function createManagementPanel({ dom, api, ask, notify, getConfiguration, onDefaultsImported, onWorkspaceChanged, onConfigurationDiff, onRestoreConfiguration }) {
   const { $, document } = dom;
   const timeFormat = createTimeFormatter();
   const NATIVE_BACKUP_PAGE_SIZE = 10;
@@ -278,7 +278,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     } finally { button.disabled = false; }
   });
   let runningRead = 0;
-  createConfigurationDiffDialog({ dom, api, onRead(value) {
+  createConfigurationDiffDialog({ dom, api, onRestore: onRestoreConfiguration, onRead(value) {
     if (!lastStatus || value.stateInstance !== lastStatus.stateInstance || value.revision !== lastStatus.revision || value.running !== lastStatus.running) return;
     if (value.running && value.startedAt !== lastStatus.startedAt) return;
     renderStatus({ ...lastStatus, configuration: value.configuration });

@@ -185,6 +185,8 @@ dialog::backdrop {
 .pending-config-values.with-running { grid-template-columns: repeat(3,minmax(0,1fr)); }
 .pending-config-value { min-width: 0; }
 .pending-config-label { display: block; margin-bottom: 6px; font-size: 11px; color: var(--muted); }
+.pending-config-value-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.pending-config-value-heading .pending-config-label, .pending-config-value-heading .subtle-tag { margin: 0; }
 .pending-config-raw { margin: 0; padding: 9px; border-radius: 6px; background: var(--input-bg); font: 12px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 600px) {
   .pending-config-dialog { padding: 18px; }

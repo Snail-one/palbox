@@ -86,6 +86,47 @@ test('源码修改和未识别参数共用初始基准，恢复输入清除全�
   assert.deepEqual(editor.changedKeys(), []);
 });
 
+test('撤销单项使用运行或文件快照值，保留基准、其他修改及无效草稿', () => {
+  const initial = '; keep\r\nOptionSettings=(ExpRate=7,ServerName="原名",ServerPlayerMaxNum=32)\r\n';
+  const editor = session(initial);
+  editor.update('ExpRate', '3');
+  editor.update('ServerName', '"保留修改"');
+  editor.update('ServerPlayerMaxNum', 'broken');
+  editor.setSourceDraft('未应用源码');
+  editor.restoreValue('ExpRate', '2.000000');
+  assert.equal(editor.raw('ExpRate'), '2.000000');
+  assert.equal(editor.isModified('ExpRate'), true, '撤销到实际旧值，而非初始基准');
+  assert.equal(editor.source(), initial.replace('ExpRate=7', 'ExpRate=2.000000').replace('"原名"', '"保留修改"'));
+  assert.equal(editor.draft('ServerPlayerMaxNum'), 'broken');
+  assert.equal(editor.sourceDraft, '未应用源码');
+  editor.restoreValue('ServerPlayerMaxNum', '16');
+  assert.equal(editor.errorCount, 0);
+  assert.equal(editor.draft('ServerPlayerMaxNum'), undefined);
+  editor.restoreField('ExpRate');
+  assert.equal(editor.raw('ExpRate'), '7', '恢复初始基准仍然可用');
+});
+
+test('撤销支持新增、移除、未知参数和空字符串，保留嵌套值及文件外内容', () => {
+  const source = '; keep\r\n[/Script/Pal.PalGameWorldSettings]\r\nOptionSettings=(First=1, Future=(A=1,B="x,y"), Last=3) ; tail\r\n[Other]\nValue=4';
+  for (const key of ['First', 'Future', 'Last']) {
+    const editor = session(source);
+    editor.restoreValue(key, null);
+    assert.equal(parse(editor.source()).entries.some(entry => entry.key === key), false);
+    assert.match(editor.source(), /^; keep\r\n/);
+    assert.match(editor.source(), / ; tail\r\n\[Other\]\nValue=4$/);
+  }
+  const editor = session('OptionSettings=(Only=1)');
+  editor.restoreValue('Only', null);
+  assert.equal(editor.source(), 'OptionSettings=()');
+  editor.restoreValue('Unknown', '(A=1,B="x,y")');
+  editor.restoreValue('ServerName', '""');
+  assert.equal(editor.raw('Unknown'), '(A=1,B="x,y")');
+  assert.equal(editor.raw('ServerName'), '""');
+  const previous = editor.source();
+  assert.throws(() => editor.restoreValue('Bad', '1,Injected=2'));
+  assert.equal(editor.source(), previous);
+});
+
 test('已识别数值仅补齐小数位不标记修改，未知字段仍比较原始值', () => {
   const initial = 'OptionSettings=(ExpRate=2,FutureValue=2)';
   const editor = session('OptionSettings=(ExpRate=2.000000,FutureValue=2.0)', initial);

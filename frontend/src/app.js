@@ -200,6 +200,16 @@ export function createApp({ document, window, catalog, repository, clipboard, fi
     if (value && (value.profileId !== workspace.active?.id || value.revision !== repository.revision)) return;
     panel.setPendingConfiguration(value);
     modifiedParameters.setPendingConfiguration(value);
+  }, async onRestoreConfiguration(value, change) {
+    if (value.profileId !== workspace.active?.id || value.revision !== repository.revision) throw new Error('配置已变化，请关闭后重新查看差异。');
+    const original = value.running && value.runningKnown ? change.runningValue : change.writtenValue;
+    const current = editor.raw(change.key) === undefined ? null : editor.outputRaw(change.key);
+    if (current !== change.desiredValue && current !== original) throw new Error('此参数已有新的修改，请关闭后重新查看差异。');
+    editor.restoreValue(change.key, original);
+    const saved = save({ automatic: true });
+    panel.render();
+    if (!saved || !(await repository.flush())) throw new Error(repository.error || '撤销结果保留在面板中，但保存失败，请重试。');
+    notifications.toast('已撤销此项修改并自动保存');
   }, onDefaultsImported() {
     if (!isDirty() && !document.querySelector('dialog[open]')) window.location.reload();
     else notifications.toast('官方默认配置已导入，请复制当前草稿后刷新页面。');
