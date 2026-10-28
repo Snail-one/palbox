@@ -319,7 +319,7 @@ test('默认配置接口要求登录，文件缺失时返回明确错误且现�
   const manager = new Manager({ directory });
   await manager.initialize();
   t.after(() => manager.close());
-  await manager.setupAdmin('admin', 'test-default-configuration-password');
+  await manager.setupAdmin('admin', 'test-default-configuration-password', manager.setupCode);
   const api = createManagementApi(manager);
   async function request(route, { method = 'GET', body, cookie } = {}) {
     const input = Readable.from(body === undefined ? [] : [Buffer.from(JSON.stringify(body))]);

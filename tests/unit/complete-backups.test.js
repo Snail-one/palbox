@@ -177,7 +177,7 @@ test('旧完整归档只恢复当前世界和配置，保留 GameUserSettings、
 
 test('旧版超过 20 份的保留设置在启动时迁移到 20，管理员记录保留', async t => {
   const { manager, directory } = await fixture(t);
-  await manager.setupAdmin('admin', 'test-backup-password');
+  await manager.setupAdmin('admin', 'test-backup-password', manager.setupCode);
   const original = JSON.parse(await readFile(manager.settingsFile, 'utf8'));
   await manager.close();
   for (const retention of [21, 100]) {
@@ -218,7 +218,7 @@ test('手动、恢复前、导入前和重置前备份独立保留，恢复保�
   const level = path.join(world, 'Level.sav');
   await writeFile(level, 'world-v1');
   await manager.ensureConfig();
-  await manager.setupAdmin('admin', 'test-backup-password');
+  await manager.setupAdmin('admin', 'test-backup-password', manager.setupCode);
   await writeFile(path.join(runtime.saved, 'Config/LinuxServer/GameUserSettings.ini'), 'DedicatedServerName=WORLD1\n');
   await manager.updateSettings({ backupRetention: 1 });
   for (const category of ['manual', 'before-restore', 'before-import', 'before-reset']) {
@@ -304,7 +304,7 @@ test('不同分类按各自保留数量清理，互不占用名额', async t => 
   await mkdir(world, { recursive: true });
   await writeFile(path.join(world, 'Level.sav'), 'world-data');
   await manager.ensureConfig();
-  await manager.setupAdmin('admin', 'test-backup-password');
+  await manager.setupAdmin('admin', 'test-backup-password', manager.setupCode);
   const counts = { manual: 1, 'before-restore': 2, 'before-import': 3, 'before-reset': 4 };
   await manager.updateSettings({ backupRetentions: counts });
   for (const category of Object.keys(counts)) for (let index = 0; index < 5; index++) await manager.backup(category);

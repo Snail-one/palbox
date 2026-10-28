@@ -70,7 +70,7 @@ export function createManagementApi(manager, options = {}) {
         // public clients are rejected even if the port is exposed too early.
         if (!isLoopbackOrPrivate(auth.clientAddress(request))) throw failure('请在本机或可信内网完成管理员初始化。', 403);
         const input = await body(request, 4096, AUTH_BODY_TIMEOUT_MS);
-        await manager.setupAdmin(input.username, input.password);
+        await manager.setupAdmin(input.username, input.password, input.setupCode);
         json(201, { ok: true }); return;
       }
       if (pathname === '/api/login' && request.method === 'POST') {

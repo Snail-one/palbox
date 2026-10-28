@@ -45,14 +45,15 @@ async function post(api, route, input) {
 test('启动时未初始化的另一实例不能覆盖管理员，同步原账号并保留二次验证', async t => {
   const [first, stale] = await instances(t);
   const firstApi = createManagementApi(first), staleApi = createManagementApi(stale);
-  assert.equal((await post(firstApi, '/api/setup', original)).status, 201);
+  assert.equal((await post(firstApi, '/api/setup', { ...original, setupCode: first.setupCode })).status, 201);
   await first.updateAdmin(admin => ({ ...admin, totp: { secret: newSecret(), lastCounter: -1, recoveryHashes: [] } }));
   const before = await readFile(first.settingsFile, 'utf8');
 
-  const rejected = await post(staleApi, '/api/setup', replacement);
+  const rejected = await post(staleApi, '/api/setup', { ...replacement, setupCode: stale.setupCode });
   assert.equal(rejected.status, 409);
   assert.equal(rejected.headers['Set-Cookie'], undefined);
   assert.equal(stale.needsSetup(), false);
+  assert.equal(stale.setupCode, null);
   assert.deepEqual(stale.settings, first.settings);
   const login = await post(staleApi, '/api/login', original);
   assert.equal(login.status, 200);
@@ -67,12 +68,13 @@ test('独立实例同时注册只有一次成功，两边均使用胜出的管�
   const managers = await instances(t);
   const apis = managers.map(manager => createManagementApi(manager));
   const credentials = [original, replacement];
-  const results = await Promise.all(apis.map((api, index) => post(api, '/api/setup', credentials[index])));
+  const results = await Promise.all(apis.map((api, index) => post(api, '/api/setup', { ...credentials[index], setupCode: managers[index].setupCode })));
   assert.deepEqual(results.map(result => result.status).sort(), [201, 409]);
   const winner = results.findIndex(result => result.status === 201);
   const before = await readFile(managers[0].settingsFile, 'utf8');
   for (const [index, api] of apis.entries()) {
     assert.equal(managers[index].needsSetup(), false);
+    assert.equal(managers[index].setupCode, null);
     assert.deepEqual(managers[index].settings.admin, JSON.parse(before).admin);
     assert.equal((await post(api, '/api/login', credentials[winner])).status, 200);
     assert.equal((await post(api, '/api/login', credentials[1 - winner])).status, 401);
@@ -86,9 +88,50 @@ test('启动后出现损坏配置时，首次注册失败也不能覆盖该文�
   const api = createManagementApi(manager);
   for (const content of ['{', 'null', '{}']) {
     await writeFile(manager.settingsFile, content);
-    assert.equal((await post(api, '/api/setup', replacement)).status, 500);
+    assert.equal((await post(api, '/api/setup', { ...replacement, setupCode: manager.setupCode })).status, 500);
     assert.equal(await readFile(manager.settingsFile, 'utf8'), content);
     assert.equal(manager.settings, null);
     assert.equal(manager.setupPending, false);
   }
+});
+
+test('初始化码缺失、错误或类型无效时不创建账号，正确码只能使用一次且不会持久化', async t => {
+  const [manager] = await instances(t, 1);
+  const api = createManagementApi(manager);
+  const setupCode = manager.setupCode;
+  assert.match(setupCode, /^[a-f0-9]{32}$/);
+  for (const code of [undefined, null, 123, {}, [], '', 'wrong', '0'.repeat(32), setupCode + 'x']) {
+    const result = await post(api, '/api/setup', { ...original, setupCode: code });
+    assert.equal(result.status, 403);
+    assert.equal(JSON.stringify(result).includes(setupCode), false);
+    assert.equal(manager.setupPending, false);
+    assert.equal(manager.settings, null);
+    await assert.rejects(readFile(manager.settingsFile), { code: 'ENOENT' });
+  }
+  assert.equal((await post(api, '/api/setup', { ...original, setupCode: ` ${setupCode.toUpperCase()} ` })).status, 201);
+  assert.equal(manager.setupCode, null);
+  assert.equal(manager.needsSetup(), false);
+  const before = await readFile(manager.settingsFile, 'utf8');
+  assert.equal(before.includes(setupCode), false);
+  assert.equal((await post(api, '/api/setup', { ...replacement, setupCode })).status, 409);
+  assert.equal(await readFile(manager.settingsFile, 'utf8'), before);
+});
+
+test('未完成初始化时重新启动生成新码，已有账号重启不生成初始化码', async t => {
+  const managers = await instances(t, 1);
+  const previousCode = managers[0].setupCode;
+  await managers[0].close();
+  const restarted = new Manager({ directory: managers[0].directory });
+  managers.push(restarted);
+  await restarted.initialize();
+  assert.notEqual(restarted.setupCode, previousCode);
+  const api = createManagementApi(restarted);
+  assert.equal((await post(api, '/api/setup', { ...original, setupCode: previousCode })).status, 403);
+  assert.equal((await post(api, '/api/setup', { ...original, setupCode: restarted.setupCode })).status, 201);
+  const initialized = new Manager({ directory: restarted.directory });
+  managers.push(initialized);
+  await initialized.initialize();
+  assert.equal(initialized.setupCode, null);
+  assert.equal(initialized.needsSetup(), false);
+  assert.deepEqual(initialized.settings.admin, restarted.settings.admin);
 });

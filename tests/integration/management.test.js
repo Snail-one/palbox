@@ -512,35 +512,42 @@ test('首次访问通过网页初始化管理员，重启沿用账号，密码�
   // 旧的环境变量即使存在也必须被忽略，服务照常启动并等待网页初始化。
   const initialized = launch({ PALBOX_ADMIN_PASSWORD: password, PALBOX_ADMIN_PASSWORD_FILE: '/nonexistent/palbox-password', PALBOX_TRUSTED_PROXIES: '127.0.0.1' });
   await ready(initialized);
+  const setupCode = initialized.output.match(/首次初始化码：([a-f0-9]{32})/)?.[1];
+  assert.ok(setupCode, '首次启动应在终端输出初始化码');
   assert.equal((await fetch(`http://127.0.0.1:${port}/healthz`)).status, 200);
   assert.equal((await fetch(`http://127.0.0.1:${apiPort}/`)).status, 404);
   assert.deepEqual(await (await fetch(`http://127.0.0.1:${port}/api/bootstrap`)).json(), { mode: 'managed', authenticated: false, setupRequired: true });
   await assert.rejects(access(settingsFile), { code: 'ENOENT' });
-  assert.equal((await post('/api/setup', { username, password: 'short' })).status, 400);
-  assert.equal((await post('/api/setup', { username: '   ', password })).status, 400);
-  assert.equal((await post('/api/setup', { username, password }, { Origin: 'https://evil.invalid' })).status, 403);
+  assert.equal((await post('/api/setup', { username, password: 'short', setupCode })).status, 400);
+  assert.equal((await post('/api/setup', { username: '   ', password, setupCode })).status, 400);
+  assert.equal((await post('/api/setup', { username, password, setupCode }, { Origin: 'https://evil.invalid' })).status, 403);
   // 公网客户端（反向代理通过 X-Forwarded-For 转发）不能抢先初始化；
   // 伪造内网前缀也不能让追加真实地址的代理链被误判。
-  assert.equal((await post('/api/setup', { username, password }, { 'X-Forwarded-For': '203.0.113.9' })).status, 403);
-  assert.equal((await post('/api/setup', { username, password }, { 'X-Forwarded-For': '10.0.0.1, 203.0.113.9' })).status, 403);
-  const created = await post('/api/setup', { username, password });
+  assert.equal((await post('/api/setup', { username, password, setupCode }, { 'X-Forwarded-For': '203.0.113.9' })).status, 403);
+  assert.equal((await post('/api/setup', { username, password, setupCode }, { 'X-Forwarded-For': '10.0.0.1, 203.0.113.9' })).status, 403);
+  assert.equal((await post('/api/setup', { username, password })).status, 403);
+  assert.equal((await post('/api/setup', { username, password, setupCode: 'wrong' })).status, 403);
+  const created = await post('/api/setup', { username, password, setupCode });
   assert.equal(created.status, 201);
   assert.deepEqual(await created.json(), { ok: true });
-  assert.equal((await post('/api/setup', { username, password })).status, 409);
+  assert.equal((await post('/api/setup', { username, password, setupCode })).status, 409);
   assert.deepEqual(await (await fetch(`http://127.0.0.1:${port}/api/bootstrap`)).json(), { mode: 'managed', authenticated: false });
   const settings = await readFile(settingsFile, 'utf8');
   assert.equal(settings.includes(username), true);
   assert.equal(settings.includes(password), false);
+  assert.equal(settings.includes(setupCode), false);
   assert.equal((await stat(settingsFile)).mode & 0o777, 0o600);
   assert.equal((await post('/api/login', { username: 'wrong-user', password })).status, 401);
   const authLog = await readFile(path.join(directory, 'logs', 'login.log'), 'utf8');
   assert.match(authLog, /登录失败/);
   assert.equal(authLog.includes(password), false);
+  assert.equal(authLog.includes(setupCode), false);
   assert.equal((await post('/api/login', { username, password })).status, 200);
   initialized.child.kill('SIGTERM');
   assert.equal((await initialized.closed)[0], 0);
   const restarted = launch();
   await ready(restarted);
+  assert.equal(restarted.output.includes('首次初始化码'), false);
   assert.deepEqual(await (await fetch(`http://127.0.0.1:${port}/api/bootstrap`)).json(), { mode: 'managed', authenticated: false });
   assert.equal((await post('/api/login', { username, password })).status, 200);
   assert.equal(await readFile(settingsFile, 'utf8'), settings);
@@ -572,7 +579,7 @@ test('不支持旧版 settings.json 与损坏的管理员记录', { skip: proces
 
 test('首次初始化并发提交只创建一次管理员', { skip: process.platform !== 'linux' }, async t => {
   const f = await managementFixture({ setup: false }); t.after(() => f.close());
-  const payload = { username: 'admin', password: 'test-management-password-123' };
+  const payload = { username: 'admin', password: 'test-management-password-123', setupCode: f.manager.setupCode };
   assert.equal((await f.request('/api/login', { method: 'POST', body: payload, authenticated: false })).status, 409);
   const results = await Promise.all([
     f.request('/api/setup', { method: 'POST', body: payload, authenticated: false }),

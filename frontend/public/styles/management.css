@@ -395,6 +395,7 @@ main:has(#game-page:not([hidden])), main:has(#login-logs-page:not([hidden])) { d
 .login-card form { display: grid; gap: 12px; }
 .login-card label { font-size: 12px; }
 .login-card input { min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 6px; }
+#setup-code-help { margin: -4px 0 4px; color: var(--muted); font-size: 12px; line-height: 1.6; }
 @media (max-width: 480px) {
   .log-type-buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .log-type-buttons button { padding: 8px 6px; }

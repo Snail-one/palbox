@@ -27,6 +27,7 @@ try {
   const server = createServer({ api });
   server.on('error', error => { console.error(`启动失败：${error.message}`); process.exitCode = 1; manager?.close(); });
   server.listen(listenPort, host, () => {
+    if (manager.needsSetup()) console.log(`首次初始化码：${manager.setupCode}（仅本次启动有效，创建管理员后失效）`);
     console.log(`Palbox 游戏管理已启动：http://${host}:${listenPort}`);
     if (!secureCookie && !['127.0.0.1', '::1', 'localhost'].includes(host)) {
       console.warn('提示：未启用 Secure Cookie；若通过 HTTPS 反向代理访问面板，请设置 PALBOX_SECURE_COOKIE=true。');

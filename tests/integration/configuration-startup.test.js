@@ -45,7 +45,9 @@ test('真实启动入口区分原生共用端口和独立后端的端口边界',
       }
       let cookie = '', csrf = '';
       const credentials = { username: 'admin', password: 'test-configuration-ports-123' };
-      assert.equal((await request('setup', { method: 'POST', body: credentials })).status, 201);
+      const setupCode = output.match(/首次初始化码：([a-f0-9]{32})/)?.[1];
+      assert.ok(setupCode);
+      assert.equal((await request('setup', { method: 'POST', body: { ...credentials, setupCode } })).status, 201);
       const login = await request('login', { method: 'POST', body: credentials });
       assert.equal(login.status, 200);
       cookie = login.headers.get('set-cookie').split(';')[0]; csrf = (await login.json()).csrf;

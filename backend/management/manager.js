@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { readFile, mkdir, open, readdir, stat, rename, rm, rmdir, lstat, unlink, cp } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes, timingSafeEqual } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { EventEmitter } from 'node:events';
@@ -133,6 +133,7 @@ export class Manager extends EventEmitter {
     this.settings = null;
     this.setupRequired = true;
     this.setupPending = false;
+    this.setupCode = null;
     this.settingsUpdates = Promise.resolve();
     this.settingsFile = path.join(this.directory, 'palbox/settings.json');
     this.tasksFile = path.join(this.directory, 'palbox/tasks.json');
@@ -162,6 +163,7 @@ export class Manager extends EventEmitter {
     if (settings === MISSING) {
       this.settings = null;
       this.setupRequired = true;
+      this.setupCode = randomBytes(16).toString('hex');
     } else {
       let write = false;
       if (settings?.backupRetentions && typeof settings.backupRetentions === 'object' && !Array.isArray(settings.backupRetentions)) {
@@ -181,6 +183,7 @@ export class Manager extends EventEmitter {
       if (Object.hasOwn(settings, 'backupIntervalHours')) { delete settings.backupIntervalHours; write = true; }
       this.settings = settings;
       this.setupRequired = false;
+      this.setupCode = null;
       if (write) await jsonWrite(this.settingsFile, settings);
     }
     this.syncRuntimeArgs();
@@ -244,7 +247,7 @@ export class Manager extends EventEmitter {
   get shutdownMessage() { return this.settings?.shutdownMessage ?? DEFAULT_SHUTDOWN_MESSAGE; }
   syncRuntimeArgs() { this.runtime.args = [...this.gameArgs]; this.runtime.autoProxy = this.autoProxy; this.runtime.shutdownWait = this.shutdownWait; this.runtime.shutdownMessage = this.shutdownMessage; }
   syncRuntimeInstallArgs() { this.runtime.installArgs = this.installArgs.map(arg => arg === '{server}' ? this.runtime.server : arg); }
-  async setupAdmin(username, password) {
+  async setupAdmin(username, password, setupCode) {
     if (!this.setupRequired) throw failure('管理员已初始化，请直接登录。', 409);
     if (this.setupPending) throw failure('管理员初始化正在进行，请稍后重试。', 409);
     this.setupPending = true;
@@ -253,6 +256,10 @@ export class Manager extends EventEmitter {
       if (!validUsername(name)) throw failure('管理员用户名须为 1 到 64 个字符，且不能包含控制字符。', 400);
       if (typeof password !== 'string' || password.length < 12) throw failure('管理密码至少需要 12 位。', 400);
       if (password.length > 1024) throw failure('管理密码不能超过 1024 位。', 400);
+      const code = typeof setupCode === 'string' ? setupCode.trim().toLowerCase() : '';
+      if (!this.setupCode || !/^[a-f0-9]{32}$/.test(code) || !timingSafeEqual(Buffer.from(code), Buffer.from(this.setupCode))) {
+        throw failure('初始化码不正确或已失效，请查看服务器启动终端或容器日志。', 403);
+      }
       let next = { admin: { username: name, ...await passwordRecord(password) }, backupRetention: 5, autoStart: false, autoProxy: false, shutdownWait: 5, shutdownMessage: DEFAULT_SHUTDOWN_MESSAGE, gameArgs: [], installArgs: [...DEFAULT_INSTALL_ARGS] };
       let created = true;
       try { await jsonWrite(this.settingsFile, next, { exclusive: true }); }
@@ -266,6 +273,7 @@ export class Manager extends EventEmitter {
       }
       this.settings = next;
       this.setupRequired = false;
+      this.setupCode = null;
       this.syncRuntimeArgs();
       this.syncRuntimeInstallArgs();
       if (!created) throw failure('管理员已初始化，请直接登录。', 409);

@@ -39,7 +39,7 @@ export async function managementFixture({ setup = true, username = 'admin', pass
     manager.store.workspace.profiles.unshift(working);
     manager.store.workspace.activeId = working.id;
   }
-  if (setup) await manager.setupAdmin(username, password);
+  if (setup) await manager.setupAdmin(username, password, manager.setupCode);
   const snapshot = manager.store.snapshot();
   if (snapshot.workspace.profiles.length) {
     snapshot.workspace.profiles[0].source = serialize(parse(snapshot.workspace.profiles[0].source), new Map([['RESTAPIPort', String(restPort)]]));
