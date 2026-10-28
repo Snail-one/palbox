@@ -1,8 +1,8 @@
-import { mkdir, open, rename, readFile, unlink } from 'node:fs/promises';
+import { mkdir, open, rename, readFile, unlink, link } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-export async function atomicWrite(file, value, { beforeCommit = () => {} } = {}) {
+export async function atomicWrite(file, value, { beforeCommit = () => {}, exclusive = false } = {}) {
   await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
   const temporary = `${file}.${randomUUID()}.tmp`;
   try {
@@ -10,7 +10,10 @@ export async function atomicWrite(file, value, { beforeCommit = () => {} } = {})
     try { await handle.writeFile(value); await handle.sync(); }
     finally { await handle.close(); }
     beforeCommit();
-    await rename(temporary, file);
+    // Publish the complete file without replacing an existing destination.
+    // Unlike an existence check followed by rename, link is atomic across processes.
+    if (exclusive) await link(temporary, file);
+    else await rename(temporary, file);
     const directory = await open(path.dirname(file), 'r');
     try { await directory.sync(); } finally { await directory.close(); }
   } finally {
