@@ -188,7 +188,8 @@ h1 {
   border-color: #f1d5b6;
 }
 
-.profile-title-row > .tag {
+.profile-title-row > .tag,
+#group-count {
   color: #5f6670;
   background: #f3f4f6;
   border-color: #e2e5e9;
