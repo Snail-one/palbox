@@ -871,7 +871,7 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
     game.setAttribute('aria-label', `${serviceState.label}。${serviceState.description}`);
     for (const config of [$('game-config-state'), $('profile-game-config-state')]) {
       config.textContent = value.hasConfiguration === false ? '暂无配置' : value.configuration === 'unknown' ? '状态未知' : value.configuration === 'pending' ? '待生效' : value.running && value.ready ? '已生效' : '已写入';
-      config.dataset.state = ['pending', 'unknown'].includes(value.configuration) ? 'pending' : value.running && value.ready ? 'saved' : 'written';
+      config.dataset.state = ['pending', 'unknown'].includes(value.configuration) ? value.configuration : value.running && value.ready ? 'saved' : 'written';
       config.title = value.hasConfiguration === false ? '请先安装服务端或手动新建配置。' : value.configuration === 'unknown' ? '文件参数与面板一致，但无法确认本次启动使用的配置，请查看差异说明。' : value.configuration === 'pending' ? '当前面板配置尚未应用到游戏，点击应用配置后生效。'
         : value.running && value.ready ? '游戏服务已使用当前配置运行。'
         : value.running ? '配置已写入，正在等待游戏管理接口就绪。'

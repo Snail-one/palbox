@@ -160,7 +160,8 @@ h1 {
 
 .profile-overview[data-state="pending"]::after,
 .profile-overview[data-state="saved"]::after,
-.profile-overview[data-state="written"]::after {
+.profile-overview[data-state="written"]::after,
+.profile-overview[data-state="unknown"]::after {
   animation: profile-status-glow 2.2s ease-in-out infinite;
 }
 
