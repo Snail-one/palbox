@@ -41,7 +41,6 @@
 }
 
 .profile-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
-.profile-heading > .save-status { flex-shrink: 0; }
 
 .profile-title-row {
   display: flex;
@@ -93,6 +92,7 @@
 
 .profile-statuses { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; margin-top: 6px; }
 .profile-statuses .profile-default-status { margin: 0; padding: 2px 6px; }
+.profile-statuses > .save-status { margin-left: auto; flex-shrink: 0; }
 .profile-details #profile-updated { font-variant-numeric: tabular-nums; }
 
 .detail-separator {

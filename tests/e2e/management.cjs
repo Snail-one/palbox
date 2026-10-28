@@ -210,6 +210,7 @@ const path = require('node:path');
     assert.equal(await page.locator('.configuration-deployment').count(), 0);
     assert.equal(await page.locator('#configuration-actions #configuration-apply').isVisible(), true);
     assert.equal(await page.locator('#configuration-actions #game-config-state').count(), 1);
+    assert.equal(await page.locator('.profile-heading #profile-game-config-state').count(), 1);
     assert.equal(await page.locator('#configuration-actions [data-action="apply"]').count(), 1);
     assert.equal(await page.locator('[data-action="apply"]').textContent(), '无需应用');
     assert.equal(await page.locator('[data-action="apply"]').isDisabled(), true);

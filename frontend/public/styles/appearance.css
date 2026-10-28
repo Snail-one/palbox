@@ -146,6 +146,12 @@ h1 {
   border-color: #f1d5b6;
 }
 
+.profile-title-row > .tag {
+  color: #5f6670;
+  background: #f3f4f6;
+  border-color: #e2e5e9;
+}
+
 .subtle-tag {
   background: #fff8f0;
   border-color: #f0ddc5;
