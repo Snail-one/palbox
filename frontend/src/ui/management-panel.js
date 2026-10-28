@@ -878,6 +878,8 @@ export function createManagementPanel({ dom, api, ask, notify, getConfiguration,
         : '配置已写入游戏文件，启动服务器后生效。';
       config.setAttribute('aria-label', `游戏配置：${config.textContent}。${config.title}`);
     }
+    $('profile-overview').dataset.state = value.hasConfiguration === false ? 'empty'
+      : value.configuration === 'unknown' ? 'unknown' : $('profile-game-config-state').dataset.state;
     $('show-pending-config').hidden = value.hasConfiguration === false || !['pending', 'unknown'].includes(value.configuration);
     updatePendingFields(value);
     $('game-version').textContent = value.version || value.info?.version || (value.installed ? '启动后获取' : '未安装');

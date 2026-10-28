@@ -135,10 +135,34 @@ h1 {
   box-shadow: 0 5px 15px #c64a0c30;
 }
 
+@property --profile-status-background {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: #fff;
+}
+
 .profile-overview {
-  background: #fff;
-  border-color: #e9ded2;
-  box-shadow: 0 3px 14px #68401204;
+  background: linear-gradient(98deg, #fff 50%, var(--profile-status-background, #fff) 50%);
+  border-color: #e2e5e9;
+  box-shadow: 0 3px 14px #1f293706;
+  transition: --profile-status-background 200ms ease;
+}
+
+.profile-overview[data-state="pending"] {
+  --profile-status-background: #fffcf5;
+}
+
+.profile-overview[data-state="saved"] {
+  --profile-status-background: #f6fbf7;
+}
+
+.profile-overview[data-state="written"] {
+  --profile-status-background: #f7f9fd;
+}
+
+.profile-overview[data-state="unknown"],
+.profile-overview[data-state="empty"] {
+  --profile-status-background: #fafbfc;
 }
 
 .tag {
