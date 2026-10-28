@@ -136,18 +136,43 @@ h1 {
 }
 
 .profile-overview {
+  position: relative;
   background: #fff;
-  border-color: #e2e5e9;
-  box-shadow: inset 3px 0 0 var(--profile-status-color, #c3c9d1), 0 3px 14px #1f293706;
-  transition: box-shadow 200ms ease;
+  border-color: var(--profile-status-color, #c3c9d1);
+  box-shadow: inset 0 0 0 2px var(--profile-status-color, #c3c9d1), 0 3px 14px #1f293706;
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+
+.profile-overview::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--profile-status-color, #c3c9d1) 14%, transparent),
+    0 0 14px color-mix(in srgb, var(--profile-status-color, #c3c9d1) 18%, transparent);
 }
 
 .profile-overview[data-state="pending"] {
   --profile-status-color: #d3a24c;
 }
 
+.profile-overview[data-state="pending"]::after {
+  animation: profile-status-glow 2.8s ease-in-out infinite;
+}
+
 .profile-overview[data-state="saved"] {
   --profile-status-color: #69aa85;
+}
+
+.profile-overview[data-state="saved"]::after {
+  animation: profile-status-glow 900ms ease-in-out;
+}
+
+@keyframes profile-status-glow {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
 }
 
 .profile-overview[data-state="written"] {
