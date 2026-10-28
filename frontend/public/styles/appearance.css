@@ -166,7 +166,7 @@ h1 {
 }
 
 .profile-overview[data-state="saved"] {
-  --profile-status-color: #e98a3c;
+  --profile-status-color: #69aa85;
 }
 
 @keyframes profile-status-glow {

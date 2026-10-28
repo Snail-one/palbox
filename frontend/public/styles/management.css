@@ -21,7 +21,7 @@ main:has(#configuration-page:not([hidden])) { padding-bottom: calc(150px + env(s
 .configuration-apply .save-status, .configuration-apply .button { white-space: nowrap; }
 .configuration-state { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 74px; }
 #game-config-state, .server-primary-actions #game-state { flex-shrink: 0; padding: 5px 9px; font-size: 11px; }
-#game-config-state[data-state="saved"], #profile-game-config-state[data-state="saved"] { background: #fff3e8; border-color: #f0bd92; color: #a94f13; }
+#game-config-state[data-state="saved"], #profile-game-config-state[data-state="saved"] { background: #eef8f2; border-color: #b8ddc8; color: #23663e; }
 #game-config-state[data-state="written"], #profile-game-config-state[data-state="written"] { background: #eef4ff; border-color: #cddcf5; color: #365f97; }
 .save-status[data-state="unknown"] { background: #f3f4f6; border-color: #c3c9d1; color: #5f6670; }
 .configuration-tools { display: flex; align-items: center; padding: 3px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
