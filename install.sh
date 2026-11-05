@@ -80,6 +80,18 @@ append_panel_urls() {
   done
   if [[ $found == false ]]; then target+=("面板地址：未检测到对外网卡地址，请使用服务器实际 IP 和端口 $listen_port"); fi
 }
+read_setup_code() {
+  local invocation_id current_invocation logs code
+  invocation_id="$(systemctl show palbox.service --property=InvocationID --value 2>/dev/null)" || return 0
+  [[ "$invocation_id" =~ ^[a-f0-9]{32}$ ]] || return 0
+  # Flush startup output, then read only this service invocation's journal.
+  journalctl --sync >/dev/null 2>&1 || true
+  logs="$(journalctl -u palbox.service "_SYSTEMD_INVOCATION_ID=$invocation_id" --no-pager --output=cat 2>/dev/null)" || return 0
+  code="$(printf '%s\n' "$logs" | sed -n 's/^首次初始化码：\([a-f0-9]\{32\}\)（仅本次启动有效，创建管理员后失效）$/\1/p' | tail -n 1)"
+  current_invocation="$(systemctl show palbox.service --property=InvocationID --value 2>/dev/null)" || return 0
+  [[ "$current_invocation" == "$invocation_id" ]] || return 0
+  printf '%s' "$code"
+}
 while (( $# )); do
   case "$1" in
     -h|--help) usage; exit 0 ;;
@@ -408,7 +420,20 @@ summary+=(
   "SteamCMD：$data_dir/steamcmd/steamcmd.sh（网页安装后生成）"
   "游戏目录：$data_dir/server（网页安装后生成）"
 )
-access=("打开面板创建管理员，再依次点击「安装 SteamCMD」「安装服务端」「启动」。")
+access=()
+if [[ -f "$data_dir/palbox/settings.json" ]]; then
+  access+=("管理员已配置，请使用原账号登录。")
+else
+  setup_code="$(read_setup_code)"
+  if [[ -n "$setup_code" && ! -f "$data_dir/palbox/settings.json" ]]; then
+    access+=("首次初始化码：$setup_code" "仅本次启动有效，创建管理员后失效；未注册时重启会更新。")
+  elif [[ -f "$data_dir/palbox/settings.json" ]]; then
+    access+=("管理员已配置，请使用原账号登录。")
+  else
+    access+=("暂未读取到本次启动的初始化码，请查看最新服务日志：" "sudo journalctl -u palbox -n 100 --no-pager")
+  fi
+fi
+access+=("首次使用请填写初始化码并创建管理员，再依次点击「安装 SteamCMD」「安装服务端」「启动」。")
 if [[ $listen_host == 127.0.0.1 || $listen_host == localhost || $listen_host == ::1 ]]; then
   access+=(
     "当前只监听本机。远程可建立隧道："

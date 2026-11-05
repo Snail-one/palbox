@@ -84,13 +84,35 @@ elif name == 'systemctl':
     active, enabled = root / 'active', root / 'enabled'
     if action == 'is-active': sys.exit(0 if active.exists() else 1)
     elif action == 'is-enabled': sys.exit(0 if enabled.exists() else 1)
-    elif action == 'start': active.touch()
+    elif action == 'start':
+        active.touch()
+        invocation_file = root / 'invocation'
+        previous = int(invocation_file.read_text(), 16) if invocation_file.exists() else 0
+        invocation = format(previous + 1, '032x')
+        invocation_file.write_text(invocation)
+        if not (root / 'project/data/palbox/settings.json').exists() and not (root / 'missing-setup-code').exists():
+            code = 'a' + invocation[1:]
+            with (root / 'journal').open('a') as journal:
+                journal.write(invocation + ' 首次初始化码：' + code + '（仅本次启动有效，创建管理员后失效）\\n')
+    elif action == 'show':
+        if (root / 'no-invocation').exists(): print('')
+        else: print((root / 'invocation').read_text())
     elif action == 'stop':
         if (root / 'fail-stop').exists(): sys.exit(1)
         active.unlink(missing_ok=True)
     elif action == 'enable': enabled.touch()
     elif action == 'disable': enabled.unlink(missing_ok=True)
-elif name == 'journalctl': print('fixture: service failed to start')
+elif name == 'journalctl':
+    if '--sync' in args: sys.exit(0)
+    if (root / 'journal-error').exists(): sys.exit(1)
+    invocation = next((arg.split('=', 1)[1] for arg in args if arg.startswith('_SYSTEMD_INVOCATION_ID=')), None)
+    if invocation:
+        if (root / 'journal').exists():
+            for line in (root / 'journal').read_text().splitlines():
+                entry_invocation, _, message = line.partition(' ')
+                if entry_invocation == invocation: print(message)
+        if (root / 'restart-during-journal').exists(): (root / 'invocation').write_text('f' * 32)
+    else: print('fixture: service failed to start')
 else: raise RuntimeError('Unexpected mock command: ' + name)
 `, { mode: 0o755 });
   for (const name of ['id', 'stat', 'useradd', 'apt-get', 'chown', 'dpkg-query', 'install', 'runuser', 'curl', 'systemctl', 'journalctl']) await symlink(mock, path.join(bin, name));
@@ -152,6 +174,9 @@ test('就地安装使用项目属主和 data，不创建用户或搬迁程序，
   assert.match(result.stdout, /启动检查通过（第 1\/30 次）/);
   assert.match(result.stdout, /正在设置开机启动/);
   assert.match(result.stdout, /安装完成.*开机启动/);
+  const setupCode = 'a' + '1'.padStart(31, '0');
+  assert.ok(result.stdout.includes(`首次初始化码：${setupCode}`));
+  assert.match(result.stdout, /仅本次启动有效，创建管理员后失效/);
   assert.ok(result.stdout.includes(`运行用户：deployer`));
   assert.ok(result.stdout.includes(`游戏目录：${f.data}/server`));
   await access(path.join(f.data, 'runtime/node/bin/node'));
@@ -161,6 +186,8 @@ test('就地安装使用项目属主和 data，不创建用户或搬迁程序，
   assert.match(config, /PALBOX_SERVICE_USER=deployer/);
   const unit = path.join(f.systemd, 'palbox.service');
   const service = await readFile(unit, 'utf8');
+  assert.equal(config.includes(setupCode), false);
+  assert.equal(service.includes(setupCode), false);
   assert.match(service, /User=deployer\nGroup=deployer/);
   assert.ok(service.includes(`WorkingDirectory=${f.app}\n`));
   assert.ok(service.includes(`ExecStart=/bin/bash ${f.app}/dev.sh --no-watch`));
@@ -217,6 +244,7 @@ test('重新安装保留同一 data、配置和程序目录，不重复下载兼
   const f = await fixture(t);
   const opened = await f.invoke('--host', '0.0.0.0', '--port', '9000', '--api-port', '9001');
   assert.match(opened.stdout, /当前没有正在运行的 PalBox 服务/);
+  const previousCode = opened.stdout.match(/首次初始化码：([a-f0-9]{32})/)[1];
   assert.match(opened.stdout, /0\.0\.0\.0:9000（所有 IPv4 网卡）/);
   assert.doesNotMatch(opened.stdout, /面板地址：http:\/\/127\.0\.0\.1:9000/);
   await writeFile(path.join(f.data, 'world.sav'), 'world-content');
@@ -226,6 +254,9 @@ test('重新安装保留同一 data、配置和程序目录，不重复下载兼
   assert.doesNotMatch(repeated.stdout, /是否下载/);
   assert.match(repeated.stdout, /正在停止已运行的 PalBox/);
   assert.match(repeated.stdout, /原服务已停止/);
+  const currentCode = repeated.stdout.match(/首次初始化码：([a-f0-9]{32})/)[1];
+  assert.notEqual(currentCode, previousCode);
+  assert.equal(repeated.stdout.includes(previousCode), false);
   let config = await readFile(f.config, 'utf8');
   for (const line of ['HOST=0.0.0.0', 'PORT=9000', 'API_PORT=9001', 'PALBOX_GAME_PORT=8888', 'PALBOX_SECURE_COOKIE=true']) assert.ok(config.split('\n').includes(line), line);
   assert.equal(await readFile(path.join(f.data, 'world.sav'), 'utf8'), 'world-content');
@@ -235,6 +266,42 @@ test('重新安装保留同一 data、配置和程序目录，不重复下载兼
   const commands = await readFile(path.join(f.directory, 'commands'), 'utf8');
   assert.equal(commands.match(/https:\/\/nodejs.org\/dist\/latest-v24.x\/SHASUMS256.txt/g).length, 1);
   assert.equal(commands.match(/apt-get update/g).length, 1);
+});
+
+test('已有管理员时安装结果提示原账号登录，不显示历史初始化码', linux, async t => {
+  const f = await fixture(t);
+  const first = await f.invoke();
+  const previousCode = first.stdout.match(/首次初始化码：([a-f0-9]{32})/)[1];
+  const settingsFile = path.join(f.data, 'palbox/settings.json');
+  const settings = JSON.stringify({ admin: { username: 'existing-admin' } });
+  await writeFile(settingsFile, settings);
+  await writeFile(path.join(f.directory, 'commands'), '');
+  const result = await f.invoke();
+  assert.match(result.stdout, /管理员已配置，请使用原账号登录/);
+  assert.doesNotMatch(result.stdout, /首次初始化码：|暂未读取到/);
+  assert.equal(result.stdout.includes(previousCode), false);
+  assert.equal(await readFile(settingsFile, 'utf8'), settings);
+  assert.doesNotMatch(await readFile(path.join(f.directory, 'commands'), 'utf8'), /journalctl|systemctl show palbox.service/);
+});
+
+test('当前启动日志不可用或服务已重启时，安装成功并提示查看最新日志', linux, async t => {
+  for (const flag of ['missing-setup-code', 'journal-error', 'no-invocation', 'restart-during-journal']) {
+    await t.test(flag, async t => {
+      const f = await fixture(t);
+      // An old invocation's code must never become a fallback.
+      const oldCode = 'b'.repeat(32);
+      await writeFile(path.join(f.directory, 'journal'), `${'e'.repeat(32)} 首次初始化码：${oldCode}（仅本次启动有效，创建管理员后失效）\n`);
+      await writeFile(path.join(f.directory, flag), 'yes');
+      const result = await f.invoke();
+      assert.match(result.stdout, /安装完成.*开机启动/);
+      assert.match(result.stdout, /暂未读取到本次启动的初始化码/);
+      assert.match(result.stdout, /sudo journalctl -u palbox -n 100 --no-pager/);
+      assert.doesNotMatch(result.stdout, /首次初始化码：/);
+      assert.equal(result.stdout.includes(oldCode), false);
+      await access(path.join(f.directory, 'active'));
+      await access(path.join(f.directory, 'enabled'));
+    });
+  }
 });
 
 test('旧目录升级后迁移运行时与配置，复用 Node 并保留所有自定义设置', linux, async t => {
