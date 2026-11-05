@@ -23,8 +23,8 @@ async function fixture(t) {
   await mkdir(app);
   await mkdir(bin);
   await Promise.all(['backend', 'frontend', 'shared', 'scripts', 'package.json', 'dev.sh', 'install.sh', 'uninstall.sh'].map(entry => cp(path.join(root, entry), path.join(app, entry), { recursive: true })));
-  const nodeArchive = 'node-v24.0.0-linux-x64.tar.xz';
-  const nodeSource = path.join(directory, 'node-v24.0.0-linux-x64/bin');
+  const nodeArchive = 'node-v26.0.0-linux-x64.tar.xz';
+  const nodeSource = path.join(directory, 'node-v26.0.0-linux-x64/bin');
   await mkdir(nodeSource, { recursive: true });
   // Simulate administrative commands and service activation. Real files,
   // checksums, extraction and the actual terminal launcher remain in use.
@@ -39,7 +39,7 @@ if [[ "$*" == *'const [frontend, backend]'* ]]; then
 fi
 exec ${quote(process.execPath)} "$@"
 `, { mode: 0o755 });
-  await run('tar', ['-cJf', path.join(directory, nodeArchive), '-C', directory, 'node-v24.0.0-linux-x64']);
+  await run('tar', ['-cJf', path.join(directory, nodeArchive), '-C', directory, 'node-v26.0.0-linux-x64']);
   const archive = await readFile(path.join(directory, nodeArchive));
   await writeFile(path.join(directory, 'SHASUMS256.txt'), `${createHash('sha256').update(archive).digest('hex')}  ${nodeArchive}\n`);
   const mock = path.join(bin, 'mock');
@@ -60,9 +60,11 @@ elif name == 'stat' and args[-1] == str(root / 'project'):
     else: print('1000' if args[1] == '%u' else 'deployer')
 elif name == 'apt-get':
     if 'lib32gcc-s1' in args: (root / 'lib32gcc-installed').touch()
+    if 'libatomic1' in args: (root / 'libatomic-installed').touch()
 elif name == 'chown': pass
 elif name == 'dpkg-query':
     if args[-1] == 'lib32gcc-s1' and (root / 'lib32gcc-installed').exists(): print('install ok installed')
+    elif args[-1] == 'libatomic1' and (root / 'libatomic-installed').exists(): print('install ok installed')
     else: sys.exit(1)
 elif name == 'useradd': raise RuntimeError('Installer must not create users')
 elif name == 'install':
@@ -168,7 +170,8 @@ test('就地安装使用项目属主和 data，不创建用户或搬迁程序，
   assert.match(result.stdout, new RegExp(`安装位置：${f.data}/runtime/node`));
   assert.match(result.stdout, /是否下载？直接回车为不下载 \[y\/N\]/);
   assert.match(result.stdout, /╰─+/);
-  assert.match(result.stdout, /正在下载 node-v24\.0\.0-linux-x64\.tar\.xz/);
+  assert.match(result.stdout, /可以下载一份独立的 Node\.js 26 LTS/);
+  assert.match(result.stdout, /正在下载 node-v26\.0\.0-linux-x64\.tar\.xz/);
   assert.match(result.stdout, /Node\.js .+ 已安装到 .*data\/runtime\/node/);
   assert.match(result.stdout, /当前没有正在运行的 PalBox 服务/);
   assert.match(result.stdout, /启动检查通过（第 1\/30 次）/);
@@ -197,7 +200,8 @@ test('就地安装使用项目属主和 data，不创建用户或搬迁程序，
   await assert.rejects(access(path.join(f.app, 'current')), { code: 'ENOENT' });
   await assert.rejects(access(path.join(f.app, 'releases')), { code: 'ENOENT' });
   const commands = await readFile(path.join(f.directory, 'commands'), 'utf8');
-  assert.match(commands, /apt-get install -y --no-install-recommends --no-upgrade lib32gcc-s1\n/);
+  assert.match(commands, /apt-get install -y --no-install-recommends --no-upgrade lib32gcc-s1 libatomic1\n/);
+  assert.match(commands, /https:\/\/nodejs.org\/dist\/latest-v26.x\/node-v26\.0\.0-linux-x64\.tar\.xz/);
   assert.doesNotMatch(commands, /apt-get install[^\n]* curl/);
   assert.ok(commands.includes(`install -d -o deployer -g deployer -m 0700 ${f.data}`));
   assert.doesNotMatch(commands, /useradd|steamstatic/);
@@ -266,7 +270,7 @@ test('重新安装保留同一 data、配置和程序目录，不重复下载兼
   config = await readFile(f.config, 'utf8');
   assert.match(config, /\nPORT=9100\n/);
   const commands = await readFile(path.join(f.directory, 'commands'), 'utf8');
-  assert.equal(commands.match(/https:\/\/nodejs.org\/dist\/latest-v24.x\/SHASUMS256.txt/g).length, 1);
+  assert.equal(commands.match(/https:\/\/nodejs.org\/dist\/latest-v26.x\/SHASUMS256.txt/g).length, 1);
   assert.equal(commands.match(/apt-get update/g).length, 1);
 });
 
@@ -380,7 +384,7 @@ test('启动失败恢复原配置和服务，不修改代码或数据', linux, a
 test('校验失败、端口冲突和其他部署目录均不会被激活或覆盖', linux, async t => {
   const f = await fixture(t);
   await assert.rejects(f.invoke('--port', '8081'), /不同端口/);
-  await writeFile(path.join(f.directory, 'SHASUMS256.txt'), `${'0'.repeat(64)}  node-v24.0.0-linux-x64.tar.xz\n`);
+  await writeFile(path.join(f.directory, 'SHASUMS256.txt'), `${'0'.repeat(64)}  node-v26.0.0-linux-x64.tar.xz\n`);
   await assert.rejects(f.invoke(), /Node.js 校验失败/);
   await assert.rejects(access(f.config), { code: 'ENOENT' });
   await writeFile(path.join(f.systemd, 'palbox.service'), 'WorkingDirectory=/another/project\n');

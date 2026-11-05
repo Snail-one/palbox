@@ -2,9 +2,9 @@
 
 前端容器运行网页与 API 代理，后端 `palbox` 容器运行管理 API、SteamCMD 和一个帕鲁专用服务器，支持 Linux amd64。前端没有游戏数据挂载，后端 HTTP 端口仅在 Compose 网络内开放。管理服务在游戏停服时继续运行，不需要 Docker socket。游戏文件首次运行时由 SteamCMD 下载，镜像本身不打包游戏文件。
 
-后端镜像基于 `debian:13-slim`，从官方 `node:22-trixie-slim` 镜像复制 Node.js 22 运行时。SteamCMD 从 `client-update.steamstatic.com` 下载，配置下载重试与连接超时；使用系统自带的 `C.UTF-8`，不额外生成语言环境。除 `curl`、`ca-certificates`、`lib32gcc-s1`、`procps`、`7zip` 外，仅补充入口脚本需要的 `tini`、`gosu`，Node.js 运行库 `libstdc++6`、`libatomic1`，以及支持 `TZ` 的 `tzdata`。`7zip` 用于导入 `.zip` 和 `.7z` 存档。`tar` 和用户管理命令由 Debian 基础镜像提供。
+后端镜像基于 `debian:13-slim`，从官方 `node:26-trixie-slim` 镜像复制 Node.js 26 运行时。SteamCMD 从 `client-update.steamstatic.com` 下载，配置下载重试与连接超时；使用系统自带的 `C.UTF-8`，不额外生成语言环境。除 `curl`、`ca-certificates`、`lib32gcc-s1`、`procps`、`7zip` 外，仅补充入口脚本需要的 `tini`、`gosu`，Node.js 运行库 `libstdc++6`、`libatomic1`，以及支持 `TZ` 的 `tzdata`。`7zip` 用于导入 `.zip` 和 `.7z` 存档。`tar` 和用户管理命令由 Debian 基础镜像提供。
 
-前端镜像基于 `node:22-trixie-slim`，仅包含浏览器资源、共享领域模块和静态代理服务。Dockerfile 提供 `frontend` / `backend` 两个独立构建目标；Compose 会分别构建。单独构建时使用 `docker build --target frontend -t palbox-frontend:local .` 和 `docker build --target backend -t palbox:local .`。
+前端镜像基于 `node:26-trixie-slim`，仅包含浏览器资源、共享领域模块和静态代理服务。Dockerfile 提供 `frontend` / `backend` 两个独立构建目标；Compose 会分别构建。单独构建时使用 `docker build --target frontend -t palbox-frontend:local .` 和 `docker build --target backend -t palbox:local .`。
 
 GitHub Actions 仅在推送 Git tag 后发布两个 GHCR 镜像，同时保留原始 tag 和 `latest` 标签；手动触发仅验证构建，不推送镜像，可不填写 tag。在线部署只需独立的 `compose.ghcr.yaml`，使用 `docker compose -f compose.ghcr.yaml pull` 拉取，再执行 `docker compose -f compose.ghcr.yaml up -d` 启动，无需源码和 Dockerfile。固定版本时修改该文件中的两个镜像标签。完整步骤见 [GitHub CI/CD](ci-cd.md)。
 

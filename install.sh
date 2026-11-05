@@ -28,7 +28,7 @@ SteamCMD 和游戏服务端在安装完成后通过网页安装。
 程序不搬迁、不创建系统用户，不递归修改已有数据属主。
 重复执行保留已有配置和 data/，重新注册并启动当前目录中的程序。
 已有 Node.js 22 或以上版本时直接使用，不下载。都没有时会询问是否下载
-一份只给当前项目使用的独立 Node.js，并显示安装位置；直接回车为不下载。
+一份只给当前项目使用的独立 Node.js 26 LTS，并显示安装位置；直接回车为不下载。
 卸载请单独执行 sudo bash ./uninstall.sh。
 EOF
 }
@@ -198,9 +198,10 @@ step '检查系统依赖。'
 missing=()
 if ! command -v curl >/dev/null 2>&1 || ! curl --version >/dev/null 2>&1; then missing+=(curl); fi
 if ! dpkg-query -W -f '${Status}' lib32gcc-s1 2>/dev/null | grep -qx 'install ok installed'; then missing+=(lib32gcc-s1); fi
+if ! dpkg-query -W -f '${Status}' libatomic1 2>/dev/null | grep -qx 'install ok installed'; then missing+=(libatomic1); fi
 if ! command -v 7zz >/dev/null 2>&1 && ! command -v 7z >/dev/null 2>&1; then missing+=(7zip); fi
 if (( ${#missing[@]} == 0 )); then
-  echo '[PalBox] curl、lib32gcc-s1 和 7zip 已可用，跳过安装。'
+  echo '[PalBox] curl、lib32gcc-s1、libatomic1 和 7zip 已可用，跳过安装。'
 else
   step "安装缺少的系统依赖：${missing[*]}。"
   step '正在更新软件源。'
@@ -263,7 +264,7 @@ EOF
     echo
     print_card 'Node.js' \
       '未检测到 Node.js 22 或以上版本。' \
-      '可以下载一份独立的 Node.js 24 LTS，只放在当前项目里使用，不会替换系统中已有的 Node.js。' \
+      '可以下载一份独立的 Node.js 26 LTS，只放在当前项目里使用，不会替换系统中已有的 Node.js。' \
       "安装位置：$data_dir/runtime/node" \
       '是否下载？直接回车为不下载 [y/N]'
     answer=""
@@ -274,13 +275,13 @@ EOF
       y|Y|yes|YES) ;;
       *) die "已拒绝下载独立 Node.js，安装已停止。安装位置：$data_dir/runtime/node。请安装 Node.js 22 或以上版本后重试，或重新执行安装并输入 y 确认下载。" ;;
     esac
-    step '下载并校验项目独立的 Node.js 24 LTS。'
+    step '下载并校验项目独立的 Node.js 26 LTS。'
     step '正在获取 Node.js 校验清单。'
     curl --fail --silent --show-error --location --retry 3 --connect-timeout 15 --max-time 300 \
-      https://nodejs.org/dist/latest-v24.x/SHASUMS256.txt -o "$temporary/SHASUMS256.txt"
+      https://nodejs.org/dist/latest-v26.x/SHASUMS256.txt -o "$temporary/SHASUMS256.txt"
     checksum='' node_archive=''
     while read -r sum name; do
-      if [[ "$name" =~ ^node-v24\.[0-9]+\.[0-9]+-linux-x64\.tar\.xz$ && "$sum" =~ ^[a-fA-F0-9]{64}$ ]]; then
+      if [[ "$name" =~ ^node-v26\.[0-9]+\.[0-9]+-linux-x64\.tar\.xz$ && "$sum" =~ ^[a-fA-F0-9]{64}$ ]]; then
         [[ -z "$node_archive" ]] || die 'Node.js 清单包含多个匹配版本。'
         checksum="$sum" node_archive="$name"
       fi
@@ -288,7 +289,7 @@ EOF
     [[ -n "$node_archive" ]] || die '无法从官方清单确定 Node.js 安装包。'
     step "正在下载 ${node_archive}。"
     curl --fail --silent --show-error --location --retry 3 --connect-timeout 15 --max-time 600 \
-      "https://nodejs.org/dist/latest-v24.x/$node_archive" -o "$temporary/$node_archive"
+      "https://nodejs.org/dist/latest-v26.x/$node_archive" -o "$temporary/$node_archive"
     step '正在校验并解压 Node.js。'
     printf '%s  %s\n' "$checksum" "$temporary/$node_archive" > "$temporary/node.sha256"
     sha256sum -c "$temporary/node.sha256" || die 'Node.js 校验失败，已中止安装。'
