@@ -225,9 +225,9 @@ test('未检测到 Node.js 时直接回车或拒绝都不下载', linux, async t
   assert.doesNotMatch(commands, /nodejs\.org/);
 });
 
-test('已有可用 Node.js 时直接使用，不询问也不下载', linux, async t => {
-  const f = await fixture(t);
-  const node = path.join(f.directory, 'bin/node');
+async function existingNode(f, relativePath = 'bin/node') {
+  const node = path.join(f.directory, relativePath);
+  await mkdir(path.dirname(node), { recursive: true });
   await writeFile(node, `#!/bin/bash
 if [[ "$*" == *'const [frontend, backend]'* ]]; then
   test -f "$PALBOX_NATIVE_TEST_DIR/active"
@@ -235,13 +235,75 @@ if [[ "$*" == *'const [frontend, backend]'* ]]; then
 fi
 exec ${quote(process.execPath)} "$@"
 `, { mode: 0o755 });
-  const result = await run('/bin/bash', [path.join(f.app, 'install.sh')], { env: f.env, timeout: 10000, input: 'n\n' });
-  assert.match(result.stdout, new RegExp(`检测到 Node\\.js .+：${node}`));
-  assert.match(result.stdout, /已有可用的 Node\.js，跳过下载/);
-  assert.doesNotMatch(result.stdout, /是否下载|nodejs\.org|未检测到 Node/);
+  return node;
+}
+
+test('已有可用 Node.js 时，明确同意才复用且不再询问下载', linux, async t => {
+  const f = await fixture(t);
+  const node = await existingNode(f);
+  for (const input of ['y\n', 'Y\n', 'yes\n', 'YES\n']) {
+    const result = await f.runInstall([], input);
+    assert.ok(result.stdout.includes(`：${node}`));
+    assert.match(result.stdout, /是否使用已安装的 Node\.js？直接回车为不使用 \[y\/N\]/);
+    assert.match(result.stdout, /使用已安装的 Node\.js，跳过下载/);
+    assert.doesNotMatch(result.stdout, /是否下载|nodejs\.org|未检测到 Node/);
+  }
   await assert.rejects(access(path.join(f.data, 'runtime/node/bin/node')), { code: 'ENOENT' });
   const commands = await readFile(path.join(f.directory, 'commands'), 'utf8');
   assert.doesNotMatch(commands, /nodejs\.org/);
+});
+
+test('已有 Node.js 时回车、拒绝或无输入默认不使用，也不会自动下载', linux, async t => {
+  const f = await fixture(t);
+  const node = await existingNode(f);
+  const original = await readFile(node, 'utf8');
+  for (const input of ['\n', 'n\n', 'no\n', '']) {
+    await assert.rejects(f.runInstall([], input), error => {
+      assert.match(error.stdout, /是否使用已安装的 Node\.js？直接回车为不使用 \[y\/N\]/);
+      assert.match(error.stdout, /已选择不使用已安装的 Node\.js/);
+      assert.match(error.stdout, /是否下载？直接回车为不下载 \[y\/N\]/);
+      assert.doesNotMatch(error.stdout, /使用已安装的 Node\.js，跳过下载|未检测到 Node/);
+      assert.match(error.stderr, /已拒绝下载独立 Node\.js/);
+      return true;
+    });
+  }
+  assert.equal(await readFile(node, 'utf8'), original);
+  await assert.rejects(access(path.join(f.data, 'runtime/node/bin/node')), { code: 'ENOENT' });
+  assert.doesNotMatch(await readFile(path.join(f.directory, 'commands'), 'utf8'), /nodejs\.org|systemctl start/);
+});
+
+test('不使用已有 Node.js 后，可另行确认下载项目独立版本', linux, async t => {
+  for (const input of ['\ny\n', 'n\ny\n']) {
+    await t.test(JSON.stringify(input), async t => {
+      const f = await fixture(t);
+      const node = await existingNode(f);
+      const original = await readFile(node, 'utf8');
+      const result = await f.runInstall([], input);
+      assert.match(result.stdout, /已选择不使用已安装的 Node\.js/);
+      assert.match(result.stdout, /正在下载 node-v26\.0\.0-linux-x64\.tar\.xz/);
+      assert.match(result.stdout, /安装完成/);
+      assert.equal(await readFile(node, 'utf8'), original);
+      const projectNode = path.join(f.data, 'runtime/node/bin/node');
+      await access(projectNode);
+      const commands = await readFile(path.join(f.directory, 'commands'), 'utf8');
+      assert.ok(commands.includes(`runuser -u deployer -- ${projectNode} --input-type=module`));
+    });
+  }
+});
+
+test('通过 fnm 或 nvm 检测到 Node.js 时也必须确认使用', linux, async t => {
+  for (const location of ['fnm/node-versions/v26/installation/bin/node', 'nvm/versions/node/v26/bin/node']) {
+    await t.test(location, async t => {
+      const f = await fixture(t);
+      const node = await existingNode(f, location);
+      const result = await f.runInstall([], 'y\n');
+      assert.ok(result.stdout.includes(`：${node}`));
+      assert.match(result.stdout, /是否使用已安装的 Node\.js/);
+      assert.match(result.stdout, /使用已安装的 Node\.js，跳过下载/);
+      assert.doesNotMatch(result.stdout, /是否下载/);
+      await assert.rejects(access(path.join(f.data, 'runtime/node/bin/node')), { code: 'ENOENT' });
+    });
+  }
 });
 
 test('重新安装保留同一 data、配置和程序目录，不重复下载兼容 Node', linux, async t => {

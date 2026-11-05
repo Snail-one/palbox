@@ -27,8 +27,9 @@ SteamCMD 和游戏服务端在安装完成后通过网页安装。
 
 程序不搬迁、不创建系统用户，不递归修改已有数据属主。
 重复执行保留已有配置和 data/，重新注册并启动当前目录中的程序。
-已有 Node.js 22 或以上版本时直接使用，不下载。都没有时会询问是否下载
-一份只给当前项目使用的独立 Node.js 26 LTS，并显示安装位置；直接回车为不下载。
+项目已有兼容的独立 Node.js 时直接复用。检测到系统或用户目录中的
+Node.js 22 或以上版本时，会询问是否使用，直接回车为不使用。
+未使用已有版本时，会另行询问是否下载独立 Node.js 26 LTS，直接回车为不下载。
 卸载请单独执行 sudo bash ./uninstall.sh。
 EOF
 }
@@ -233,6 +234,7 @@ fi
 if [[ -n "$node_version" ]]; then
   step "项目 Node.js ${node_version} 已可用，跳过下载。"
 else
+  node_status='未检测到 Node.js 22 或以上版本。'
   detected="$(runuser -u "$service_user" -- bash -c "$(cat <<'EOF'
 set -euo pipefail
 node_bin=""
@@ -256,14 +258,32 @@ fi
 EOF
 )")" || detected=""
   if [[ "$detected" == /* && -x "$detected" ]]; then
-    node_bin="$detected"
-    node_version="$(runuser -u "$service_user" -- "$node_bin" -e 'process.stdout.write(process.versions.node)')"
-    step "检测到 Node.js ${node_version}：$node_bin"
-    step "已有可用的 Node.js，跳过下载。"
-  else
+    detected_version="$(runuser -u "$service_user" -- "$detected" -e 'process.stdout.write(process.versions.node)')"
     echo
     print_card 'Node.js' \
-      '未检测到 Node.js 22 或以上版本。' \
+      "检测到 Node.js ${detected_version}：$detected" \
+      '是否使用已安装的 Node.js？直接回车为不使用 [y/N]'
+    answer=""
+    if [[ -t 0 ]]; then IFS= read -r answer || true
+    else IFS= read -r -t 1 answer || true; fi
+    printf '\n'
+    case "$answer" in
+      y|Y|yes|YES)
+        node_bin="$detected"
+        node_version="$detected_version"
+        step '使用已安装的 Node.js，跳过下载。'
+        ;;
+      *)
+        node_status='已选择不使用已安装的 Node.js。'
+        step "$node_status"
+        ;;
+    esac
+  fi
+  if [[ -z "$node_version" ]]; then
+    node_bin="$data_dir/runtime/node/bin/node"
+    echo
+    print_card 'Node.js' \
+      "$node_status" \
       '可以下载一份独立的 Node.js 26 LTS，只放在当前项目里使用，不会替换系统中已有的 Node.js。' \
       "安装位置：$data_dir/runtime/node" \
       '是否下载？直接回车为不下载 [y/N]'
