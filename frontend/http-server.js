@@ -112,7 +112,7 @@ function proxy(request, response, upstream, trusted) {
   for (const name of ['connection', 'keep-alive', 'proxy-authorization', 'proxy-authenticate', 'te', 'trailer', 'transfer-encoding', 'upgrade']) delete forwarded[name];
   const client = clientAddress(request, trusted);
   // Overwrite client-supplied values so the API can trust this header for
-  // rate limiting, auditing and the first-run setup guard. Unknown values are
+  // rate limiting and auditing. Unknown values are
   // forwarded explicitly so the API never falls back to the proxy address.
   forwarded['x-palbox-client-ip'] = client || 'unknown';
   forwarded['x-forwarded-for'] = client || 'unknown';

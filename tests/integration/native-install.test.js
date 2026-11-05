@@ -246,6 +246,8 @@ test('重新安装保留同一 data、配置和程序目录，不重复下载兼
   assert.match(opened.stdout, /当前没有正在运行的 PalBox 服务/);
   const previousCode = opened.stdout.match(/首次初始化码：([a-f0-9]{32})/)[1];
   assert.match(opened.stdout, /0\.0\.0\.0:9000（所有 IPv4 网卡）/);
+  assert.match(opened.stdout, /可通过服务器地址完成首次初始化/);
+  assert.doesNotMatch(opened.stdout, /首次管理员初始化请从本机或可信内网/);
   assert.doesNotMatch(opened.stdout, /面板地址：http:\/\/127\.0\.0\.1:9000/);
   await writeFile(path.join(f.data, 'world.sav'), 'world-content');
   await writeFile(f.config, `${await readFile(f.config, 'utf8')}PALBOX_GAME_PORT=8888\nPALBOX_SECURE_COOKIE=true\n`);

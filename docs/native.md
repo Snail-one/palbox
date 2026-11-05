@@ -90,7 +90,7 @@ sudo bash ./install.sh --host 0.0.0.0 --port 8090 --api-port 8091
 
 共用启动入口会自动把实际网页端口传给后端，用于拒绝与面板冲突的游戏 REST 端口。若在同一台机器分别运行 `start:frontend` 和 `start:backend`，请为后端设置 `PALBOX_WEB_PORT` 为前端的实际 `PORT`；前后端分容器或分机器运行时无需设置。
 
-首次管理员初始化只接受本机或可信内网来源；只有公网 IP 时先用 SSH 隧道初始化。公网长期访问使用 HTTPS 反向代理，并在 `data/palbox/.env` 设置 `PALBOX_SECURE_COOKIE=true` 和相应的可信代理地址。
+首次管理员初始化支持公网访问，填写安装结果或最新服务启动日志中的一次性初始化码即可创建管理员。绑定 `0.0.0.0` 时可直接打开 `http://服务器IP:面板端口`，绑定回环地址时仍通过 SSH 隧道访问。公网长期访问使用 HTTPS 反向代理，并在 `data/palbox/.env` 设置 `PALBOX_SECURE_COOKIE=true` 和相应的可信代理地址。
 
 ## 服务管理、调试和更新
 

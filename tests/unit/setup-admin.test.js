@@ -26,11 +26,11 @@ async function instances(t, count = 2) {
   return managers;
 }
 
-async function post(api, route, input) {
+async function post(api, route, input, { address = '127.0.0.1', headers = {} } = {}) {
   const request = new PassThrough();
   request.method = 'POST';
-  request.headers = { host: 'localhost', 'content-type': 'application/json' };
-  request.socket = { remoteAddress: '127.0.0.1' };
+  request.headers = { host: 'localhost', 'content-type': 'application/json', ...headers };
+  request.socket = { remoteAddress: address };
   const output = { headers: {} };
   const response = {
     setHeader(name, value) { output.headers[name] = value; },
@@ -41,6 +41,37 @@ async function post(api, route, input) {
   await api(request, response, route);
   return output;
 }
+
+test('公网 IPv4、IPv6 和代理访问均可凭初始化码注册，错误码与跨站请求仍被拒绝', async t => {
+  for (const client of [
+    { address: '203.0.113.9' },
+    { address: '2001:db8::9' },
+    { address: '127.0.0.1', headers: { 'x-palbox-client-ip': '203.0.113.9' } }
+  ]) {
+    await t.test(JSON.stringify(client), async t => {
+      const [manager] = await instances(t, 1);
+      const api = createManagementApi(manager);
+      const headers = { host: '203.0.113.10:30000', origin: 'http://203.0.113.10:30000', ...client.headers };
+      const options = { ...client, headers };
+      const credentials = { ...original, setupCode: manager.setupCode };
+      for (const setupCode of [undefined, 'wrong']) {
+        const rejected = await post(api, '/api/setup', { ...credentials, setupCode }, options);
+        assert.equal(rejected.status, 403);
+        assert.match(rejected.body.error, /初始化码不正确或已失效/);
+      }
+      for (const crossSite of [{ origin: 'https://evil.invalid' }, { 'sec-fetch-site': 'cross-site' }]) {
+        const rejected = await post(api, '/api/setup', credentials, { ...options, headers: { ...headers, ...crossSite } });
+        assert.equal(rejected.status, 403);
+        assert.match(rejected.body.error, /请求来源不正确/);
+      }
+      await assert.rejects(readFile(manager.settingsFile), { code: 'ENOENT' });
+      assert.equal((await post(api, '/api/setup', credentials, options)).status, 201);
+      assert.equal(manager.setupCode, null);
+      assert.equal((await post(api, '/api/setup', { ...credentials, ...replacement }, options)).status, 409);
+      assert.equal(manager.settings.admin.username, original.username);
+    });
+  }
+});
 
 test('启动时未初始化的另一实例不能覆盖管理员，同步原账号并保留二次验证', async t => {
   const [first, stale] = await instances(t);

@@ -442,7 +442,7 @@ if [[ $listen_host == 127.0.0.1 || $listen_host == localhost || $listen_host == 
   )
 else
   access+=("请使用上面的网卡地址访问。127.0.0.1 只在服务器本机有效，不能作为对外地址。")
-  access+=("首次管理员初始化请从本机或可信内网打开面板。")
+  access+=("可通过服务器地址完成首次初始化，请填写上面的本次启动初始化码。")
 fi
 access+=("游戏默认使用 UDP 8211。后端 API 只监听 127.0.0.1:$api_port。")
 access+=("日志：sudo journalctl -u palbox -f")

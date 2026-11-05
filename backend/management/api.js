@@ -5,7 +5,6 @@ import { failure } from './files.js';
 import { streamLogs } from './logs.js';
 import { streamStatus } from './status-stream.js';
 import { API_SECURITY_HEADERS } from '../security-headers.js';
-import { isLoopbackOrPrivate } from '../../shared/domain/network.js';
 import { createBackupDownloadFilename } from './backup-downloads.js';
 import { readBackupWorld } from './backup-metadata.js';
 
@@ -66,9 +65,6 @@ export function createManagementApi(manager, options = {}) {
       }
       if (pathname === '/api/setup' && request.method === 'POST') {
         auth.verifyOrigin(request);
-        // The panel must be initialized from localhost or a trusted LAN;
-        // public clients are rejected even if the port is exposed too early.
-        if (!isLoopbackOrPrivate(auth.clientAddress(request))) throw failure('请在本机或可信内网完成管理员初始化。', 403);
         const input = await body(request, 4096, AUTH_BODY_TIMEOUT_MS);
         await manager.setupAdmin(input.username, input.password, input.setupCode);
         json(201, { ok: true }); return;

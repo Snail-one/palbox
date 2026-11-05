@@ -464,7 +464,7 @@ test('SteamCMD、进程、配置应用、备份恢复与故障状态真实联动
   assert.equal((await f.manager.status()).running, false);
 });
 
-test('首次访问通过网页初始化管理员，重启沿用账号，密码不以明文输出或存盘', { skip: process.platform !== 'linux', timeout: 20000 }, async t => {
+test('首次公网访问通过初始化码创建管理员，重启沿用账号，密码不以明文输出或存盘', { skip: process.platform !== 'linux', timeout: 20000 }, async t => {
   const { spawn } = await import('node:child_process');
   const { mkdtemp, rm, stat } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
@@ -521,13 +521,13 @@ test('首次访问通过网页初始化管理员，重启沿用账号，密码�
   assert.equal((await post('/api/setup', { username, password: 'short', setupCode })).status, 400);
   assert.equal((await post('/api/setup', { username: '   ', password, setupCode })).status, 400);
   assert.equal((await post('/api/setup', { username, password, setupCode }, { Origin: 'https://evil.invalid' })).status, 403);
-  // 公网客户端（反向代理通过 X-Forwarded-For 转发）不能抢先初始化；
-  // 伪造内网前缀也不能让追加真实地址的代理链被误判。
-  assert.equal((await post('/api/setup', { username, password, setupCode }, { 'X-Forwarded-For': '203.0.113.9' })).status, 403);
-  assert.equal((await post('/api/setup', { username, password, setupCode }, { 'X-Forwarded-For': '10.0.0.1, 203.0.113.9' })).status, 403);
+  // Public clients need the startup code, even when forwarding headers contain
+  // a private address. A correct code permits registration through the proxy.
+  assert.equal((await post('/api/setup', { username, password }, { 'X-Forwarded-For': '203.0.113.9' })).status, 403);
+  assert.equal((await post('/api/setup', { username, password, setupCode: 'wrong' }, { 'X-Forwarded-For': '10.0.0.1, 203.0.113.9' })).status, 403);
   assert.equal((await post('/api/setup', { username, password })).status, 403);
   assert.equal((await post('/api/setup', { username, password, setupCode: 'wrong' })).status, 403);
-  const created = await post('/api/setup', { username, password, setupCode });
+  const created = await post('/api/setup', { username, password, setupCode }, { 'X-Forwarded-For': '203.0.113.9' });
   assert.equal(created.status, 201);
   assert.deepEqual(await created.json(), { ok: true });
   assert.equal((await post('/api/setup', { username, password, setupCode })).status, 409);

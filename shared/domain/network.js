@@ -10,7 +10,7 @@ function privateIpv4(value) {
 
 /**
  * Loopback, RFC1918, link-local and IPv6 ULA addresses.
- * Used to restrict first-time setup. Proxy trust uses an explicit allowlist.
+ * Classify local addresses. Proxy trust uses an explicit allowlist.
  */
 export function isLoopbackOrPrivate(address) {
   if (typeof address !== 'string' || !address) return false;
